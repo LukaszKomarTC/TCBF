@@ -1,0 +1,179 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: tc-booking-flow 0.1.10\n"
+"POT-Creation-Date: 2026-01-02 00:00+0000\n"
+"PO-Revision-Date: 2026-01-02 00:00+0000\n"
+"Language: es_ES\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Event"
+msgstr "Evento"
+
+msgid "Participant"
+msgstr "Participante"
+
+msgid "Type"
+msgstr "Tipo"
+
+msgid "Bike"
+msgstr "Bicicleta"
+
+msgid "Rental"
+msgstr "Alquiler"
+
+msgid "Participation"
+msgstr "Participación"
+
+# Partner Portal translations
+msgid "Partner report"
+msgstr "Partner report"
+
+msgid "All partners"
+msgstr "Todos los socios"
+
+msgid "You do not have access to this page."
+msgstr "No tienes acceso a esta página."
+
+msgid "No partner code linked to your user."
+msgstr "No hay código de socio vinculado a tu usuario."
+
+msgid "Viewing partner:"
+msgstr "Viendo socio:"
+
+msgid "Code:"
+msgstr "Código:"
+
+msgid "Commission:"
+msgstr "Comisión:"
+
+msgid "Admin view: showing all partner-attributed orders."
+msgstr "Vista de administrador: mostrando todos los pedidos atribuidos a socios."
+
+msgid "Partner code:"
+msgstr "Código de socio:"
+
+msgid "This report shows orders attributed at checkout (ledger v2). Orders without partner attribution or older bookings may not appear."
+msgstr "Este informe muestra los pedidos atribuidos en el momento del pago (ledger v2). Los pedidos sin atribución de socio o reservas antiguas pueden no aparecer."
+
+msgid "No partner-attributed orders found."
+msgstr "No se encontraron pedidos atribuidos a socios."
+
+msgid "No orders found for this partner."
+msgstr "No se encontraron pedidos para este socio."
+
+msgid "Partner"
+msgstr "Socio"
+
+msgid "From"
+msgstr "Desde"
+
+msgid "To"
+msgstr "Hasta"
+
+msgid "Status"
+msgstr "Estado"
+
+msgid "Filter"
+msgstr "Filtrar"
+
+msgid "Any"
+msgstr "Cualquiera"
+
+msgid "Order"
+msgstr "Pedido"
+
+msgid "Date"
+msgstr "Fecha"
+
+msgid "Products / Services"
+msgstr "Productos / Servicios"
+
+msgid "Client total"
+msgstr "Total cliente"
+
+msgid "Discount"
+msgstr "Descuento"
+
+msgid "Commission"
+msgstr "Comisión"
+
+msgid "(incl. tax)"
+msgstr "(IVA incl.)"
+
+msgid "(excl. tax)"
+msgstr "(IVA excl.)"
+
+msgid "Total payable commission"
+msgstr "Comisión total a pagar"
+
+msgid "%d of %d orders"
+msgstr "%d de %d pedidos"
+
+msgid "Payable statuses:"
+msgstr "Estados pagables:"
+
+msgid "Download CSV"
+msgstr "Descargar CSV"
+
+# Enhanced discount/commission blocks
+msgid "Early booking discount"
+msgstr "Descuento reserva anticipada"
+
+msgid "%s%% applied to your booking"
+msgstr "%s%% aplicado a tu reserva"
+
+msgid "Applied to your booking"
+msgstr "Aplicado a tu reserva"
+
+msgid "Partner discount"
+msgstr "Descuento de socio"
+
+msgid "%s%% partner discount"
+msgstr "%s%% descuento de socio"
+
+msgid "Partner discount applied"
+msgstr "Descuento de socio aplicado"
+
+msgid "Partner commission"
+msgstr "Comisión de socio"
+
+msgid "%s%% of base total"
+msgstr "%s%% del total base"
+
+msgid "Based on order total"
+msgstr "Basado en el total del pedido"
+
+# TCBF Order Summary Block
+msgid "Booking Details"
+msgstr "Detalles de la reserva"
+
+msgid "Tour"
+msgstr "Tour"
+
+msgid "Size"
+msgstr "Talla"
+
+# TCBF Pack Totals
+msgid "Pack price before EB"
+msgstr "Precio del pack antes de EB"
+
+msgid "Pack price"
+msgstr "Precio del pack"
+
+msgid "Pack total"
+msgstr "Total del pack"
+
+msgid "Rental included in the pack"
+msgstr "Alquiler incluido en el pack"
+
+msgid "Booking date"
+msgstr "Fecha de la reserva"
+
+msgid "Own bike"
+msgstr "Propia"
+
+# EB Badge (short form)
+msgid "EB discount"
+msgstr "Descuento EB"
