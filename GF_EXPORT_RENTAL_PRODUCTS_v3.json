@@ -1,0 +1,901 @@
+{
+  "0": {
+    "fields": [
+
+      {
+        "type": "hidden",
+        "id": 1,
+        "formId": 0,
+        "label": "Product title",
+        "adminLabel": "product_title",
+        "inputName": "product_title",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 5,
+        "formId": 0,
+        "label": "User",
+        "adminLabel": "",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 6,
+        "formId": 0,
+        "label": "User role",
+        "adminLabel": "user_role",
+        "inputName": "user_role",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 20,
+        "formId": 0,
+        "label": "Product ID",
+        "adminLabel": "product_id",
+        "inputName": "event_id",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 167,
+        "formId": 0,
+        "label": "User ID",
+        "adminLabel": "",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 131,
+        "formId": 0,
+        "label": "Start date",
+        "adminLabel": "booking_start_str",
+        "inputName": "booking_start_str",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 132,
+        "formId": 0,
+        "label": "Start date stamp",
+        "adminLabel": "booking_start_ts",
+        "inputName": "booking_start_ts",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 133,
+        "formId": 0,
+        "label": "End date",
+        "adminLabel": "booking_end_str",
+        "inputName": "booking_end_str",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 134,
+        "formId": 0,
+        "label": "End date stamp",
+        "adminLabel": "booking_end_ts",
+        "inputName": "booking_end_ts",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 200,
+        "formId": 0,
+        "label": "Resource label",
+        "adminLabel": "resource_label",
+        "inputName": "resource_label",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 201,
+        "formId": 0,
+        "label": "Size",
+        "adminLabel": "size",
+        "inputName": "size",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 106,
+        "formId": 0,
+        "label": "Bicycle rental",
+        "adminLabel": "rental_selection",
+        "inputName": "rental_selection",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 146,
+        "formId": 0,
+        "label": "Bike model and size",
+        "adminLabel": "bike_model_size",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 147,
+        "formId": 0,
+        "label": "Bike image ID",
+        "adminLabel": "",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 148,
+        "formId": 0,
+        "label": "Bike image src",
+        "adminLabel": "",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "name",
+        "id": 2,
+        "formId": 0,
+        "label": "[:en]Client[:es]Cliente[:]",
+        "adminLabel": "client_name",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "nameFormat": "advanced",
+        "inputs": [
+          {
+            "id": "2.2",
+            "label": "Prefix",
+            "name": "",
+            "autocompleteAttribute": "honorific-prefix",
+            "choices": [
+              { "text": "Dr.", "value": "Dr." },
+              { "text": "Miss", "value": "Miss" },
+              { "text": "Mr.", "value": "Mr." },
+              { "text": "Mrs.", "value": "Mrs." },
+              { "text": "Ms.", "value": "Ms." },
+              { "text": "Mx.", "value": "Mx." },
+              { "text": "Prof.", "value": "Prof." },
+              { "text": "Rev.", "value": "Rev." }
+            ],
+            "isHidden": true,
+            "inputType": "radio"
+          },
+          {
+            "id": "2.3",
+            "label": "First",
+            "name": "",
+            "autocompleteAttribute": "given-name",
+            "customLabel": "[:en]Name[:es]Nombre[:]"
+          },
+          {
+            "id": "2.4",
+            "label": "Middle",
+            "name": "",
+            "autocompleteAttribute": "additional-name",
+            "isHidden": true
+          },
+          {
+            "id": "2.6",
+            "label": "Last",
+            "name": "",
+            "autocompleteAttribute": "family-name",
+            "customLabel": "[:en]Family name[:es]Apellidos[:]"
+          },
+          {
+            "id": "2.8",
+            "label": "Suffix",
+            "name": "",
+            "autocompleteAttribute": "honorific-suffix",
+            "isHidden": true
+          }
+        ],
+        "inputName": "user_name",
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "any",
+          "rules": [
+            { "fieldId": "6", "operator": "contains", "value": "hotel" },
+            { "fieldId": "6", "operator": "contains", "value": "administrator" }
+          ]
+        },
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "email",
+        "id": 21,
+        "formId": 0,
+        "label": "Email",
+        "adminLabel": "client_email",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "emailConfirmEnabled": true,
+        "inputs": [
+          { "id": "21", "label": "Enter Email", "name": "", "autocompleteAttribute": "email" },
+          { "id": "21.2", "label": "Confirm Email", "name": "", "autocompleteAttribute": "email" }
+        ],
+        "inputName": "user_email",
+        "autocompleteAttribute": "email",
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "any",
+          "rules": [
+            { "fieldId": "6", "operator": "contains", "value": "hotel" },
+            { "fieldId": "6", "operator": "contains", "value": "administrator" }
+          ]
+        },
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "phone",
+        "id": 123,
+        "formId": 0,
+        "label": "[:es]Telefono[:en]Phone number[:]",
+        "adminLabel": "",
+        "isRequired": true,
+        "size": "medium",
+        "visibility": "visible",
+        "phoneFormat": "international",
+        "autocompleteAttribute": "tel",
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "any",
+          "rules": [
+            { "fieldId": "6", "operator": "contains", "value": "partner" },
+            { "fieldId": "6", "operator": "contains", "value": "hotel" }
+          ]
+        },
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "select",
+        "id": 60,
+        "formId": 0,
+        "label": "[:en]Type of pedals[:es]Tipo de pedales[:]",
+        "adminLabel": "",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "choices": [
+          { "text": "SPD ([:es]BTT[:en]MTB[:])", "value": "SPD ([:es]BTT[:en]MTB[:])", "isSelected": false, "price": "" },
+          { "text": "Look Keo", "value": "Look Keo", "isSelected": false, "price": "" },
+          { "text": "Shimano SPD-R", "value": "Shimano SPD-R", "isSelected": false, "price": "" },
+          { "text": "[:en]Flat pedals[:es]Pedales planos[:]", "value": "[:en]Flat pedals[:es]Pedales planos[:]", "isSelected": false, "price": "" },
+          { "text": "[:en]I will bring my own pedals[:es]Traigo mi propios pedales[:]", "value": "[:en]I will bring my own pedals[:es]Traigo mi propios pedales[:]", "isSelected": false, "price": "" }
+        ],
+        "description": "[:en](We do not offer cycling shoes rental)[:es](No ofrecemos alquiler de zapatos de ciclismo)[:]",
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "all",
+          "rules": [
+            { "fieldId": "106", "operator": "isnot", "value": "" }
+          ]
+        },
+        "layoutGridColumnSpan": 6
+      },
+
+      {
+        "type": "select",
+        "id": 61,
+        "formId": 0,
+        "label": "[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]",
+        "adminLabel": "",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "choices": [
+          { "text": "[:en]I bring my own helmet[:es]Traigo mi propio casco[:]", "value": "[:en]I bring my own helmet[:es]Traigo mi propio casco[:]", "isSelected": true, "price": "" },
+          { "text": "[:en]I want to rent a helmet[:es]Quiero alquilar un casco[:]", "value": "[:en]I want to rent a helmet[:es]Quiero alquilar un casco[:]", "isSelected": false, "price": "" }
+        ],
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "all",
+          "rules": [
+            { "fieldId": "106", "operator": "isnot", "value": "" }
+          ]
+        },
+        "layoutGridColumnSpan": 6
+      },
+
+      {
+        "type": "checkbox",
+        "id": 118,
+        "formId": 0,
+        "label": "[:es]Confirmacion[:en]Confirmation[:]",
+        "adminLabel": "notify_client",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "labelPlacement": "hidden_label",
+        "enableChoiceValue": true,
+        "choices": [
+          {
+            "text": "[:es]Enviar email de confirmacion al participante[:en]Send email confirmation to participant[:]",
+            "value": "1",
+            "isSelected": true,
+            "price": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "118.1",
+            "label": "[:es]Enviar email de confirmacion al participante[:en]Send email confirmation to participant[:]",
+            "name": ""
+          }
+        ],
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "any",
+          "rules": [
+            { "fieldId": "6", "operator": "contains", "value": "administrator" },
+            { "fieldId": "6", "operator": "contains", "value": "hotel" }
+          ]
+        },
+        "layoutGridColumnSpan": 6
+      },
+
+      {
+        "type": "html",
+        "id": 204,
+        "formId": 0,
+        "label": "Pricing summary",
+        "adminLabel": "pricing_summary_html",
+        "isRequired": false,
+        "visibility": "visible",
+        "content": "<div id=\"tcbf-booking-ledger-summary\" class=\"tcbf-ledger-summary\"><!-- Populated by JS --></div>",
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "any",
+          "rules": [
+            { "fieldId": "6", "operator": "contains", "value": "hotel" },
+            { "fieldId": "6", "operator": "contains", "value": "administrator" }
+          ]
+        },
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "select",
+        "id": 63,
+        "formId": 0,
+        "label": "[:en]Booking source[:es]Fuente de reserva[:]",
+        "adminLabel": "partner_override_code",
+        "inputName": "partner_override_code",
+        "isRequired": false,
+        "size": "medium",
+        "visibility": "visible",
+        "enableChoiceValue": true,
+        "cssClass": "partner_override_code",
+        "choices": [
+          { "text": "Direct booking (no partner)", "value": "", "isSelected": true }
+        ],
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "all",
+          "rules": [
+            { "fieldId": "6", "operator": "contains", "value": "administrator" },
+            { "fieldId": "181", "operator": "isnot", "value": "0" }
+          ]
+        },
+        "layoutGridColumnSpan": 6
+      },
+
+      {
+        "type": "product",
+        "id": 179,
+        "formId": 0,
+        "label": "Early booking discount",
+        "adminLabel": "display_eb_discount",
+        "inputName": "display_eb_discount",
+        "inputType": "calculation",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "basePrice": "$0.00",
+        "enableCalculation": true,
+        "calculationFormula": "-{Field:175:value}",
+        "calculationRounding": "",
+        "disableQuantity": true,
+        "cssClass": "tcbf-display-eb-discount",
+        "inputs": [
+          { "id": "179.1", "label": "Name", "name": "" },
+          { "id": "179.2", "label": "Price", "name": "" },
+          { "id": "179.3", "label": "Quantity", "name": "" }
+        ],
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "all",
+          "rules": [
+            { "fieldId": "172", "operator": ">", "value": "0" }
+          ]
+        },
+        "layoutGridColumnSpan": 6
+      },
+
+      {
+        "type": "product",
+        "id": 180,
+        "formId": 0,
+        "label": "Partner discount",
+        "adminLabel": "display_partner_discount",
+        "inputName": "display_partner_discount",
+        "inputType": "calculation",
+        "isRequired": false,
+        "size": "large",
+        "visibility": "visible",
+        "basePrice": "$0.00",
+        "enableCalculation": true,
+        "calculationFormula": "-{Field:176:value}",
+        "calculationRounding": "",
+        "disableQuantity": true,
+        "cssClass": "tcbf-display-partner-discount",
+        "inputs": [
+          { "id": "180.1", "label": "Name", "name": "" },
+          { "id": "180.2", "label": "Price", "name": "" },
+          { "id": "180.3", "label": "Quantity", "name": "" }
+        ],
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "all",
+          "rules": [
+            { "fieldId": "154", "operator": "isnot", "value": "" },
+            { "fieldId": "176", "operator": ">", "value": "0" }
+          ]
+        },
+        "layoutGridColumnSpan": 6
+      },
+
+      {
+        "type": "html",
+        "id": 205,
+        "formId": 0,
+        "label": "Partner Banner",
+        "adminLabel": "partner_banner",
+        "isRequired": false,
+        "visibility": "visible",
+        "content": "<div class=\"tcbf-partner-banner\" id=\"tcbf-partner-banner\" style=\"display:none;\"><div class=\"tcbf-partner-banner__icon\"></div><div class=\"tcbf-partner-banner__content\"><div class=\"tcbf-partner-banner__title\"></div><div class=\"tcbf-partner-banner__details\"><span class=\"tcbf-partner-name\"></span><span class=\"tcbf-partner-discount\"></span></div></div></div>",
+        "cssClass": "tcbf-partner-banner-field",
+        "conditionalLogic": {
+          "enabled": true,
+          "actionType": "show",
+          "logicType": "all",
+          "rules": [
+            { "fieldId": "181", "operator": "isnot", "value": "0" }
+          ]
+        },
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 154,
+        "formId": 0,
+        "label": "Discount code",
+        "adminLabel": "coupon_code",
+        "inputName": "coupon_code",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 152,
+        "formId": 0,
+        "label": "Partner Discount %",
+        "adminLabel": "partner_discount_pct",
+        "inputName": "partner_discount_pct",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 153,
+        "formId": 0,
+        "label": "Partner email",
+        "adminLabel": "partner_email",
+        "inputName": "partner_email",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 161,
+        "formId": 0,
+        "label": "Partner commission %",
+        "adminLabel": "partner_commission_pct",
+        "inputName": "partner_commission_pct",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 166,
+        "formId": 0,
+        "label": "Partner ID",
+        "adminLabel": "partner_user_id",
+        "inputName": "partner_user_id",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 181,
+        "formId": 0,
+        "label": "Partners Enabled",
+        "adminLabel": "partners_enabled",
+        "inputName": "partners_enabled",
+        "isRequired": false,
+        "visibility": "hidden",
+        "defaultValue": "1",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 150,
+        "formId": 0,
+        "label": "Participant email masked",
+        "adminLabel": "",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 151,
+        "formId": 0,
+        "label": "Participant family name masked",
+        "adminLabel": "",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 76,
+        "formId": 0,
+        "label": "Total",
+        "adminLabel": "total_official",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 172,
+        "formId": 0,
+        "label": "Early Booking Discount %",
+        "adminLabel": "early_booking_discount_pct",
+        "inputName": "early_booking_discount_pct",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 173,
+        "formId": 0,
+        "label": "S",
+        "adminLabel": "ledger_base",
+        "inputName": "ledger_base",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 174,
+        "formId": 0,
+        "label": "Base after EB",
+        "adminLabel": "base_after_eb",
+        "inputName": "",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": false,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 175,
+        "formId": 0,
+        "label": "EB discount amount",
+        "adminLabel": "ledger_eb_amount",
+        "inputName": "ledger_eb_amount",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 176,
+        "formId": 0,
+        "label": "Partner discount amount",
+        "adminLabel": "ledger_partner_amount",
+        "inputName": "ledger_partner_amount",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 164,
+        "formId": 0,
+        "label": "Discount amount",
+        "adminLabel": "ledger_total_discount",
+        "inputName": "ledger_total_discount",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 168,
+        "formId": 0,
+        "label": "Total client",
+        "adminLabel": "ledger_total",
+        "inputName": "ledger_total",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 165,
+        "formId": 0,
+        "label": "Partner commission amount",
+        "adminLabel": "ledger_commission",
+        "inputName": "ledger_commission",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 202,
+        "formId": 0,
+        "label": "Ledger tax amount",
+        "adminLabel": "ledger_tax_amount",
+        "inputName": "ledger_tax_amount",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      },
+
+      {
+        "type": "hidden",
+        "id": 203,
+        "formId": 0,
+        "label": "Ledger total incl tax",
+        "adminLabel": "ledger_total_incl_tax",
+        "inputName": "ledger_total_incl_tax",
+        "isRequired": false,
+        "visibility": "hidden",
+        "allowsPrepopulate": true,
+        "size": "large",
+        "layoutGridColumnSpan": 12
+      }
+
+    ],
+
+    "button": {
+      "type": "text",
+      "text": "Submit",
+      "imageUrl": "",
+      "width": "auto",
+      "location": "bottom",
+      "layoutGridColumnSpan": 12,
+      "id": "submit",
+      "conditionalLogic": ""
+    },
+    "title": "Booking Product \u2014 Client Details (UNIFIED v3)",
+    "description": "Unified contract form for booking products. Field IDs aligned with Event Form (48) to enable shared notification templates, conditional logic, and merge tags. Booking-specific fields use IDs 200+.",
+    "version": "2.9.5",
+    "id": 0,
+    "markupVersion": 2,
+    "nextFieldId": 210,
+    "useCurrentUserAsAuthor": true,
+    "postContentTemplateEnabled": false,
+    "postTitleTemplateEnabled": false,
+    "postTitleTemplate": "",
+    "postContentTemplate": "",
+    "lastPageButton": null,
+    "pagination": null,
+    "firstPageCssClass": "",
+    "subLabelPlacement": "below",
+    "cssClass": "",
+    "enableHoneypot": true,
+    "enableAnimation": false,
+    "save": {
+      "enabled": false,
+      "button": {
+        "type": "link",
+        "text": "Save and Continue Later"
+      }
+    },
+    "limitEntries": false,
+    "limitEntriesCount": "",
+    "limitEntriesPeriod": "",
+    "limitEntriesMessage": "",
+    "scheduleForm": false,
+    "scheduleStart": "",
+    "scheduleStartHour": "",
+    "scheduleStartMinute": "",
+    "scheduleStartAmpm": "",
+    "scheduleEnd": "",
+    "scheduleEndHour": "",
+    "scheduleEndMinute": "",
+    "scheduleEndAmpm": "",
+    "schedulePendingMessage": "",
+    "scheduleMessage": "",
+    "requireLogin": false,
+    "requireLoginMessage": "",
+    "notifications": [],
+    "confirmations": [
+      {
+        "id": "default",
+        "name": "Default Confirmation",
+        "isDefault": true,
+        "type": "message",
+        "message": "Thanks for submitting. We will get in touch with you shortly.",
+        "url": "",
+        "pageId": "",
+        "queryString": "",
+        "disableAutoformat": false,
+        "conditionalLogic": ""
+      }
+    ]
+  },
+  "version": "2.9.5"
+}
