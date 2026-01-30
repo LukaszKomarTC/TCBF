@@ -106,26 +106,39 @@ final class GF_Notification_Config {
 	/**
 	 * Get configured forms for notification sync
 	 *
-	 * Reads form ID from TCBF settings. Can be extended via filter for multiple forms.
+	 * Returns both the Event form and the Booking form.
+	 * Both forms share the unified field contract (same field IDs),
+	 * so they use the same field map and email settings.
 	 *
 	 * @return array<int, array> Form ID => config array
 	 */
 	public static function get_configured_forms(): array {
-		// Get form ID from settings (falls back to 44 if not set)
-		$form_id = self::get_settings_form_id();
+		$event_form_id   = self::get_settings_form_id();
+		$booking_form_id = self::get_settings_booking_form_id();
+
+		$email_settings = [
+			'from_name'  => 'TOSSA CYCLING',
+			'from_email' => 'info@tossacycling.com',
+			'reply_to'   => 'info@tossacycling.com',
+			'bcc'        => 'info@tossacycling.com',
+		];
 
 		$forms = [
-			$form_id => [
-				'name'      => 'TCBF Booking Form',
+			$event_form_id => [
+				'name'      => 'TCBF Event Form',
 				'field_map' => self::$default_field_map,
-				'email'     => [
-					'from_name'  => 'TOSSA CYCLING',
-					'from_email' => 'info@tossacycling.com',
-					'reply_to'   => 'info@tossacycling.com',
-					'bcc'        => 'info@tossacycling.com',
-				],
+				'email'     => $email_settings,
 			],
 		];
+
+		// Add booking form if it's a different form ID (avoid duplicate sync)
+		if ( $booking_form_id !== $event_form_id ) {
+			$forms[ $booking_form_id ] = [
+				'name'      => 'TCBF Booking Form',
+				'field_map' => self::$default_field_map,
+				'email'     => $email_settings,
+			];
+		}
 
 		/**
 		 * Filter configured forms for notification sync
@@ -141,19 +154,31 @@ final class GF_Notification_Config {
 	}
 
 	/**
-	 * Get form ID from TCBF settings
+	 * Get event form ID from TCBF settings
 	 *
 	 * @return int Form ID
 	 */
 	private static function get_settings_form_id(): int {
-		// Check if Settings class is available
 		if ( class_exists( '\\TC_BF\\Admin\\Settings' ) ) {
 			return \TC_BF\Admin\Settings::get_form_id();
 		}
 
-		// Fallback to option directly
 		$form_id = (int) get_option( 'tc_bf_form_id', 44 );
 		return $form_id > 0 ? $form_id : 44;
+	}
+
+	/**
+	 * Get booking form ID from TCBF settings
+	 *
+	 * @return int Form ID
+	 */
+	private static function get_settings_booking_form_id(): int {
+		if ( class_exists( '\\TC_BF\\Admin\\Settings' ) && method_exists( '\\TC_BF\\Admin\\Settings', 'get_booking_form_id' ) ) {
+			return \TC_BF\Admin\Settings::get_booking_form_id();
+		}
+
+		$form_id = (int) get_option( 'tcbf_booking_form_id', 55 );
+		return $form_id > 0 ? $form_id : 55;
 	}
 
 	/**

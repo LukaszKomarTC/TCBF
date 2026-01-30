@@ -74,7 +74,7 @@ final class GF_SemanticFields {
 	 * Log a warning when fallback is used to track migration progress.
 	 */
 	private const LEGACY_FALLBACKS = [
-		// Form 44 - Events
+		// Form 44 - Events (may also be deployed as form 48)
 		44 => [
 			self::KEY_PARTNER_OVERRIDE_CODE    => 63,
 			self::KEY_COUPON_CODE              => 154,
@@ -90,53 +90,36 @@ final class GF_SemanticFields {
 			self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
 			self::KEY_USER_ROLE                => 6,
 		],
-
-		// Form 55 - Booking Products (current staging)
-		// Also serves as default for configured booking form ID
-		55 => [
-			self::KEY_PARTNER_OVERRIDE_CODE    => 24,  // Admin/hotel partner select
-			self::KEY_COUPON_CODE              => 10,
-			self::KEY_PARTNER_USER_ID          => 25,
-			self::KEY_PARTNER_COUPON_CODE      => 26,
-			self::KEY_PARTNER_DISCOUNT_PCT     => 27,
-			self::KEY_PARTNER_COMMISSION_PCT   => 28,
-			self::KEY_PARTNER_EMAIL            => 29,
-			self::KEY_USER_ROLE                => 1,
-			self::KEY_USER_EMAIL               => 12,
-			self::KEY_USER_NAME                => 11,
-			self::KEY_LEDGER_BASE              => 15,
-			self::KEY_LEDGER_EB_PCT            => 16,
-			self::KEY_LEDGER_EB_AMOUNT         => 17,
-			self::KEY_LEDGER_PARTNER_AMOUNT    => 18,
-			self::KEY_LEDGER_TOTAL             => 20,
-			self::KEY_LEDGER_COMMISSION        => 21,
-			self::KEY_PARTNERS_ENABLED         => 30,
-			self::KEY_EB_DISCOUNT_PCT          => 31,
-			self::KEY_DISPLAY_EB_DISCOUNT      => 32,
-			self::KEY_DISPLAY_PARTNER_DISCOUNT => 33,
-		],
 	];
 
 	/**
-	 * Default fallback for booking product forms (when form ID is configured in admin)
+	 * Default fallback for booking product forms (UNIFIED v3 contract)
+	 *
+	 * Since UNIFIED v3, booking form field IDs are aligned with the Event form.
+	 * Most keys resolve via inputName (GF_FieldMap), but these serve as safety net.
 	 */
 	private const BOOKING_FORM_FALLBACKS = [
-		self::KEY_PARTNER_OVERRIDE_CODE  => 24,  // Admin/hotel partner select
-		self::KEY_COUPON_CODE            => 10,
-		self::KEY_PARTNER_USER_ID        => 25,
-		self::KEY_PARTNER_COUPON_CODE    => 26,
-		self::KEY_PARTNER_DISCOUNT_PCT   => 27,
-		self::KEY_PARTNER_COMMISSION_PCT => 28,
-		self::KEY_PARTNER_EMAIL          => 29,
-		self::KEY_USER_ROLE              => 1,
-		self::KEY_USER_EMAIL             => 12,
-		self::KEY_USER_NAME              => 11,
-		self::KEY_LEDGER_BASE            => 15,
-		self::KEY_LEDGER_EB_PCT          => 16,
-		self::KEY_LEDGER_EB_AMOUNT       => 17,
-		self::KEY_LEDGER_PARTNER_AMOUNT  => 18,
-		self::KEY_LEDGER_TOTAL           => 20,
-		self::KEY_LEDGER_COMMISSION      => 21,
+		self::KEY_PARTNER_OVERRIDE_CODE    => 63,
+		self::KEY_COUPON_CODE              => 154,
+		self::KEY_PARTNER_COUPON_CODE      => 154,
+		self::KEY_PARTNER_USER_ID          => 166,
+		self::KEY_PARTNER_DISCOUNT_PCT     => 152,
+		self::KEY_PARTNER_COMMISSION_PCT   => 161,
+		self::KEY_PARTNER_EMAIL            => 153,
+		self::KEY_USER_ROLE                => 6,
+		self::KEY_USER_EMAIL               => 21,
+		self::KEY_USER_NAME                => 2,
+		self::KEY_LEDGER_BASE              => 173,
+		self::KEY_LEDGER_EB_PCT            => 172,
+		self::KEY_LEDGER_EB_AMOUNT         => 175,
+		self::KEY_LEDGER_PARTNER_AMOUNT    => 176,
+		self::KEY_LEDGER_TOTAL             => 168,
+		self::KEY_LEDGER_COMMISSION        => 165,
+		self::KEY_PARTNERS_ENABLED         => 181,
+		self::KEY_EB_DISCOUNT_PCT          => 172,
+		self::KEY_DISPLAY_EB_DISCOUNT      => 179,
+		self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
+		self::KEY_EVENT_ID                 => 20,
 	];
 
 	/**
