@@ -37,17 +37,17 @@ class Woo_BookingLedger {
 	const BK_NOTIFY_PARTICIPANT = '_tcbf_notify_participant';
 
 	/**
-	 * GF field ID for email confirmation checkbox (booking form 55)
+	 * GF field ID for email confirmation checkbox (unified contract: field 118)
 	 * This is the checkbox "Send email confirmation to client"
 	 */
-	const GF_FIELD_NOTIFY = '13.1';
+	const GF_FIELD_NOTIFY = '118.1';
 
 	/**
-	 * GF field IDs for client name (booking form 55)
-	 * Name field 11 with subfields: .3 = First, .6 = Last
+	 * GF field IDs for client name (unified contract: field 2)
+	 * Name field 2 with subfields: .3 = First, .6 = Last
 	 */
-	const GF_FIELD_FIRST_NAME = '11.3';
-	const GF_FIELD_LAST_NAME  = '11.6';
+	const GF_FIELD_FIRST_NAME = '2.3';
+	const GF_FIELD_LAST_NAME  = '2.6';
 
 	/**
 	 * Get the configured booking form ID
