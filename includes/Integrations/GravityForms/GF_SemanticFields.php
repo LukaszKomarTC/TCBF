@@ -117,8 +117,6 @@ final class GF_SemanticFields {
 		self::KEY_LEDGER_COMMISSION        => 165,
 		self::KEY_PARTNERS_ENABLED         => 181,
 		self::KEY_EB_DISCOUNT_PCT          => 172,
-		self::KEY_DISPLAY_EB_DISCOUNT      => 179,
-		self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
 		self::KEY_EVENT_ID                 => 20,
 	];
 
