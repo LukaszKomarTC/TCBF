@@ -1600,8 +1600,8 @@ class Woo_OrderMeta {
 		// Fallback: standalone WC Bookings use _tcbf_notify_participant
 		if ( $confirmation === '' ) {
 			$notify = self::get_item_meta_ci( $item, '_tcbf_notify_participant' );
-			if ( $notify === '1' ) {
-				$confirmation = '1';
+			if ( $notify === '1' || $notify === '0' ) {
+				$confirmation = $notify;
 			}
 		}
 
@@ -2118,6 +2118,17 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
+		// Notification round badge (admin/partner only, both states)
+		if ( $record['confirmation'] !== '' && $show_participant_badge ) {
+			$notify_enabled = ( $record['confirmation'] === '1' );
+			$notify_class   = $notify_enabled ? 'tcbf-notify-badge is-yes' : 'tcbf-notify-badge is-no';
+			$notify_title   = $notify_enabled
+				? __( 'Participant notification: enabled', TC_BF_TEXTDOMAIN )
+				: __( 'Participant notification: disabled', TC_BF_TEXTDOMAIN );
+
+			echo '<span class="' . esc_attr( $notify_class ) . '" title="' . esc_attr( $notify_title ) . '" aria-label="' . esc_attr( $notify_title ) . '"></span>';
+		}
+
 		// EB badge line (if applicable)
 		if ( $record['eb_eligible'] && ( $record['eb_pct'] > 0 || $record['eb_amount'] > 0 ) ) {
 			echo '<div class="tcbf-eb-line">';
@@ -2371,14 +2382,15 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
-		// Notification badge (if confirmation was requested)
-		if ( ! empty( $record['confirmation'] ) ) {
-			echo '<div class="tcbf-notification-line">';
-			echo '<span class="tcbf-notification-badge">';
-			echo '<span class="tcbf-notification-icon">✉️</span>';
-			echo '<span class="tcbf-notification-text">' . esc_html__( 'Email notification', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
-			echo '</div>';
+		// Notification round badge (admin/partner only, both states)
+		if ( $record['confirmation'] !== '' && $show_participant_badge ) {
+			$notify_enabled = ( $record['confirmation'] === '1' );
+			$notify_class   = $notify_enabled ? 'tcbf-notify-badge is-yes' : 'tcbf-notify-badge is-no';
+			$notify_title   = $notify_enabled
+				? __( 'Participant notification: enabled', TC_BF_TEXTDOMAIN )
+				: __( 'Participant notification: disabled', TC_BF_TEXTDOMAIN );
+
+			echo '<span class="' . esc_attr( $notify_class ) . '" title="' . esc_attr( $notify_title ) . '" aria-label="' . esc_attr( $notify_title ) . '"></span>';
 		}
 
 		// EB badge (if applicable)
