@@ -86,6 +86,11 @@ final class GF_Notification_Templates {
 			}
 		}
 
+		// Patch missing inputName on form fields (converts fallback → inputName)
+		if ( ! $dry_run ) {
+			$result['input_name_patches'] = GF_FormValidator::patch_all_input_names();
+		}
+
 		return $result;
 	}
 

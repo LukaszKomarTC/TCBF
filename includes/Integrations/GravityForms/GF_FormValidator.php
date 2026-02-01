@@ -40,9 +40,8 @@ final class GF_FormValidator {
 			GF_SemanticFields::KEY_USER_NAME,
 			// Early booking
 			GF_SemanticFields::KEY_EB_DISCOUNT_PCT,
-			// Ledger / pricing
+			// Ledger / pricing (KEY_LEDGER_EB_PCT omitted — same field as KEY_EB_DISCOUNT_PCT)
 			GF_SemanticFields::KEY_LEDGER_BASE,
-			GF_SemanticFields::KEY_LEDGER_EB_PCT,
 			GF_SemanticFields::KEY_LEDGER_EB_AMOUNT,
 			GF_SemanticFields::KEY_LEDGER_PARTNER_AMOUNT,
 			GF_SemanticFields::KEY_LEDGER_TOTAL,
@@ -65,9 +64,8 @@ final class GF_FormValidator {
 			GF_SemanticFields::KEY_USER_NAME,
 			// Early booking
 			GF_SemanticFields::KEY_EB_DISCOUNT_PCT,
-			// Ledger / pricing
+			// Ledger / pricing (KEY_LEDGER_EB_PCT omitted — same field as KEY_EB_DISCOUNT_PCT)
 			GF_SemanticFields::KEY_LEDGER_BASE,
-			GF_SemanticFields::KEY_LEDGER_EB_PCT,
 			GF_SemanticFields::KEY_LEDGER_EB_AMOUNT,
 			GF_SemanticFields::KEY_LEDGER_PARTNER_AMOUNT,
 			GF_SemanticFields::KEY_LEDGER_TOTAL,
@@ -469,6 +467,100 @@ final class GF_FormValidator {
 			<?php echo esc_html__( 'inputName = field has inputName set (portable). Fallback = using hardcoded field ID (fragile). Missing = field not found.', 'tc-booking-flow-next' ); ?>
 		</p>
 		<?php
+	}
+
+	/**
+	 * Patch missing inputName on all configured forms
+	 *
+	 * Called during notification sync to ensure fields have inputName set.
+	 * Fields that currently resolve via fallback get their inputName set
+	 * to the semantic key, making them portable.
+	 *
+	 * @return array Results per form
+	 */
+	public static function patch_all_input_names() : array {
+		$results = [];
+
+		$event_form_id = self::get_event_form_id();
+		if ( $event_form_id > 0 ) {
+			$results['event'] = self::patch_input_names( $event_form_id, self::PROFILE_EVENT );
+		}
+
+		$booking_form_id = self::get_booking_form_id();
+		if ( $booking_form_id > 0 && $booking_form_id !== $event_form_id ) {
+			$results['booking'] = self::patch_input_names( $booking_form_id, self::PROFILE_BOOKING );
+		}
+
+		return $results;
+	}
+
+	/**
+	 * Patch missing inputName on form fields using fallback mappings
+	 *
+	 * For each required field that resolves via fallback (hardcoded ID)
+	 * instead of inputName, this sets the inputName property on the GF field
+	 * so future resolution is portable.
+	 *
+	 * @param int    $form_id GF form ID
+	 * @param string $profile Profile name
+	 * @return array{patched: array, errors: array}
+	 */
+	public static function patch_input_names( int $form_id, string $profile ) : array {
+		if ( ! class_exists( 'GFAPI' ) ) {
+			return [ 'patched' => [], 'errors' => [ 'GFAPI not available' ] ];
+		}
+
+		$result = self::validate( $form_id, $profile );
+		$using_fallback = $result['using_fallback'] ?? [];
+
+		if ( empty( $using_fallback ) ) {
+			return [ 'patched' => [], 'errors' => [] ];
+		}
+
+		$form = \GFAPI::get_form( $form_id );
+		if ( ! is_array( $form ) || empty( $form['fields'] ) ) {
+			return [ 'patched' => [], 'errors' => [ 'Could not load form ' . $form_id ] ];
+		}
+
+		// Build field_id => semantic_key map from fallback results
+		$fid_to_key = [];
+		foreach ( $using_fallback as $key => $fid ) {
+			$fid_to_key[ (int) $fid ] = $key;
+		}
+
+		$patched = [];
+		$modified = false;
+
+		foreach ( $form['fields'] as $field ) {
+			$field_id = (int) $field->id;
+
+			if ( ! isset( $fid_to_key[ $field_id ] ) ) {
+				continue;
+			}
+
+			$current_input_name = $field->inputName ?? '';
+			if ( $current_input_name !== '' ) {
+				continue; // Already has inputName, don't overwrite
+			}
+
+			$semantic_key = $fid_to_key[ $field_id ];
+			$field->inputName = $semantic_key;
+			$field->allowsPrepopulate = true;
+
+			$patched[ $semantic_key ] = $field_id;
+			$modified = true;
+		}
+
+		if ( $modified ) {
+			$update = \GFAPI::update_form( $form );
+			if ( is_wp_error( $update ) ) {
+				return [ 'patched' => $patched, 'errors' => [ $update->get_error_message() ] ];
+			}
+			// Clear field map cache so next resolution uses inputName
+			GF_FieldMap::clear_cache( $form_id );
+		}
+
+		return [ 'patched' => $patched, 'errors' => [] ];
 	}
 
 	/**
