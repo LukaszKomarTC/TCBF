@@ -269,6 +269,13 @@ final class Settings {
 			<hr/>
 			<h2><?php echo esc_html__('Form Health', 'tc-booking-flow-next'); ?></h2>
 			<?php
+			// Process sync POST BEFORE rendering health check, so patched inputName is visible
+			$sync_result = null;
+			if ( isset( $_POST['tcbf_sync_notifications'] ) && check_admin_referer( 'tcbf_sync_notifications' ) ) {
+				$dry_run = isset( $_POST['tcbf_dry_run'] );
+				$sync_result = \TC_BF\Integrations\GravityForms\GF_Notification_Templates::sync_all( $dry_run );
+			}
+
 			if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_FormValidator' ) ) {
 				\TC_BF\Integrations\GravityForms\GF_FormValidator::render_health_section();
 			}
@@ -277,7 +284,7 @@ final class Settings {
 			<hr/>
 			<h2><?php echo esc_html__('Tools', 'tc-booking-flow-next'); ?></h2>
 
-			<?php self::render_notification_tools(); ?>
+			<?php self::render_notification_tools( $sync_result ); ?>
 
 			<hr/>
 			<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
@@ -410,11 +417,10 @@ final class Settings {
 	/**
 	 * Render notification sync tools section
 	 */
-	private static function render_notification_tools(): void {
-		// Handle sync action
-		if ( isset( $_POST['tcbf_sync_notifications'] ) && check_admin_referer( 'tcbf_sync_notifications' ) ) {
+	private static function render_notification_tools( ?array $result = null ): void {
+		// Display sync result (POST was already processed before health check)
+		if ( $result !== null ) {
 			$dry_run = isset( $_POST['tcbf_dry_run'] );
-			$result = GF_Notification_Templates::sync_all( $dry_run );
 
 			if ( $result['success'] ) {
 				$msg = $dry_run
