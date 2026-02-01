@@ -93,6 +93,13 @@ class Woo_OrderMeta {
 		}
 		if ( ! empty( $booking[self::BK_ENTRY_ID] ) ) {
 			$item->add_meta_data( '_gf_entry_id', $booking[self::BK_ENTRY_ID] );
+		} else {
+			// Fallback: booking products (GF Product Add-ons) store entry data in _gravity_form_lead
+			$lead = $cart_item['_gravity_form_lead'] ?? [];
+			$lead_entry_id = (int) ( $lead['id'] ?? 0 );
+			if ( $lead_entry_id > 0 ) {
+				$item->add_meta_data( '_gf_entry_id', $lead_entry_id );
+			}
 		}
 		if ( ! empty( $booking['_participant_email'] ) ) {
 			$item->add_meta_data( 'email', $booking['_participant_email'] );
