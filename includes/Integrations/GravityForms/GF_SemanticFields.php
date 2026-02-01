@@ -73,33 +73,37 @@ final class GF_SemanticFields {
 	 * These are used when inputName is not set on the form.
 	 * Log a warning when fallback is used to track migration progress.
 	 */
-	private const LEGACY_FALLBACKS = [
-		// Form 44 - Events (may also be deployed as form 48)
-		// Unified contract: same field IDs as Booking Form v3
-		44 => [
-			self::KEY_PARTNER_OVERRIDE_CODE    => 63,
-			self::KEY_COUPON_CODE              => 154,
-			self::KEY_PARTNER_COUPON_CODE      => 154,
-			self::KEY_PARTNER_USER_ID          => 166,
-			self::KEY_PARTNER_DISCOUNT_PCT     => 152,
-			self::KEY_PARTNER_COMMISSION_PCT   => 161,
-			self::KEY_PARTNER_EMAIL            => 153,
-			self::KEY_EVENT_ID                 => 20,
-			self::KEY_EVENT_UID                => 145,
-			self::KEY_PARTNERS_ENABLED         => 181,
-			self::KEY_EB_DISCOUNT_PCT          => 172,
-			self::KEY_DISPLAY_EB_DISCOUNT      => 179,
-			self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
-			self::KEY_USER_ROLE                => 6,
-			self::KEY_USER_EMAIL               => 21,
-			self::KEY_USER_NAME                => 2,
-			self::KEY_LEDGER_BASE              => 173,
-			self::KEY_LEDGER_EB_PCT            => 172,
-			self::KEY_LEDGER_EB_AMOUNT         => 175,
-			self::KEY_LEDGER_PARTNER_AMOUNT    => 176,
-			self::KEY_LEDGER_TOTAL             => 168,
-			self::KEY_LEDGER_COMMISSION        => 165,
-		],
+	private const LEGACY_FALLBACKS = [];
+
+	/**
+	 * Default fallback for the configured Event form (dynamic — works for any form ID)
+	 *
+	 * Unified contract: same field IDs as Booking Form v3.
+	 * Matched against the configured event form ID from admin settings.
+	 */
+	private const EVENT_FORM_FALLBACKS = [
+		self::KEY_PARTNER_OVERRIDE_CODE    => 63,
+		self::KEY_COUPON_CODE              => 154,
+		self::KEY_PARTNER_COUPON_CODE      => 154,
+		self::KEY_PARTNER_USER_ID          => 166,
+		self::KEY_PARTNER_DISCOUNT_PCT     => 152,
+		self::KEY_PARTNER_COMMISSION_PCT   => 161,
+		self::KEY_PARTNER_EMAIL            => 153,
+		self::KEY_EVENT_ID                 => 20,
+		self::KEY_EVENT_UID                => 145,
+		self::KEY_PARTNERS_ENABLED         => 181,
+		self::KEY_EB_DISCOUNT_PCT          => 172,
+		self::KEY_DISPLAY_EB_DISCOUNT      => 179,
+		self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
+		self::KEY_USER_ROLE                => 6,
+		self::KEY_USER_EMAIL               => 21,
+		self::KEY_USER_NAME                => 2,
+		self::KEY_LEDGER_BASE              => 173,
+		self::KEY_LEDGER_EB_PCT            => 172,
+		self::KEY_LEDGER_EB_AMOUNT         => 175,
+		self::KEY_LEDGER_PARTNER_AMOUNT    => 176,
+		self::KEY_LEDGER_TOTAL             => 168,
+		self::KEY_LEDGER_COMMISSION        => 165,
 	];
 
 	/**
@@ -273,6 +277,12 @@ final class GF_SemanticFields {
 			return self::LEGACY_FALLBACKS[ $form_id ][ $key ];
 		}
 
+		// Check if this is the configured event form
+		$event_form_id = self::get_event_form_id();
+		if ( $form_id === $event_form_id && isset( self::EVENT_FORM_FALLBACKS[ $key ] ) ) {
+			return self::EVENT_FORM_FALLBACKS[ $key ];
+		}
+
 		// Check if this is the configured booking form
 		$booking_form_id = self::get_booking_form_id();
 		if ( $form_id === $booking_form_id && isset( self::BOOKING_FORM_FALLBACKS[ $key ] ) ) {
@@ -280,6 +290,18 @@ final class GF_SemanticFields {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Get the configured event form ID (from admin settings)
+	 *
+	 * @return int
+	 */
+	private static function get_event_form_id() : int {
+		if ( class_exists( '\\TC_BF\\Admin\\Settings' ) && method_exists( '\\TC_BF\\Admin\\Settings', 'get_form_id' ) ) {
+			return \TC_BF\Admin\Settings::get_form_id();
+		}
+		return 44; // Default fallback
 	}
 
 	/**
