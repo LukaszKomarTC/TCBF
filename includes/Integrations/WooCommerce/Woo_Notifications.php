@@ -34,6 +34,37 @@ class Woo_Notifications {
 	const META_SETTLED_NOTIFS_SENT_AT = '_tcbf_settled_notifs_sent_at';
 
 	/* =========================================================
+	 * Bridge: write _gf_entry_id when GF WC Add-on creates entry
+	 * ========================================================= */
+
+	/**
+	 * Bridge _gf_entry_id onto the order item when the GF WC Product Add-ons
+	 * plugin creates the real GF entry at checkout time.
+	 *
+	 * Hook: woocommerce_gravityforms_entry_created (fired by Lucas Stark's plugin)
+	 *
+	 * @param int|mixed $entry_id   GF entry ID just created.
+	 * @param int|mixed $order_id   WC order ID.
+	 * @param mixed     $order_item WC_Order_Item_Product instance.
+	 * @param mixed     $form_data  Form config array.
+	 * @param mixed     $lead_data  Raw field values.
+	 */
+	public static function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		$entry_id = (int) $entry_id;
+		if ( $entry_id <= 0 ) return;
+
+		if ( ! is_object( $order_item ) || ! method_exists( $order_item, 'update_meta_data' ) ) return;
+
+		$order_item->update_meta_data( '_gf_entry_id', (string) $entry_id );
+		$order_item->save();
+
+		\TC_BF\Support\Logger::log( 'gf.notif.bridge_entry_id', [
+			'entry_id' => $entry_id,
+			'order_id' => (int) $order_id,
+		]);
+	}
+
+	/* =========================================================
 	 * GF notifications (parity with legacy snippets)
 	 * ========================================================= */
 
@@ -47,6 +78,37 @@ class Woo_Notifications {
 		$events['WC___paid']    = __( 'WooCommerce order paid (includes invoiced)', TC_BF_TEXTDOMAIN );
 		$events['WC___settled'] = __( 'Invoice settled (future use)', TC_BF_TEXTDOMAIN );
 		return $events;
+	}
+
+	/**
+	 * Collect GF entry IDs from order line items.
+	 *
+	 * Resolution order per item:
+	 * 1. _gf_entry_id (written by TCBF or bridge_gf_entry_id_to_order_item)
+	 * 2. _gravity_forms_history['_gravity_form_linked_entry_id'] (written by WC GF Product Add-ons)
+	 *
+	 * @param \WC_Order $order
+	 * @return int[] Unique entry IDs.
+	 */
+	private static function collect_entry_ids( \WC_Order $order ) : array {
+		$entry_ids = [];
+		foreach ( $order->get_items() as $item ) {
+			if ( ! is_object( $item ) || ! method_exists( $item, 'get_meta' ) ) continue;
+
+			// Primary: _gf_entry_id (TCBF event packs + bridge hook for booking products)
+			$eid = (int) $item->get_meta( '_gf_entry_id', true );
+
+			// Fallback: WC GF Product Add-ons stores the linked entry ID in _gravity_forms_history
+			if ( $eid <= 0 ) {
+				$history = $item->get_meta( '_gravity_forms_history', true );
+				if ( is_array( $history ) && ! empty( $history['_gravity_form_linked_entry_id'] ) ) {
+					$eid = (int) $history['_gravity_form_linked_entry_id'];
+				}
+			}
+
+			if ( $eid > 0 ) $entry_ids[] = $eid;
+		}
+		return array_values( array_unique( $entry_ids ) );
 	}
 
 	/**
@@ -85,14 +147,7 @@ class Woo_Notifications {
 			$trigger = $order->get_status();
 		}
 
-		// Gather GF entry ids from line items (pack parent items have _gf_entry_id)
-		$entry_ids = [];
-		foreach ( $order->get_items() as $item ) {
-			if ( ! is_object($item) || ! method_exists($item, 'get_meta') ) continue;
-			$eid = (int) $item->get_meta( '_gf_entry_id', true );
-			if ( $eid > 0 ) $entry_ids[] = $eid;
-		}
-		$entry_ids = array_values( array_unique( array_filter( $entry_ids ) ) );
+		$entry_ids = self::collect_entry_ids( $order );
 
 		// No GF entries found - skip silently (may be non-pack order)
 		if ( ! $entry_ids ) return;
@@ -160,14 +215,7 @@ class Woo_Notifications {
 		}
 		if ( ! $order ) return;
 
-		// Gather GF entry ids from line items
-		$entry_ids = [];
-		foreach ( $order->get_items() as $item ) {
-			if ( ! is_object($item) || ! method_exists($item, 'get_meta') ) continue;
-			$eid = (int) $item->get_meta( '_gf_entry_id', true );
-			if ( $eid > 0 ) $entry_ids[] = $eid;
-		}
-		$entry_ids = array_values( array_unique( array_filter( $entry_ids ) ) );
+		$entry_ids = self::collect_entry_ids( $order );
 		if ( empty( $entry_ids ) ) return;
 
 		if ( ! class_exists('GFAPI') ) return;

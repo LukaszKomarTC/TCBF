@@ -280,6 +280,7 @@ final class Plugin {
 		// ---- GF notifications: custom event + fire on paid-equivalent statuses
 		// Paid-equivalent: processing, completed, invoiced (see Woo_StatusPolicy)
 		add_filter('gform_notification_events', [ $this, 'gf_register_notification_events' ], 10, 1);
+		add_action('woocommerce_gravityforms_entry_created', [ $this, 'bridge_gf_entry_id_to_order_item' ], 10, 5);
 		add_action('woocommerce_payment_complete', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 1);
 		// All paid-equivalent statuses fire WC___paid event
 		add_action('woocommerce_order_status_processing', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 2);
@@ -2181,6 +2182,10 @@ final class Plugin {
 	}
 
 	// Woo_Notifications delegation
+	public function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		Integrations\WooCommerce\Woo_Notifications::bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data );
+	}
+
 	public function gf_register_notification_events( array $events ) : array {
 		return Integrations\WooCommerce\Woo_Notifications::gf_register_notification_events($events);
 	}
