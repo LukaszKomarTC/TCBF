@@ -24,17 +24,48 @@ final class GF_FormValidator {
 	 */
 	const REQUIRED_KEYS = [
 		self::PROFILE_EVENT => [
+			// Event identification
 			GF_SemanticFields::KEY_EVENT_ID,
+			// Partner attribution
 			GF_SemanticFields::KEY_COUPON_CODE,
 			GF_SemanticFields::KEY_PARTNER_OVERRIDE_CODE,
 			GF_SemanticFields::KEY_PARTNER_USER_ID,
 			GF_SemanticFields::KEY_PARTNER_DISCOUNT_PCT,
 			GF_SemanticFields::KEY_PARTNER_COMMISSION_PCT,
 			GF_SemanticFields::KEY_PARTNER_EMAIL,
+			GF_SemanticFields::KEY_PARTNERS_ENABLED,
+			// User fields
+			GF_SemanticFields::KEY_USER_ROLE,
+			GF_SemanticFields::KEY_USER_EMAIL,
+			GF_SemanticFields::KEY_USER_NAME,
+			// Early booking
+			GF_SemanticFields::KEY_EB_DISCOUNT_PCT,
+			// Ledger / pricing
+			GF_SemanticFields::KEY_LEDGER_BASE,
+			GF_SemanticFields::KEY_LEDGER_EB_PCT,
+			GF_SemanticFields::KEY_LEDGER_EB_AMOUNT,
+			GF_SemanticFields::KEY_LEDGER_PARTNER_AMOUNT,
+			GF_SemanticFields::KEY_LEDGER_TOTAL,
+			GF_SemanticFields::KEY_LEDGER_COMMISSION,
 		],
 		self::PROFILE_BOOKING => [
+			// Event identification
+			GF_SemanticFields::KEY_EVENT_ID,
+			// Partner attribution
 			GF_SemanticFields::KEY_COUPON_CODE,
 			GF_SemanticFields::KEY_PARTNER_OVERRIDE_CODE,
+			GF_SemanticFields::KEY_PARTNER_USER_ID,
+			GF_SemanticFields::KEY_PARTNER_DISCOUNT_PCT,
+			GF_SemanticFields::KEY_PARTNER_COMMISSION_PCT,
+			GF_SemanticFields::KEY_PARTNER_EMAIL,
+			GF_SemanticFields::KEY_PARTNERS_ENABLED,
+			// User fields
+			GF_SemanticFields::KEY_USER_ROLE,
+			GF_SemanticFields::KEY_USER_EMAIL,
+			GF_SemanticFields::KEY_USER_NAME,
+			// Early booking
+			GF_SemanticFields::KEY_EB_DISCOUNT_PCT,
+			// Ledger / pricing
 			GF_SemanticFields::KEY_LEDGER_BASE,
 			GF_SemanticFields::KEY_LEDGER_EB_PCT,
 			GF_SemanticFields::KEY_LEDGER_EB_AMOUNT,

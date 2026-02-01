@@ -75,9 +75,11 @@ final class GF_SemanticFields {
 	 */
 	private const LEGACY_FALLBACKS = [
 		// Form 44 - Events (may also be deployed as form 48)
+		// Unified contract: same field IDs as Booking Form v3
 		44 => [
 			self::KEY_PARTNER_OVERRIDE_CODE    => 63,
 			self::KEY_COUPON_CODE              => 154,
+			self::KEY_PARTNER_COUPON_CODE      => 154,
 			self::KEY_PARTNER_USER_ID          => 166,
 			self::KEY_PARTNER_DISCOUNT_PCT     => 152,
 			self::KEY_PARTNER_COMMISSION_PCT   => 161,
@@ -89,6 +91,14 @@ final class GF_SemanticFields {
 			self::KEY_DISPLAY_EB_DISCOUNT      => 179,
 			self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
 			self::KEY_USER_ROLE                => 6,
+			self::KEY_USER_EMAIL               => 21,
+			self::KEY_USER_NAME                => 2,
+			self::KEY_LEDGER_BASE              => 173,
+			self::KEY_LEDGER_EB_PCT            => 172,
+			self::KEY_LEDGER_EB_AMOUNT         => 175,
+			self::KEY_LEDGER_PARTNER_AMOUNT    => 176,
+			self::KEY_LEDGER_TOTAL             => 168,
+			self::KEY_LEDGER_COMMISSION        => 165,
 		],
 	];
 
