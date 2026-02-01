@@ -138,6 +138,17 @@ class Woo_BookingLedger {
 			return;
 		}
 
+		// Sanity check: reject hallucinated prices from WC Bookings
+		// (can happen when date range spans unavailable dates)
+		$product = wc_get_product( $product_id );
+		if ( $product ) {
+			$unit_price = (float) $product->get_price();
+			if ( $unit_price > 0 && $base_price > $unit_price * 366 ) {
+				wp_send_json_success( self::get_empty_ledger_response() );
+				return;
+			}
+		}
+
 		// Parse start date to timestamp
 		$start_ts = 0;
 		if ( $start_date !== '' ) {
@@ -260,6 +271,22 @@ class Woo_BookingLedger {
 
 		if ( $base_price <= 0 ) {
 			return $cart_item_data;
+		}
+
+		// Sanity check: reject hallucinated prices from WC Bookings
+		// (can happen when date range spans unavailable dates)
+		$product = wc_get_product( $product_id );
+		if ( $product ) {
+			$unit_price = (float) $product->get_price();
+			if ( $unit_price > 0 && $base_price > $unit_price * 366 ) {
+				Logger::log( 'woo.booking_ledger.price_rejected', [
+					'product_id'  => $product_id,
+					'base_price'  => $base_price,
+					'unit_price'  => $unit_price,
+					'reason'      => 'exceeds sanity cap (unit_price * 366)',
+				], 'warning' );
+				return $cart_item_data;
+			}
 		}
 
 		// Resolve partner context from the lead data

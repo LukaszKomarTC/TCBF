@@ -59,34 +59,42 @@ final class GF_JS {
 		// Primary calculation is now via PHP AJAX endpoint for consistency
 		$eb_rules = [];
 		$product_id = 0;
+		$product_max_price = 0;
 		if ( $is_booking_form && function_exists('is_product') && is_product() ) {
 			$product_id = (int) get_queried_object_id();
-			if ( $product_id > 0 && class_exists( '\\TC_BF\\Domain\\ProductEBConfig' ) ) {
-				$eb_cfg = \TC_BF\Domain\ProductEBConfig::get_product_config( $product_id );
-				if ( ! empty( $eb_cfg['enabled'] ) && ! empty( $eb_cfg['steps'] ) ) {
-					$eb_rules = [
-						'enabled'    => true,
-						'steps'      => $eb_cfg['steps'],
-						'global_cap' => $eb_cfg['global_cap'] ?? [],
-					];
+			if ( $product_id > 0 ) {
+				$product = wc_get_product( $product_id );
+				if ( $product ) {
+					$product_max_price = (float) $product->get_price();
+				}
+				if ( class_exists( '\\TC_BF\\Domain\\ProductEBConfig' ) ) {
+					$eb_cfg = \TC_BF\Domain\ProductEBConfig::get_product_config( $product_id );
+					if ( ! empty( $eb_cfg['enabled'] ) && ! empty( $eb_cfg['steps'] ) ) {
+						$eb_rules = [
+							'enabled'    => true,
+							'steps'      => $eb_cfg['steps'],
+							'global_cap' => $eb_cfg['global_cap'] ?? [],
+						];
+					}
 				}
 			}
 		}
 
 		// Cache payload for footer output.
 		self::$partner_js_payload[ $form_id ] = [
-			'partners'     => $partners,
-			'initial_code' => $initial_code,
-			'i18n'         => $i18n,
-			'field_ids'    => $field_ids,
-			'eb_rules'     => $eb_rules,
-			'is_booking'   => $is_booking_form,
-			'product_id'   => $product_id,
-			'ajax_url'     => admin_url( 'admin-ajax.php' ),
+			'partners'          => $partners,
+			'initial_code'      => $initial_code,
+			'i18n'              => $i18n,
+			'field_ids'         => $field_ids,
+			'eb_rules'          => $eb_rules,
+			'is_booking'        => $is_booking_form,
+			'product_id'        => $product_id,
+			'product_max_price' => $product_max_price,
+			'ajax_url'          => admin_url( 'admin-ajax.php' ),
 		];
 
 		// Also register an init script so this works even when GF renders via AJAX.
-		self::register_partner_init_script( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking_form, $product_id );
+		self::register_partner_init_script( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking_form, $product_id, $product_max_price );
 
 		// Inject partner banner HTML field if it doesn't exist in the form
 		$form = self::maybe_inject_partner_banner( $form, $form_id );
@@ -375,11 +383,11 @@ final class GF_JS {
 		];
 	}
 
-	private static function register_partner_init_script( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0 ) : void {
+	private static function register_partner_init_script( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0, float $product_max_price = 0 ) : void {
 		if ( $form_id <= 0 ) return;
 		if ( ! class_exists('\GFFormDisplay') ) return;
 
-		$script = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id );
+		$script = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id, $product_max_price );
 		if ( $script === '' ) return;
 
 		\GFFormDisplay::add_init_script(
@@ -395,7 +403,7 @@ final class GF_JS {
 	 *
 	 * Uses semantic field IDs passed from PHP - no hardcoded field numbers in JS.
 	 */
-	private static function build_partner_override_js( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0 ) : string {
+	private static function build_partner_override_js( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0, float $product_max_price = 0 ) : string {
 		$json = wp_json_encode( $partners );
 		$field_ids_json = wp_json_encode( $field_ids );
 		$eb_rules_json = wp_json_encode( $eb_rules );
@@ -421,6 +429,7 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
   var ebRules = {$eb_rules_json};
   var isBookingForm = {$is_booking_js};
   var productId = {$product_id};
+  var productMaxPrice = {$product_max_price};
   var ajaxUrl = '{$ajax_url}';
 
   // i18n
@@ -907,6 +916,14 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
       return;
     }
 
+    // Sanity check: reject hallucinated prices from WC Bookings
+    // (can happen when date range spans unavailable dates)
+    if(productMaxPrice > 0 && basePrice > productMaxPrice * 366){
+      console.warn('[TCBF] Booking cost rejected (exceeds sanity cap):', basePrice, 'max:', productMaxPrice * 366);
+      clearLedgerFields();
+      return;
+    }
+
     // If no productId or ajaxUrl, use client-side fallback
     if(!productId || productId <= 0 || !ajaxUrl){
       calculateLedgerClientSide(basePrice, startDate);
@@ -1075,8 +1092,9 @@ JS;
 			$eb_rules = (is_array($payload) && isset($payload['eb_rules']) && is_array($payload['eb_rules'])) ? $payload['eb_rules'] : [];
 			$is_booking = (is_array($payload) && isset($payload['is_booking'])) ? (bool) $payload['is_booking'] : false;
 			$product_id = (is_array($payload) && isset($payload['product_id'])) ? (int) $payload['product_id'] : 0;
+			$product_max_price = (is_array($payload) && isset($payload['product_max_price'])) ? (float) $payload['product_max_price'] : 0;
 
-			$js = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id );
+			$js = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id, $product_max_price );
 			if ( $js === '' ) continue;
 
 			echo "\n<script id=\"tc-bf-partner-override-{$form_id}\">\n";
