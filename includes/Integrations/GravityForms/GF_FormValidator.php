@@ -26,6 +26,8 @@ final class GF_FormValidator {
 		self::PROFILE_EVENT => [
 			// Event identification
 			GF_SemanticFields::KEY_EVENT_ID,
+			GF_SemanticFields::KEY_EVENT_TITLE,
+			GF_SemanticFields::KEY_START_DATE,
 			// Partner attribution
 			GF_SemanticFields::KEY_COUPON_CODE,
 			GF_SemanticFields::KEY_PARTNER_OVERRIDE_CODE,
@@ -38,6 +40,7 @@ final class GF_FormValidator {
 			GF_SemanticFields::KEY_USER_ROLE,
 			GF_SemanticFields::KEY_USER_EMAIL,
 			GF_SemanticFields::KEY_USER_NAME,
+			GF_SemanticFields::KEY_USER_ID,
 			// Early booking
 			GF_SemanticFields::KEY_EB_DISCOUNT_PCT,
 			// Ledger / pricing (KEY_LEDGER_EB_PCT omitted — same field as KEY_EB_DISCOUNT_PCT)
@@ -50,6 +53,8 @@ final class GF_FormValidator {
 		self::PROFILE_BOOKING => [
 			// Event identification
 			GF_SemanticFields::KEY_EVENT_ID,
+			GF_SemanticFields::KEY_EVENT_TITLE,
+			GF_SemanticFields::KEY_START_DATE,
 			// Partner attribution
 			GF_SemanticFields::KEY_COUPON_CODE,
 			GF_SemanticFields::KEY_PARTNER_OVERRIDE_CODE,
@@ -62,6 +67,7 @@ final class GF_FormValidator {
 			GF_SemanticFields::KEY_USER_ROLE,
 			GF_SemanticFields::KEY_USER_EMAIL,
 			GF_SemanticFields::KEY_USER_NAME,
+			GF_SemanticFields::KEY_USER_ID,
 			// Early booking
 			GF_SemanticFields::KEY_EB_DISCOUNT_PCT,
 			// Ledger / pricing (KEY_LEDGER_EB_PCT omitted — same field as KEY_EB_DISCOUNT_PCT)

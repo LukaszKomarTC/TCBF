@@ -305,6 +305,10 @@ class Woo_BookingLedger {
 
 		// Populate GF lead with ledger data
 		BookingLedger::populate_lead_with_ledger( $lead, $ledger, $form_id );
+
+		// Populate event context (title, date) and user context (ID, role)
+		self::populate_lead_with_event_context( $lead, $form_id, $product_id, $start_ts );
+
 		$cart_item_data['_gravity_form_lead'] = $lead;
 
 		// Log the calculation
@@ -469,6 +473,54 @@ class Woo_BookingLedger {
 
 		// Fall back to standard resolution
 		return PartnerResolver::resolve_partner_context( $form_id );
+	}
+
+	/**
+	 * Populate GF lead with event context and user context for notifications.
+	 *
+	 * Sets fields that are needed in notification templates but not part of the ledger:
+	 * - Event title (from WC product name)
+	 * - Start date (human-readable and timestamp, from booking data)
+	 * - Event ID (WC product ID)
+	 * - User ID and role (from current WP user)
+	 *
+	 * @param array &$lead      GF lead data (by reference)
+	 * @param int   $form_id    GF form ID
+	 * @param int   $product_id WC product ID
+	 * @param int   $start_ts   Booking start timestamp
+	 */
+	private static function populate_lead_with_event_context( array &$lead, int $form_id, int $product_id, int $start_ts ) : void {
+
+		$set_field = function( string $key, string $value ) use ( &$lead, $form_id ) {
+			if ( $value === '' ) return;
+			$field_id = GF_SemanticFields::field_id( $form_id, $key );
+			if ( $field_id !== null && $field_id > 0 ) {
+				$lead[ (string) $field_id ] = $value;
+			}
+		};
+
+		// Event title: WC product name (represents the tour/event)
+		$product_title = get_the_title( $product_id );
+		$set_field( GF_SemanticFields::KEY_EVENT_TITLE, $product_title );
+
+		// Start date
+		if ( $start_ts > 0 ) {
+			$set_field( GF_SemanticFields::KEY_START_DATE, wp_date( 'j M Y', $start_ts ) );
+			$set_field( GF_SemanticFields::KEY_START_DATE_STAMP, (string) $start_ts );
+		}
+
+		// Event ID: use WC product ID as event reference for booking products
+		$set_field( GF_SemanticFields::KEY_EVENT_ID, (string) $product_id );
+
+		// User context
+		$user_id = get_current_user_id();
+		if ( $user_id > 0 ) {
+			$set_field( GF_SemanticFields::KEY_USER_ID, (string) $user_id );
+			$user = wp_get_current_user();
+			if ( $user && ! empty( $user->roles ) ) {
+				$set_field( GF_SemanticFields::KEY_USER_ROLE, (string) $user->roles[0] );
+			}
+		}
 	}
 
 	/**

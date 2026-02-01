@@ -47,11 +47,16 @@ final class GF_SemanticFields {
 	// Event fields (Form 44)
 	const KEY_EVENT_ID              = 'event_id';               // Event post ID
 	const KEY_EVENT_UID             = 'event_uid';              // Event unique identifier
+	const KEY_EVENT_TITLE           = 'event_title';            // Event/tour title
+	const KEY_START_DATE            = 'start_date';             // Event start date (human-readable)
+	const KEY_START_DATE_STAMP      = 'start_date_stamp';       // Event start date (Unix timestamp)
 
 	// User fields
 	const KEY_USER_ROLE             = 'user_role';              // WordPress user role
 	const KEY_USER_EMAIL            = 'user_email';             // User email
 	const KEY_USER_NAME             = 'user_name';              // User full name
+	const KEY_USER_ID               = 'user_id';                // WordPress user ID
+	const KEY_PARTICIPANT_PHONE     = 'participant_phone';      // Participant phone number
 
 	// Ledger fields (booking products)
 	const KEY_LEDGER_BASE           = 'ledger_base';            // Base price before discounts
@@ -91,6 +96,9 @@ final class GF_SemanticFields {
 		self::KEY_PARTNER_EMAIL            => 153,
 		self::KEY_EVENT_ID                 => 20,
 		self::KEY_EVENT_UID                => 145,
+		self::KEY_EVENT_TITLE              => 1,
+		self::KEY_START_DATE               => 131,
+		self::KEY_START_DATE_STAMP         => 132,
 		self::KEY_PARTNERS_ENABLED         => 181,
 		self::KEY_EB_DISCOUNT_PCT          => 172,
 		self::KEY_DISPLAY_EB_DISCOUNT      => 179,
@@ -98,6 +106,8 @@ final class GF_SemanticFields {
 		self::KEY_USER_ROLE                => 6,
 		self::KEY_USER_EMAIL               => 21,
 		self::KEY_USER_NAME                => 2,
+		self::KEY_USER_ID                  => 167,
+		self::KEY_PARTICIPANT_PHONE        => 123,
 		self::KEY_LEDGER_BASE              => 173,
 		self::KEY_LEDGER_EB_PCT            => 172,
 		self::KEY_LEDGER_EB_AMOUNT         => 175,
@@ -120,9 +130,15 @@ final class GF_SemanticFields {
 		self::KEY_PARTNER_DISCOUNT_PCT     => 152,
 		self::KEY_PARTNER_COMMISSION_PCT   => 161,
 		self::KEY_PARTNER_EMAIL            => 153,
+		self::KEY_EVENT_ID                 => 20,
+		self::KEY_EVENT_TITLE              => 1,
+		self::KEY_START_DATE               => 131,
+		self::KEY_START_DATE_STAMP         => 132,
 		self::KEY_USER_ROLE                => 6,
 		self::KEY_USER_EMAIL               => 21,
 		self::KEY_USER_NAME                => 2,
+		self::KEY_USER_ID                  => 167,
+		self::KEY_PARTICIPANT_PHONE        => 123,
 		self::KEY_LEDGER_BASE              => 173,
 		self::KEY_LEDGER_EB_PCT            => 172,
 		self::KEY_LEDGER_EB_AMOUNT         => 175,
@@ -131,7 +147,6 @@ final class GF_SemanticFields {
 		self::KEY_LEDGER_COMMISSION        => 165,
 		self::KEY_PARTNERS_ENABLED         => 181,
 		self::KEY_EB_DISCOUNT_PCT          => 172,
-		self::KEY_EVENT_ID                 => 20,
 	];
 
 	/**
@@ -428,9 +443,14 @@ final class GF_SemanticFields {
 			self::KEY_PARTNER_EMAIL,
 			self::KEY_EVENT_ID,
 			self::KEY_EVENT_UID,
+			self::KEY_EVENT_TITLE,
+			self::KEY_START_DATE,
+			self::KEY_START_DATE_STAMP,
 			self::KEY_USER_ROLE,
 			self::KEY_USER_EMAIL,
 			self::KEY_USER_NAME,
+			self::KEY_USER_ID,
+			self::KEY_PARTICIPANT_PHONE,
 			self::KEY_LEDGER_BASE,
 			self::KEY_LEDGER_EB_PCT,
 			self::KEY_LEDGER_EB_AMOUNT,
