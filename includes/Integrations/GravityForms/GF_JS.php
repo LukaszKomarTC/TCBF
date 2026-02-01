@@ -671,6 +671,9 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
         changed = setValIfChanged(F.partner_commission,'',true) || changed;
         changed = setValIfChanged(F.partner_email,'',false) || changed;
         changed = setValIfChanged(F.partner_user_id,'',false) || changed;
+        if(changed && F.partner_discount_pct > 0 && typeof window.gf_apply_rules === 'function'){
+          try{ window.gf_apply_rules(fid, [F.partner_discount_pct]); }catch(e){}
+        }
         updatePartnerBanner(null, '');
         enhancePartnerDisplay(null, '');
         setTimeout(function(){ updateEBBanner(); enhanceEBDisplay(); }, 50);
@@ -717,6 +720,12 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
         changed = setValIfChanged(F.partner_commission, fmtPct(data.commission||''), true) || changed;
         changed = setValIfChanged(F.partner_email, (data.email||''), false) || changed;
         changed = setValIfChanged(F.partner_user_id, (data.id||''), false) || changed;
+      }
+
+      // Trigger GF conditional logic re-evaluation for partner_discount_pct
+      // so fields depending on it (e.g. Pricing summary) can show/hide
+      if(changed && F.partner_discount_pct > 0 && typeof window.gf_apply_rules === 'function'){
+        try{ window.gf_apply_rules(fid, [F.partner_discount_pct]); }catch(e){}
       }
 
       updatePartnerBanner(data, code);
@@ -813,16 +822,23 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     setValIfChanged(F.ledger_partner_amt, partnerAmount.toFixed(2), false);
     setValIfChanged(F.ledger_total, total.toFixed(2), false);
 
-    // Update EB% field for conditional logic
-    var ebPctChanged = setValIfChanged(F.eb_discount_pct, String(ebPct), true);
-    if(ebPctChanged && typeof window.gf_apply_rules === 'function'){
-      try{ window.gf_apply_rules(fid, [F.eb_discount_pct]); }catch(e){}
+    // Update discount % fields and trigger GF conditional logic
+    // so fields depending on them (e.g. Pricing summary) can show/hide
+    var rulesChanged = [];
+    if(setValIfChanged(F.eb_discount_pct, String(ebPct), true)){
+      rulesChanged.push(F.eb_discount_pct);
     }
 
     // Update partner fields if returned from PHP
     if(partnerCode){
       setValIfChanged(F.coupon_code, partnerCode, false);
-      setValIfChanged(F.partner_discount_pct, String(partnerPct), false);
+      if(setValIfChanged(F.partner_discount_pct, String(partnerPct), true)){
+        rulesChanged.push(F.partner_discount_pct);
+      }
+    }
+
+    if(rulesChanged.length > 0 && typeof window.gf_apply_rules === 'function'){
+      try{ window.gf_apply_rules(fid, rulesChanged); }catch(e){}
     }
 
     // Update displays
@@ -845,9 +861,15 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     setValIfChanged(F.ledger_eb_amount, '0', false);
     setValIfChanged(F.ledger_partner_amt, '0', false);
     setValIfChanged(F.ledger_total, '0', false);
-    var cleared = setValIfChanged(F.eb_discount_pct, '0', true);
-    if(cleared && typeof window.gf_apply_rules === 'function'){
-      try{ window.gf_apply_rules(fid, [F.eb_discount_pct]); }catch(e){}
+    var rulesChanged = [];
+    if(setValIfChanged(F.eb_discount_pct, '0', true)){
+      rulesChanged.push(F.eb_discount_pct);
+    }
+    if(setValIfChanged(F.partner_discount_pct, '0', true)){
+      rulesChanged.push(F.partner_discount_pct);
+    }
+    if(rulesChanged.length > 0 && typeof window.gf_apply_rules === 'function'){
+      try{ window.gf_apply_rules(fid, rulesChanged); }catch(e){}
     }
   }
 
