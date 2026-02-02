@@ -50,6 +50,8 @@ final class GF_SemanticFields {
 	const KEY_EVENT_TITLE           = 'event_title';            // Event/tour title
 	const KEY_START_DATE            = 'start_date';             // Event start date (human-readable)
 	const KEY_START_DATE_STAMP      = 'start_date_stamp';       // Event start date (Unix timestamp)
+	const KEY_END_DATE              = 'end_date';               // Event end date (human-readable)
+	const KEY_END_DATE_STAMP        = 'end_date_stamp';         // Event end date (Unix timestamp)
 
 	// User fields
 	const KEY_USER_ROLE             = 'user_role';              // WordPress user role
@@ -99,6 +101,8 @@ final class GF_SemanticFields {
 		self::KEY_EVENT_TITLE              => 1,
 		self::KEY_START_DATE               => 131,
 		self::KEY_START_DATE_STAMP         => 132,
+		self::KEY_END_DATE                 => 133,
+		self::KEY_END_DATE_STAMP           => 134,
 		self::KEY_PARTNERS_ENABLED         => 181,
 		self::KEY_EB_DISCOUNT_PCT          => 172,
 		self::KEY_DISPLAY_EB_DISCOUNT      => 179,
@@ -134,6 +138,8 @@ final class GF_SemanticFields {
 		self::KEY_EVENT_TITLE              => 1,
 		self::KEY_START_DATE               => 131,
 		self::KEY_START_DATE_STAMP         => 132,
+		self::KEY_END_DATE                 => 133,
+		self::KEY_END_DATE_STAMP           => 134,
 		self::KEY_USER_ROLE                => 6,
 		self::KEY_USER_EMAIL               => 21,
 		self::KEY_USER_NAME                => 2,

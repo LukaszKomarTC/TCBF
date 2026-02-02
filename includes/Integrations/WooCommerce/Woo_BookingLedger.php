@@ -538,6 +538,32 @@ class Woo_BookingLedger {
 			$set_field( GF_SemanticFields::KEY_START_DATE_STAMP, (string) $start_ts );
 		}
 
+		// End date: derive from booking data
+		$end_ts = 0;
+		if ( isset( $booking['_end_date'] ) ) {
+			$end_ts = (int) $booking['_end_date'];
+		} elseif ( isset( $booking['end_date'] ) ) {
+			$end_ts = (int) $booking['end_date'];
+		}
+		// Fallback: calculate from start + duration (WC Bookings stores duration in days)
+		if ( $end_ts <= 0 && $start_ts > 0 ) {
+			$duration = 0;
+			if ( isset( $booking['_duration'] ) ) {
+				$duration = (int) $booking['_duration'];
+			} elseif ( isset( $booking['duration'] ) ) {
+				$duration = (int) $booking['duration'];
+			} elseif ( isset( $_POST['wc_bookings_field_duration'] ) ) {
+				$duration = (int) $_POST['wc_bookings_field_duration'];
+			}
+			if ( $duration > 0 ) {
+				$end_ts = $start_ts + ( $duration * DAY_IN_SECONDS );
+			}
+		}
+		if ( $end_ts > 0 ) {
+			$set_field( GF_SemanticFields::KEY_END_DATE, wp_date( 'j M Y', $end_ts ) );
+			$set_field( GF_SemanticFields::KEY_END_DATE_STAMP, (string) $end_ts );
+		}
+
 		// Event ID: use WC product ID as event reference for booking products
 		$set_field( GF_SemanticFields::KEY_EVENT_ID, (string) $product_id );
 
@@ -613,12 +639,18 @@ class Woo_BookingLedger {
 		if ( $bike_product_id <= 0 && $product_id > 0 ) {
 			$bike_product_id = $product_id;
 
+			// Try multiple keys where WC Bookings may store the resource
 			if ( isset( $booking['wc_bookings_field_resource'] ) ) {
 				$bike_resource_id = (int) $booking['wc_bookings_field_resource'];
 			} elseif ( isset( $booking['resource_id'] ) ) {
 				$bike_resource_id = (int) $booking['resource_id'];
 			} elseif ( isset( $booking['_resource_id'] ) ) {
 				$bike_resource_id = (int) $booking['_resource_id'];
+			}
+
+			// Fallback: read from $_POST (available during add-to-cart action)
+			if ( $bike_resource_id <= 0 && isset( $_POST['wc_bookings_field_resource'] ) ) {
+				$bike_resource_id = absint( $_POST['wc_bookings_field_resource'] );
 			}
 		}
 

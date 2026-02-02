@@ -155,6 +155,17 @@ if ( $tcbf_event_title === '' && $product ) {
 			/* translators: %s: timezone name */
 			echo ' ' . esc_html( sprintf( __( 'in timezone: %s', 'woocommerce-bookings' ), $booking_timezone ) );
 		endif;
+
+		// Duration in days
+		$tcbf_start_ts = $booking->get_start();
+		$tcbf_end_ts   = $booking->get_end();
+		if ( $tcbf_start_ts && $tcbf_end_ts && $tcbf_end_ts > $tcbf_start_ts ) {
+			$tcbf_days = (int) ceil( ( $tcbf_end_ts - $tcbf_start_ts ) / DAY_IN_SECONDS );
+			if ( $tcbf_days > 0 ) {
+				$tcbf_day_label = $tcbf_days === 1 ? __( 'day', 'tc-booking-flow-next' ) : __( 'days', 'tc-booking-flow-next' );
+				echo ' <span style="font-size: 12px; color: #888;">(' . esc_html( $tcbf_days . ' ' . $tcbf_day_label ) . ')</span>';
+			}
+		}
 		?>
 	</li>
 
