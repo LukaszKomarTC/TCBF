@@ -604,35 +604,38 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     // - total_after_partner = total_after_eb - partnerAmt (preview only)
     var totalAfterEb = base - ebAmt;
 
+    // Only build the summary when there are actual discounts to show.
+    // If it's just base + total with no discounts, the WC Bookings
+    // cost display already shows the price — the summary adds nothing.
+    var hasDiscounts = (ebAmt > 0) || (partnerAmt > 0 && partnerCode);
     var html = '';
-    // Base price row
-    if(base > 0){
+    if(hasDiscounts && base > 0){
+      // Base price row
       html += '<div class="tcbf-ledger-row tcbf-ledger-base">';
       html += '<span class="tcbf-ledger-label">' + i18n.base + '</span>';
       html += '<span class="tcbf-ledger-value">' + fmtCurrency(base) + '</span>';
       html += '</div>';
-    }
-    // EB discount row
-    if(ebAmt > 0){
-      html += '<div class="tcbf-ledger-row tcbf-ledger-eb">';
-      html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">⏰</span><span class="tcbf-ledger-text">' + i18n.eb + '</span></div>';
-      html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(ebPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(ebAmt) + '</span></div>';
-      html += '</div>';
-    }
-    // Partner discount row (preview - applied via coupon at checkout)
-    if(partnerAmt > 0 && partnerCode){
-      html += '<div class="tcbf-ledger-row tcbf-ledger-partner tcbf-ledger-partner-preview">';
-      html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">✓</span><span class="tcbf-ledger-text">' + partnerCode + '</span></div>';
-      html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(partnerPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(partnerAmt) + '</span><span class="tcbf-ledger-coupon-note">(via coupon)</span></div>';
-      html += '</div>';
-    }
-    // Total row - show the preview total (after partner discount)
-    // Note: Cart price will be total_after_eb; partner discount comes from WC coupon
-    if(total > 0){
-      html += '<div class="tcbf-ledger-row tcbf-ledger-total">';
-      html += '<span class="tcbf-ledger-label">' + i18n.total + '</span>';
-      html += '<span class="tcbf-ledger-value">' + fmtCurrency(total) + '</span>';
-      html += '</div>';
+      // EB discount row
+      if(ebAmt > 0){
+        html += '<div class="tcbf-ledger-row tcbf-ledger-eb">';
+        html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">⏰</span><span class="tcbf-ledger-text">' + i18n.eb + '</span></div>';
+        html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(ebPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(ebAmt) + '</span></div>';
+        html += '</div>';
+      }
+      // Partner discount row (preview - applied via coupon at checkout)
+      if(partnerAmt > 0 && partnerCode){
+        html += '<div class="tcbf-ledger-row tcbf-ledger-partner tcbf-ledger-partner-preview">';
+        html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">✓</span><span class="tcbf-ledger-text">' + partnerCode + '</span></div>';
+        html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(partnerPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(partnerAmt) + '</span><span class="tcbf-ledger-coupon-note">(via coupon)</span></div>';
+        html += '</div>';
+      }
+      // Total row
+      if(total > 0){
+        html += '<div class="tcbf-ledger-row tcbf-ledger-total">';
+        html += '<span class="tcbf-ledger-label">' + i18n.total + '</span>';
+        html += '<span class="tcbf-ledger-value">' + fmtCurrency(total) + '</span>';
+        html += '</div>';
+      }
     }
     container.innerHTML = html;
     container.style.display = html ? 'block' : 'none';
@@ -755,7 +758,6 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
   }
 
   // ===== WC Bookings Live Ledger Calculation (Booking forms only) =====
-  var lastBookingCost = 0;
   var ledgerCalcTimer = null;
 
   function getWcBookingsCost(){
@@ -817,6 +819,7 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
 
   // Track pending AJAX to avoid multiple concurrent requests
   var __ledgerAjaxPending = false;
+  var __ledgerRecalcNeeded = false;
 
   /**
    * Apply ledger values to GF fields and update UI
@@ -962,9 +965,13 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
       return;
     }
 
-    // Skip if AJAX already pending (debounce)
-    if(__ledgerAjaxPending) return;
+    // If AJAX already pending, flag for retry when it finishes
+    if(__ledgerAjaxPending){
+      __ledgerRecalcNeeded = true;
+      return;
+    }
     __ledgerAjaxPending = true;
+    __ledgerRecalcNeeded = false;
 
     // Format date as Y-m-d for PHP
     var y = startDate.getFullYear();
@@ -1012,12 +1019,22 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
         // PHP returned error, use client-side fallback
         calculateLedgerClientSide(basePrice, startDate);
       }
+      // Retry if another calculation was requested while AJAX was in flight
+      if(__ledgerRecalcNeeded){
+        __ledgerRecalcNeeded = false;
+        requestLedgerCalc();
+      }
     })
     .catch(function(err){
       __ledgerAjaxPending = false;
       // AJAX failed, use client-side fallback
       console.warn('[TCBF] Ledger AJAX failed, using client-side fallback:', err);
       calculateLedgerClientSide(basePrice, startDate);
+      // Retry if another calculation was requested while AJAX was in flight
+      if(__ledgerRecalcNeeded){
+        __ledgerRecalcNeeded = false;
+        requestLedgerCalc();
+      }
     });
   }
 
@@ -1039,15 +1056,15 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     if(__tcBfBookingsWatcherBound) return;
     __tcBfBookingsWatcherBound = true;
 
-    // Watch for WC Bookings cost changes using MutationObserver
+    // Watch for WC Bookings cost element mutations using MutationObserver.
+    // Always trigger recalculation on ANY DOM mutation (not just cost changes)
+    // because the date may have changed while the cost stayed the same,
+    // which changes EB eligibility. The 100ms debounce in requestLedgerCalc
+    // prevents excessive calls from rapid DOM updates.
     var costContainer = document.querySelector('.wc-bookings-booking-cost');
     if(costContainer){
-      var observer = new MutationObserver(function(mutations){
-        var newCost = getWcBookingsCost();
-        if(newCost !== lastBookingCost){
-          lastBookingCost = newCost;
-          requestLedgerCalc();
-        }
+      var observer = new MutationObserver(function(){
+        requestLedgerCalc();
       });
       observer.observe(costContainer, { childList: true, subtree: true, characterData: true });
     }
