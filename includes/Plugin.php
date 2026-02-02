@@ -21,6 +21,7 @@ require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notifications_L
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Config.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Templates.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Field_Population.php';
+require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_MergeTagCurrency.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderMeta.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Notifications.php';
@@ -160,6 +161,11 @@ final class Plugin {
 		// GF Field Population: populate derived/masked fields at submission
 		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_Field_Population') ) {
 			\TC_BF\Integrations\GravityForms\GF_Field_Population::init();
+		}
+
+		// GF Merge Tag Currency: :tcbf_eur modifier for Euro formatting in notifications
+		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_MergeTagCurrency') ) {
+			\TC_BF\Integrations\GravityForms\GF_MergeTagCurrency::init();
 		}
 
 		add_filter('gform_pre_submission_filter',  [ $this, 'gf_partner_prepare_form' ], 10, 1);

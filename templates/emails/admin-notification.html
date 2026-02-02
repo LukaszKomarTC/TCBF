@@ -62,14 +62,14 @@
       </tr>
       <tr>
         <td style="padding: 8px; width: 35%;"><strong>Official price</strong></td>
-        <td style="padding: 8px;">{S:173}</td>
+        <td style="padding: 8px;">{S:173:tcbf_eur}</td>
       </tr>
 
       <!-- Early Booking (conditional) -->
       [gravityforms action="conditional" merge_tag="{Descuento reserva anticipada:175}" condition="greater_than" value="0"]
       <tr style="background-color: #ede9fe;">
         <td style="padding: 8px; color: #5b21b6;"><strong>Early booking (-{Early Booking Discount %:172}%)</strong></td>
-        <td style="padding: 8px; color: #5b21b6; font-weight: bold;">-{Descuento reserva anticipada:175}</td>
+        <td style="padding: 8px; color: #5b21b6; font-weight: bold;">-{Descuento reserva anticipada:175:tcbf_eur}</td>
       </tr>
       [/gravityforms]
 
@@ -77,13 +77,13 @@
       [gravityforms action="conditional" merge_tag="{Discount code:154}" condition="isnot" value=""]
       <tr style="background-color: #f0fdf4;">
         <td style="padding: 8px; color: #14532d;"><strong>Partner discount (-{Partner Discount %:152}%)</strong></td>
-        <td style="padding: 8px; color: #059669; font-weight: bold;">-{Descuento partner:176}</td>
+        <td style="padding: 8px; color: #059669; font-weight: bold;">-{Descuento partner:176:tcbf_eur}</td>
       </tr>
       [/gravityforms]
 
       <tr style="background-color: #434c00;">
         <td style="padding: 8px; color: white;"><strong>Total (client)</strong></td>
-        <td style="padding: 8px; color: white; font-weight: bold;">{Total client:168}</td>
+        <td style="padding: 8px; color: white; font-weight: bold;">{Total client:168:tcbf_eur}</td>
       </tr>
     </table>
   </div>
@@ -105,7 +105,7 @@
       </tr>
       <tr style="background-color: #e0f2fe;">
         <td style="padding: 8px; color: #0369a1;"><strong>Commission ({Partner commission %:161}%)</strong></td>
-        <td style="padding: 8px; color: #0369a1; font-weight: bold;">{Partner commission amount:165}</td>
+        <td style="padding: 8px; color: #0369a1; font-weight: bold;">{Partner commission amount:165:tcbf_eur}</td>
       </tr>
     </table>
   </div>

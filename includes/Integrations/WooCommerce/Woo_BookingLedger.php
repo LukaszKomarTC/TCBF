@@ -548,6 +548,98 @@ class Woo_BookingLedger {
 				$set_field( GF_SemanticFields::KEY_USER_ROLE, (string) $user->roles[0] );
 			}
 		}
+
+		// Bike model and size (field 146) — compose from rental selection in the lead.
+		// GF_Field_Population handles this for standard GF submissions, but for the
+		// WC add-to-cart path the lead may already exist without field 146 populated.
+		self::maybe_populate_bike_model_size( $lead );
+	}
+
+	/**
+	 * Populate bike model and size in GF lead if not already present.
+	 *
+	 * Reads rental type (field 106) and the corresponding bike selection field
+	 * (130/142/143/169) from the lead, parses the productId_resourceId token,
+	 * and writes the composite "Product Name — Size: Resource" to field 146.
+	 *
+	 * Field IDs match the unified notification config (GF_Notification_Config).
+	 *
+	 * @param array &$lead GF lead data (by reference)
+	 */
+	private static function maybe_populate_bike_model_size( array &$lead ) : void {
+
+		// Field 146 = bike_model_size (unified contract)
+		$target_field = '146';
+
+		// Skip if already populated (e.g. by GF_Field_Population during form submission)
+		if ( ! empty( trim( (string) ( $lead[ $target_field ] ?? '' ) ) ) ) {
+			return;
+		}
+
+		// Rental type (field 106): ROAD, MTB, EMTB, GRAVEL, or empty
+		$rental_type = strtoupper( trim( (string) ( $lead['106'] ?? '' ) ) );
+		if ( $rental_type === '' ) {
+			return;
+		}
+
+		// Map rental type → bike selection field ID
+		$bike_field_map = [
+			'ROAD'   => '130',
+			'MTB'    => '142',
+			'EMTB'   => '143',
+			'GRAVEL' => '169',
+		];
+
+		$bike_field = $bike_field_map[ $rental_type ] ?? null;
+		if ( $bike_field === null ) {
+			return;
+		}
+
+		// Bike selection value format: "{product_id}_{resource_id}"
+		$bike_value = trim( (string) ( $lead[ $bike_field ] ?? '' ) );
+		if ( $bike_value === '' || strpos( $bike_value, 'not_avail' ) === 0 ) {
+			return;
+		}
+
+		$parts = explode( '_', $bike_value, 2 );
+		if ( count( $parts ) !== 2 ) {
+			return;
+		}
+
+		$bike_product_id  = (int) $parts[0];
+		$bike_resource_id = (int) $parts[1];
+
+		if ( $bike_product_id <= 0 ) {
+			return;
+		}
+
+		// Build composite string: "Product Name — Size: Resource"
+		$product_name = get_the_title( $bike_product_id );
+		if ( empty( $product_name ) ) {
+			return;
+		}
+
+		$resource_name = '';
+		if ( $bike_resource_id > 0 ) {
+			if ( class_exists( 'WC_Bookings_Resource' ) ) {
+				try {
+					$resource = new \WC_Bookings_Resource( $bike_resource_id );
+					$resource_name = $resource->get_title();
+				} catch ( \Exception $e ) {
+					$resource_name = get_the_title( $bike_resource_id );
+				}
+			} else {
+				$resource_name = get_the_title( $bike_resource_id );
+			}
+		}
+
+		$bike_model_size = $product_name;
+		if ( ! empty( $resource_name ) ) {
+			$size_label = function_exists( '__' ) ? __( 'Size', 'tc-booking-flow-next' ) : 'Size';
+			$bike_model_size .= ' — ' . $size_label . ': ' . $resource_name;
+		}
+
+		$lead[ $target_field ] = $bike_model_size;
 	}
 
 	/**

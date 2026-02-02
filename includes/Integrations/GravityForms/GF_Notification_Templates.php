@@ -29,7 +29,7 @@ final class GF_Notification_Templates {
 	/**
 	 * Template version (increment when templates change)
 	 */
-	const TEMPLATE_VERSION = '1.0.0';
+	const TEMPLATE_VERSION = '1.1.0';
 
 	/**
 	 * Available notification templates
