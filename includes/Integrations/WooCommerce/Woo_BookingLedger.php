@@ -650,10 +650,13 @@ class Woo_BookingLedger {
 		// Fields to hide (case-insensitive partial match)
 		$hidden_fields = [
 			'client',           // Client name - shown as participant badge
+			'cliente',          // (ES) Client name
 			'email',            // Email address - internal
 			'confirmation',     // Email confirmation - shown as notify badge
+			'confirmacion',     // (ES) Email confirmation
 			'partner',          // Partner info - internal
 			'booking source',   // Booking source - internal
+			'fuente de reserva', // (ES) Booking source
 		];
 
 		$filtered = [];
