@@ -334,7 +334,7 @@ class Woo_BookingLedger {
 		BookingLedger::populate_lead_with_ledger( $lead, $ledger, $form_id );
 
 		// Populate event context (title, date) and user context (ID, role)
-		self::populate_lead_with_event_context( $lead, $form_id, $product_id, $start_ts );
+		self::populate_lead_with_event_context( $lead, $form_id, $product_id, $start_ts, $booking );
 
 		$cart_item_data['_gravity_form_lead'] = $lead;
 
@@ -510,13 +510,15 @@ class Woo_BookingLedger {
 	 * - Start date (human-readable and timestamp, from booking data)
 	 * - Event ID (WC product ID)
 	 * - User ID and role (from current WP user)
+	 * - Bike model and size (from GF fields or WC booking resource)
 	 *
 	 * @param array &$lead      GF lead data (by reference)
 	 * @param int   $form_id    GF form ID
 	 * @param int   $product_id WC product ID
 	 * @param int   $start_ts   Booking start timestamp
+	 * @param array $booking    WC Bookings data (optional, used for resource extraction)
 	 */
-	private static function populate_lead_with_event_context( array &$lead, int $form_id, int $product_id, int $start_ts ) : void {
+	private static function populate_lead_with_event_context( array &$lead, int $form_id, int $product_id, int $start_ts, array $booking = [] ) : void {
 
 		$set_field = function( string $key, string $value ) use ( &$lead, $form_id ) {
 			if ( $value === '' ) return;
@@ -549,24 +551,29 @@ class Woo_BookingLedger {
 			}
 		}
 
-		// Bike model and size (field 146) — compose from rental selection in the lead.
+		// Bike model and size (field 146) — compose from rental selection in the lead,
+		// falling back to the WC booking product + resource when GF fields are empty.
 		// GF_Field_Population handles this for standard GF submissions, but for the
 		// WC add-to-cart path the lead may already exist without field 146 populated.
-		self::maybe_populate_bike_model_size( $lead );
+		self::maybe_populate_bike_model_size( $lead, $product_id, $booking );
 	}
 
 	/**
 	 * Populate bike model and size in GF lead if not already present.
 	 *
-	 * Reads rental type (field 106) and the corresponding bike selection field
-	 * (130/142/143/169) from the lead, parses the productId_resourceId token,
-	 * and writes the composite "Product Name — Size: Resource" to field 146.
+	 * Two strategies (tried in order):
+	 *  1. GF fields: rental type (106) → bike selection field (130/142/143/169)
+	 *     → parse productId_resourceId token.
+	 *  2. WC Booking fallback: use the booking's own product_id + resource_id.
+	 *     This covers standalone bike bookings where GF field 106 is empty.
 	 *
-	 * Field IDs match the unified notification config (GF_Notification_Config).
+	 * Writes "Product Name — Size: Resource" to field 146.
 	 *
-	 * @param array &$lead GF lead data (by reference)
+	 * @param array &$lead      GF lead data (by reference)
+	 * @param int   $product_id WC product ID (fallback for bike name)
+	 * @param array $booking    WC Bookings data (fallback for resource_id)
 	 */
-	private static function maybe_populate_bike_model_size( array &$lead ) : void {
+	private static function maybe_populate_bike_model_size( array &$lead, int $product_id = 0, array $booking = [] ) : void {
 
 		// Field 146 = bike_model_size (unified contract)
 		$target_field = '146';
@@ -576,38 +583,44 @@ class Woo_BookingLedger {
 			return;
 		}
 
-		// Rental type (field 106): ROAD, MTB, EMTB, GRAVEL, or empty
+		$bike_product_id  = 0;
+		$bike_resource_id = 0;
+
+		// --- Strategy 1: GF fields (rental type → bike selection field) ---
 		$rental_type = strtoupper( trim( (string) ( $lead['106'] ?? '' ) ) );
-		if ( $rental_type === '' ) {
-			return;
+		if ( $rental_type !== '' ) {
+			$bike_field_map = [
+				'ROAD'   => '130',
+				'MTB'    => '142',
+				'EMTB'   => '143',
+				'GRAVEL' => '169',
+			];
+
+			$bike_field = $bike_field_map[ $rental_type ] ?? null;
+			if ( $bike_field !== null ) {
+				$bike_value = trim( (string) ( $lead[ $bike_field ] ?? '' ) );
+				if ( $bike_value !== '' && strpos( $bike_value, 'not_avail' ) !== 0 ) {
+					$parts = explode( '_', $bike_value, 2 );
+					if ( count( $parts ) === 2 ) {
+						$bike_product_id  = (int) $parts[0];
+						$bike_resource_id = (int) $parts[1];
+					}
+				}
+			}
 		}
 
-		// Map rental type → bike selection field ID
-		$bike_field_map = [
-			'ROAD'   => '130',
-			'MTB'    => '142',
-			'EMTB'   => '143',
-			'GRAVEL' => '169',
-		];
+		// --- Strategy 2: WC Booking fallback (product_id + resource from booking data) ---
+		if ( $bike_product_id <= 0 && $product_id > 0 ) {
+			$bike_product_id = $product_id;
 
-		$bike_field = $bike_field_map[ $rental_type ] ?? null;
-		if ( $bike_field === null ) {
-			return;
+			if ( isset( $booking['wc_bookings_field_resource'] ) ) {
+				$bike_resource_id = (int) $booking['wc_bookings_field_resource'];
+			} elseif ( isset( $booking['resource_id'] ) ) {
+				$bike_resource_id = (int) $booking['resource_id'];
+			} elseif ( isset( $booking['_resource_id'] ) ) {
+				$bike_resource_id = (int) $booking['_resource_id'];
+			}
 		}
-
-		// Bike selection value format: "{product_id}_{resource_id}"
-		$bike_value = trim( (string) ( $lead[ $bike_field ] ?? '' ) );
-		if ( $bike_value === '' || strpos( $bike_value, 'not_avail' ) === 0 ) {
-			return;
-		}
-
-		$parts = explode( '_', $bike_value, 2 );
-		if ( count( $parts ) !== 2 ) {
-			return;
-		}
-
-		$bike_product_id  = (int) $parts[0];
-		$bike_resource_id = (int) $parts[1];
 
 		if ( $bike_product_id <= 0 ) {
 			return;
