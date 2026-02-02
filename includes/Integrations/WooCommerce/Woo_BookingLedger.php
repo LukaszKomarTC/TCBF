@@ -560,7 +560,9 @@ class Woo_BookingLedger {
 			}
 		}
 		if ( $end_ts > 0 ) {
-			$set_field( GF_SemanticFields::KEY_END_DATE, wp_date( 'j M Y', $end_ts ) );
+			// Human-readable: last day of booking (end_ts is exclusive/checkout date)
+			$set_field( GF_SemanticFields::KEY_END_DATE, wp_date( 'j M Y', $end_ts - DAY_IN_SECONDS ) );
+			// Raw stamp kept as-is for accurate duration calculation
 			$set_field( GF_SemanticFields::KEY_END_DATE_STAMP, (string) $end_ts );
 		}
 
