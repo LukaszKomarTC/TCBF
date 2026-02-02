@@ -636,6 +636,14 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     }
     container.innerHTML = html;
     container.style.display = html ? 'block' : 'none';
+
+    // Also show/hide the GF field wrapper (#field_{fid}_204)
+    // GF conditional logic can't evaluate hidden-type fields, so we
+    // drive the wrapper visibility directly from JS instead.
+    var wrapper = container.closest('.gfield');
+    if(wrapper){
+      wrapper.style.display = html ? '' : 'none';
+    }
   }
 
   // ===== Partners Enabled Check =====
@@ -871,6 +879,8 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     if(rulesChanged.length > 0 && typeof window.gf_apply_rules === 'function'){
       try{ window.gf_apply_rules(fid, rulesChanged); }catch(e){}
     }
+    // Clear the visual summary and hide its wrapper
+    updateLedgerSummary(null, '');
   }
 
   /**
