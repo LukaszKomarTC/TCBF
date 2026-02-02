@@ -1290,7 +1290,7 @@ JS;
 .tcbf-ledger-eb .tcbf-ledger-badge { display: flex; align-items: center; gap: 8px; }
 .tcbf-ledger-eb .tcbf-ledger-icon { font-size: 20px; }
 .tcbf-ledger-eb .tcbf-ledger-text { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
-.tcbf-ledger-eb .tcbf-ledger-info { text-align: right; }
+.tcbf-ledger-eb .tcbf-ledger-info { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .tcbf-ledger-eb .tcbf-ledger-pct { font-size: 13px; color: #fff; opacity: 0.9; }
 .tcbf-ledger-eb .tcbf-ledger-amt { font-size: 18px; font-weight: 700; color: #fff; }
 .tcbf-ledger-partner {
@@ -1303,10 +1303,10 @@ JS;
 .tcbf-ledger-partner .tcbf-ledger-badge { display: flex; align-items: center; gap: 8px; }
 .tcbf-ledger-partner .tcbf-ledger-icon { font-size: 20px; color: #22c55e; }
 .tcbf-ledger-partner .tcbf-ledger-text { font-size: 16px; font-weight: 700; color: #14532d; letter-spacing: 0.5px; }
-.tcbf-ledger-partner .tcbf-ledger-info { text-align: right; }
+.tcbf-ledger-partner .tcbf-ledger-info { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .tcbf-ledger-partner .tcbf-ledger-pct { font-size: 13px; color: #14532d; }
 .tcbf-ledger-partner .tcbf-ledger-amt { font-size: 18px; font-weight: 700; color: #14532d; }
-.tcbf-ledger-partner .tcbf-ledger-coupon-note { display: block; font-size: 11px; color: #64748b; font-weight: 400; font-style: italic; margin-top: 2px; }
+.tcbf-ledger-partner .tcbf-ledger-coupon-note { font-size: 11px; color: #64748b; font-weight: 400; font-style: italic; }
 .tcbf-ledger-total {
   padding-top: 12px;
   margin-top: 8px;
