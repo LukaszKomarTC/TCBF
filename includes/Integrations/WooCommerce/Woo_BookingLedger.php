@@ -640,17 +640,42 @@ class Woo_BookingLedger {
 		// --- Strategy 2: WC Booking fallback (product_id + resource from booking data) ---
 		if ( $bike_product_id <= 0 && $product_id > 0 ) {
 			$bike_product_id = $product_id;
+			$resource_name   = '';
 
-			// Try multiple keys where WC Bookings may store the resource
-			if ( isset( $booking['wc_bookings_field_resource'] ) ) {
-				$bike_resource_id = (int) $booking['wc_bookings_field_resource'];
-			} elseif ( isset( $booking['resource_id'] ) ) {
-				$bike_resource_id = (int) $booking['resource_id'];
-			} elseif ( isset( $booking['_resource_id'] ) ) {
+			// 2A) Best: WC Bookings normalised key (set by wc_bookings_get_posted_data)
+			if ( isset( $booking['_resource_id'] ) ) {
 				$bike_resource_id = (int) $booking['_resource_id'];
 			}
 
-			// Fallback: read from $_POST (available during add-to-cart action)
+			// 2B) Human-readable resource label already provided by WC Bookings
+			if ( isset( $booking['type'] ) && trim( (string) $booking['type'] ) !== '' ) {
+				$resource_name = trim( (string) $booking['type'] );
+			}
+
+			// 2C) Other possible keys (legacy / other flows)
+			if ( $bike_resource_id <= 0 && isset( $booking['wc_bookings_field_resource'] ) ) {
+				$bike_resource_id = (int) $booking['wc_bookings_field_resource'];
+			} elseif ( $bike_resource_id <= 0 && isset( $booking['resource_id'] ) ) {
+				$bike_resource_id = (int) $booking['resource_id'];
+			}
+
+			// 2D) Strong fallback: load in-cart WC Booking object
+			if ( ( $bike_resource_id <= 0 || $resource_name === '' ) && ! empty( $booking['_booking_id'] ) && function_exists( 'get_wc_booking' ) ) {
+				$wc_booking = get_wc_booking( (int) $booking['_booking_id'] );
+				if ( $wc_booking ) {
+					if ( $bike_resource_id <= 0 && method_exists( $wc_booking, 'get_resource_id' ) ) {
+						$bike_resource_id = (int) $wc_booking->get_resource_id();
+					}
+					if ( $resource_name === '' && method_exists( $wc_booking, 'get_resource' ) ) {
+						$res = $wc_booking->get_resource();
+						if ( $res && method_exists( $res, 'get_name' ) ) {
+							$resource_name = (string) $res->get_name();
+						}
+					}
+				}
+			}
+
+			// 2E) Last resort: $_POST (only available during add-to-cart request)
 			if ( $bike_resource_id <= 0 && isset( $_POST['wc_bookings_field_resource'] ) ) {
 				$bike_resource_id = absint( $_POST['wc_bookings_field_resource'] );
 			}
@@ -666,12 +691,17 @@ class Woo_BookingLedger {
 			return;
 		}
 
-		$resource_name = '';
-		if ( $bike_resource_id > 0 ) {
-			if ( class_exists( 'WC_Bookings_Resource' ) ) {
+		// Resolve resource name if not already set by Strategy 2
+		if ( ! isset( $resource_name ) ) {
+			$resource_name = '';
+		}
+		if ( $resource_name === '' && $bike_resource_id > 0 ) {
+			if ( class_exists( 'WC_Product_Booking_Resource' ) ) {
 				try {
-					$resource = new \WC_Bookings_Resource( $bike_resource_id );
-					$resource_name = $resource->get_title();
+					$resource = new \WC_Product_Booking_Resource( $bike_resource_id );
+					$resource_name = method_exists( $resource, 'get_name' )
+						? (string) $resource->get_name()
+						: get_the_title( $bike_resource_id );
 				} catch ( \Exception $e ) {
 					$resource_name = get_the_title( $bike_resource_id );
 				}
