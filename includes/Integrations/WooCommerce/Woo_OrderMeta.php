@@ -101,19 +101,6 @@ class Woo_OrderMeta {
 			$item->add_meta_data( 'confirmation', __('[:es]Enviar email de confirmación al participante[:en]Send email confirmation to participant[:]') );
 		}
 
-		// Persist pedals and helmet from GF lead (fields 60, 61)
-		$lead = $values['_gravity_form_lead'] ?? ( $cart_item['_gravity_form_lead'] ?? [] );
-		if ( is_array( $lead ) ) {
-			$pedals = trim( (string) ( $lead['60'] ?? '' ) );
-			$helmet = trim( (string) ( $lead['61'] ?? '' ) );
-			if ( $pedals !== '' ) {
-				$item->add_meta_data( '_tcbf_pedals', $pedals );
-			}
-			if ( $helmet !== '' ) {
-				$item->add_meta_data( '_tcbf_helmet', $helmet );
-			}
-		}
-
 		// New: scope + EB snapshot audit
 		if ( ! empty( $booking[self::BK_SCOPE] ) ) {
 			$item->add_meta_data( '_tc_scope', $booking[self::BK_SCOPE] );
@@ -1579,9 +1566,10 @@ class Woo_OrderMeta {
 		$booking_date = self::get_booking_date_from_item( $item_id );
 		$duration_data = self::get_booking_duration_from_item( $item_id );
 
-		// Get pedals and helmet
-		$pedals = self::get_item_meta_ci( $item, '_tcbf_pedals' );
-		$helmet = self::get_item_meta_ci( $item, '_tcbf_helmet' );
+		// Get pedals and helmet from the GF lead stored by WC GF Product Addon
+		$gf_lead = self::get_gf_lead_from_item( $item );
+		$pedals  = trim( (string) ( $gf_lead['60'] ?? '' ) );
+		$helmet  = trim( (string) ( $gf_lead['61'] ?? '' ) );
 
 		// Get EB (Early Booking) meta - check Event Form keys first
 		$eb_eligible = (int) self::get_item_meta_ci( $item, '_eb_eligible' );
@@ -1705,6 +1693,23 @@ class Woo_OrderMeta {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Get the GF lead array from the WC GF Product Addon's _gravity_forms_history meta.
+	 *
+	 * The addon stores the complete form lead (all field values keyed by field ID)
+	 * inside _gravity_forms_history['_gravity_form_lead'] on each order item.
+	 *
+	 * @param \WC_Order_Item_Product $item Order item
+	 * @return array GF lead array (field_id => value), or empty array
+	 */
+	private static function get_gf_lead_from_item( \WC_Order_Item_Product $item ) : array {
+		$history = $item->get_meta( '_gravity_forms_history', true );
+		if ( is_array( $history ) && ! empty( $history['_gravity_form_lead'] ) && is_array( $history['_gravity_form_lead'] ) ) {
+			return $history['_gravity_form_lead'];
+		}
+		return [];
 	}
 
 	/**
@@ -2077,6 +2082,19 @@ class Woo_OrderMeta {
 				$has_rental = true;
 				break;
 			}
+		}
+
+		// Inherit pedals/helmet from parent to children that lack GF history
+		if ( $parent ) {
+			foreach ( $children as &$child ) {
+				if ( $child['pedals'] === '' && $parent['pedals'] !== '' ) {
+					$child['pedals'] = $parent['pedals'];
+				}
+				if ( $child['helmet'] === '' && $parent['helmet'] !== '' ) {
+					$child['helmet'] = $parent['helmet'];
+				}
+			}
+			unset( $child );
 		}
 
 		// Open pack group container
