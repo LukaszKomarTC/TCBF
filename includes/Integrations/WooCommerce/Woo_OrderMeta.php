@@ -101,6 +101,19 @@ class Woo_OrderMeta {
 			$item->add_meta_data( 'confirmation', __('[:es]Enviar email de confirmación al participante[:en]Send email confirmation to participant[:]') );
 		}
 
+		// Persist pedals and helmet from GF lead (fields 60, 61)
+		$lead = $values['_gravity_form_lead'] ?? ( $cart_item['_gravity_form_lead'] ?? [] );
+		if ( is_array( $lead ) ) {
+			$pedals = trim( (string) ( $lead['60'] ?? '' ) );
+			$helmet = trim( (string) ( $lead['61'] ?? '' ) );
+			if ( $pedals !== '' ) {
+				$item->add_meta_data( '_tcbf_pedals', $pedals );
+			}
+			if ( $helmet !== '' ) {
+				$item->add_meta_data( '_tcbf_helmet', $helmet );
+			}
+		}
+
 		// New: scope + EB snapshot audit
 		if ( ! empty( $booking[self::BK_SCOPE] ) ) {
 			$item->add_meta_data( '_tc_scope', $booking[self::BK_SCOPE] );
@@ -1562,8 +1575,13 @@ class Woo_OrderMeta {
 		// Get event URL
 		$event_url = $event_id > 0 ? get_permalink( $event_id ) : '';
 
-		// Get booking date
+		// Get booking date and duration
 		$booking_date = self::get_booking_date_from_item( $item_id );
+		$duration_data = self::get_booking_duration_from_item( $item_id );
+
+		// Get pedals and helmet
+		$pedals = self::get_item_meta_ci( $item, '_tcbf_pedals' );
+		$helmet = self::get_item_meta_ci( $item, '_tcbf_helmet' );
 
 		// Get EB (Early Booking) meta - check Event Form keys first
 		$eb_eligible = (int) self::get_item_meta_ci( $item, '_eb_eligible' );
@@ -1618,6 +1636,10 @@ class Woo_OrderMeta {
 			'bicycle'           => $bicycle,
 			'size'              => $size,
 			'booking_date'      => $booking_date,
+			'duration'          => $duration_data['duration'],
+			'end_date'          => $duration_data['end_date'],
+			'pedals'            => $pedals,
+			'helmet'            => $helmet,
 			'product_name'      => $product_name,
 			'product_url'       => $product_url,
 			'product_thumb_url' => $product_thumb_url ?: '',
@@ -1683,6 +1705,37 @@ class Woo_OrderMeta {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Get booking duration (in days) and end date from order item.
+	 *
+	 * @param int $item_id Order item ID
+	 * @return array{duration: int, end_date: string} Duration in days and formatted end date
+	 */
+	private static function get_booking_duration_from_item( int $item_id ) : array {
+		$result = [ 'duration' => 0, 'end_date' => '' ];
+
+		if ( ! class_exists( 'WC_Booking_Data_Store' ) ) {
+			return $result;
+		}
+
+		$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+		if ( empty( $booking_ids ) ) {
+			return $result;
+		}
+
+		$booking  = new \WC_Booking( (int) $booking_ids[0] );
+		$start_ts = $booking ? $booking->get_start() : 0;
+		$end_ts   = $booking ? $booking->get_end() : 0;
+
+		if ( $start_ts > 0 && $end_ts > 0 && $end_ts > $start_ts ) {
+			$result['duration'] = (int) ceil( ( $end_ts - $start_ts ) / DAY_IN_SECONDS );
+			// End date: last day of booking (end_ts is exclusive/checkout date)
+			$result['end_date'] = date_i18n( get_option( 'date_format' ), $end_ts - DAY_IN_SECONDS );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -2139,11 +2192,19 @@ class Woo_OrderMeta {
 		// Meta lines
 		echo '<div class="tcbf-order-meta-lines">';
 
-		// Fecha de la reserva
+		// Fecha de la reserva + duration
 		if ( $record['booking_date'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html__( 'Booking date', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['booking_date'] ) . '</span>';
+			$date_display = $record['booking_date'];
+			if ( $record['end_date'] !== '' ) {
+				$date_display .= ' — ' . $record['end_date'];
+			}
+			if ( $record['duration'] > 0 ) {
+				$day_label = $record['duration'] === 1 ? __( 'day', TC_BF_TEXTDOMAIN ) : __( 'days', TC_BF_TEXTDOMAIN );
+				$date_display .= ' (' . $record['duration'] . ' ' . $day_label . ')';
+			}
+			echo '<span class="tcbf-meta-value">' . esc_html( $date_display ) . '</span>';
 			echo '</div>';
 		}
 
@@ -2164,6 +2225,22 @@ class Woo_OrderMeta {
 			echo '<div class="tcbf-meta-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html__( 'Bike', TC_BF_TEXTDOMAIN ) . ':</span>';
 			echo '<span class="tcbf-meta-value">' . esc_html__( 'Own', TC_BF_TEXTDOMAIN ) . '</span>';
+			echo '</div>';
+		}
+
+		// Pedals
+		if ( $record['pedals'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html__( 'Pedals', TC_BF_TEXTDOMAIN ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['pedals'] ) . '</span>';
+			echo '</div>';
+		}
+
+		// Helmet
+		if ( $record['helmet'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html__( 'Helmet', TC_BF_TEXTDOMAIN ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['helmet'] ) . '</span>';
 			echo '</div>';
 		}
 
@@ -2290,6 +2367,22 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
+		// Pedals
+		if ( $record['pedals'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html__( 'Pedals', TC_BF_TEXTDOMAIN ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['pedals'] ) . '</span>';
+			echo '</div>';
+		}
+
+		// Helmet
+		if ( $record['helmet'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html__( 'Helmet', TC_BF_TEXTDOMAIN ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['helmet'] ) . '</span>';
+			echo '</div>';
+		}
+
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
@@ -2390,14 +2483,22 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
-		// Meta lines (booking date, event, size)
+		// Meta lines (booking date, event, size, pedals, helmet)
 		echo '<div class="tcbf-order-meta-lines">';
 
-		// Booking date
+		// Booking date + duration
 		if ( $record['booking_date'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html__( 'Booking date', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['booking_date'] ) . '</span>';
+			$date_display = $record['booking_date'];
+			if ( $record['end_date'] !== '' ) {
+				$date_display .= ' — ' . $record['end_date'];
+			}
+			if ( $record['duration'] > 0 ) {
+				$day_label = $record['duration'] === 1 ? __( 'day', TC_BF_TEXTDOMAIN ) : __( 'days', TC_BF_TEXTDOMAIN );
+				$date_display .= ' (' . $record['duration'] . ' ' . $day_label . ')';
+			}
+			echo '<span class="tcbf-meta-value">' . esc_html( $date_display ) . '</span>';
 			echo '</div>';
 		}
 
@@ -2418,6 +2519,22 @@ class Woo_OrderMeta {
 			echo '<div class="tcbf-meta-line tcbf-talla-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html__( 'Size', TC_BF_TEXTDOMAIN ) . ':</span>';
 			echo '<span class="tcbf-talla-value">' . esc_html( $record['size'] ) . '</span>';
+			echo '</div>';
+		}
+
+		// Pedals
+		if ( $record['pedals'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html__( 'Pedals', TC_BF_TEXTDOMAIN ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['pedals'] ) . '</span>';
+			echo '</div>';
+		}
+
+		// Helmet
+		if ( $record['helmet'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html__( 'Helmet', TC_BF_TEXTDOMAIN ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['helmet'] ) . '</span>';
 			echo '</div>';
 		}
 
