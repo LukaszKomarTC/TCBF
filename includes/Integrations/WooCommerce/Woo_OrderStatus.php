@@ -28,6 +28,15 @@ class Woo_OrderStatus {
 		// Add to WooCommerce order status list
 		add_filter( 'wc_order_statuses', [ __CLASS__, 'add_order_statuses' ], 10, 1 );
 
+		// Register invoiced transitions as email-triggering actions
+		add_filter( 'woocommerce_email_actions', [ __CLASS__, 'register_email_actions' ], 10, 1 );
+
+		// Attach WC email classes to invoiced notification hooks
+		add_action( 'woocommerce_email', [ __CLASS__, 'hook_email_triggers' ], 10, 1 );
+
+		// Let WooCommerce treat invoiced as a paid status
+		add_filter( 'woocommerce_order_is_paid_statuses', [ __CLASS__, 'add_paid_statuses' ], 10, 1 );
+
 		// Add bulk action for marking orders as invoiced
 		add_filter( 'bulk_actions-edit-shop_order', [ __CLASS__, 'register_bulk_actions' ], 20, 1 );
 		add_filter( 'handle_bulk_actions-edit-shop_order', [ __CLASS__, 'handle_bulk_actions' ], 10, 3 );
@@ -97,6 +106,77 @@ class Woo_OrderStatus {
 		}
 
 		return $new_statuses;
+	}
+
+	/**
+	 * Register invoiced status transitions as WooCommerce email-triggering actions.
+	 *
+	 * WC_Emails only relays actions listed in woocommerce_email_actions.
+	 * For each registered action it fires a *_notification suffix action that
+	 * individual email classes listen to.
+	 *
+	 * @param array $actions Existing email actions.
+	 * @return array Modified email actions.
+	 */
+	public static function register_email_actions( array $actions ) : array {
+		$actions[] = 'woocommerce_order_status_pending_to_invoiced';
+		$actions[] = 'woocommerce_order_status_on-hold_to_invoiced';
+		$actions[] = 'woocommerce_order_status_failed_to_invoiced';
+		$actions[] = 'woocommerce_order_status_cancelled_to_invoiced';
+		return $actions;
+	}
+
+	/**
+	 * Attach WooCommerce email classes to invoiced notification hooks.
+	 *
+	 * Called on the 'woocommerce_email' action, which fires after all
+	 * email classes are instantiated. We hook the same emails that fire
+	 * for processing: New Order (admin) + Customer Processing Order.
+	 *
+	 * @param \WC_Emails $emails WC_Emails instance.
+	 */
+	public static function hook_email_triggers( $emails ) : void {
+		$email_classes = $emails->get_emails();
+
+		// Transitions that should trigger the same emails as "processing"
+		$invoiced_hooks = [
+			'woocommerce_order_status_pending_to_invoiced_notification',
+			'woocommerce_order_status_on-hold_to_invoiced_notification',
+			'woocommerce_order_status_failed_to_invoiced_notification',
+			'woocommerce_order_status_cancelled_to_invoiced_notification',
+		];
+
+		// New Order email (admin notification)
+		if ( isset( $email_classes['WC_Email_New_Order'] ) ) {
+			$new_order = $email_classes['WC_Email_New_Order'];
+			foreach ( $invoiced_hooks as $hook ) {
+				add_action( $hook, [ $new_order, 'trigger' ], 10, 2 );
+			}
+		}
+
+		// Customer Processing Order email (customer notification)
+		if ( isset( $email_classes['WC_Email_Customer_Processing_Order'] ) ) {
+			$processing = $email_classes['WC_Email_Customer_Processing_Order'];
+			foreach ( $invoiced_hooks as $hook ) {
+				add_action( $hook, [ $processing, 'trigger' ], 10, 2 );
+			}
+		}
+	}
+
+	/**
+	 * Add invoiced to WooCommerce's paid statuses.
+	 *
+	 * Makes $order->is_paid() return true for invoiced orders,
+	 * consistent with TCBF's Woo_StatusPolicy paid-equivalent list.
+	 *
+	 * @param array $statuses Existing paid statuses.
+	 * @return array Modified paid statuses.
+	 */
+	public static function add_paid_statuses( array $statuses ) : array {
+		if ( ! in_array( 'invoiced', $statuses, true ) ) {
+			$statuses[] = 'invoiced';
+		}
+		return $statuses;
 	}
 
 	/**
