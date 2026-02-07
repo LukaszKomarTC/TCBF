@@ -130,15 +130,15 @@ class Woo_OrderStatus {
 	 * Attach WooCommerce email classes to invoiced notification hooks.
 	 *
 	 * Called on the 'woocommerce_email' action, which fires after all
-	 * email classes are instantiated. We hook the same emails that fire
-	 * for processing: New Order (admin) + Customer Processing Order.
+	 * email classes are instantiated. We use a wrapper callback that
+	 * checks needs_processing() at trigger time to dispatch the correct
+	 * customer email (Processing vs Completed), mirroring the normal
+	 * payment_complete() behavior.
 	 *
 	 * @param \WC_Emails $emails WC_Emails instance.
 	 */
 	public static function hook_email_triggers( $emails ) : void {
-		$email_classes = $emails->get_emails();
-
-		// Transitions that should trigger the same emails as "processing"
+		// Transitions that should trigger emails
 		$invoiced_hooks = [
 			'woocommerce_order_status_pending_to_invoiced_notification',
 			'woocommerce_order_status_on-hold_to_invoiced_notification',
@@ -146,19 +146,58 @@ class Woo_OrderStatus {
 			'woocommerce_order_status_cancelled_to_invoiced_notification',
 		];
 
-		// New Order email (admin notification)
-		if ( isset( $email_classes['WC_Email_New_Order'] ) ) {
-			$new_order = $email_classes['WC_Email_New_Order'];
-			foreach ( $invoiced_hooks as $hook ) {
-				add_action( $hook, [ $new_order, 'trigger' ], 10, 2 );
-			}
+		foreach ( $invoiced_hooks as $hook ) {
+			// Admin email: New Order (always fires)
+			add_action( $hook, [ __CLASS__, 'trigger_admin_new_order_email' ], 10, 2 );
+			// Customer email: Processing or Completed based on needs_processing()
+			add_action( $hook, [ __CLASS__, 'trigger_customer_order_email' ], 10, 2 );
+		}
+	}
+
+	/**
+	 * Trigger the admin New Order email for invoiced orders.
+	 *
+	 * @param int            $order_id Order ID.
+	 * @param \WC_Order|null $order    Order object.
+	 */
+	public static function trigger_admin_new_order_email( int $order_id, $order = null ) : void {
+		$emails = \WC()->mailer()->get_emails();
+		if ( isset( $emails['WC_Email_New_Order'] ) ) {
+			$emails['WC_Email_New_Order']->trigger( $order_id, $order );
+		}
+	}
+
+	/**
+	 * Trigger the appropriate customer email based on order contents.
+	 *
+	 * Mirrors WooCommerce payment_complete() behavior:
+	 * - Virtual products (bookings) → Customer Completed Order email
+	 * - Physical products → Customer Processing Order email
+	 *
+	 * @param int            $order_id Order ID.
+	 * @param \WC_Order|null $order    Order object.
+	 */
+	public static function trigger_customer_order_email( int $order_id, $order = null ) : void {
+		if ( ! $order ) {
+			$order = wc_get_order( $order_id );
+		}
+		if ( ! $order ) {
+			return;
 		}
 
-		// Customer Processing Order email (customer notification)
-		if ( isset( $email_classes['WC_Email_Customer_Processing_Order'] ) ) {
-			$processing = $email_classes['WC_Email_Customer_Processing_Order'];
-			foreach ( $invoiced_hooks as $hook ) {
-				add_action( $hook, [ $processing, 'trigger' ], 10, 2 );
+		$emails = \WC()->mailer()->get_emails();
+
+		// Check if order needs processing (has physical items)
+		// Virtual-only orders (like bookings) return false → completed email
+		if ( $order->needs_processing() ) {
+			// Physical items present → Processing email
+			if ( isset( $emails['WC_Email_Customer_Processing_Order'] ) ) {
+				$emails['WC_Email_Customer_Processing_Order']->trigger( $order_id, $order );
+			}
+		} else {
+			// All virtual items → Completed email
+			if ( isset( $emails['WC_Email_Customer_Completed_Order'] ) ) {
+				$emails['WC_Email_Customer_Completed_Order']->trigger( $order_id, $order );
 			}
 		}
 	}
