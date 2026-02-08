@@ -185,7 +185,9 @@ final class Plugin {
 		add_action('gform_after_submission', [ $this, 'gf_after_submission_add_to_cart' ], 10, 2);
 
 		// ---- Notification Language: capture submission language on GF entry
-		add_action('gform_after_submission', [ Domain\NotificationLanguage::class, 'on_gf_submission' ], 5, 2);
+		add_action('gform_after_submission', function( $entry, $form ) {
+			\TC_BF\Domain\NotificationLanguage::on_gf_submission( $entry, $form );
+		}, 5, 2);
 
 		// ---- Woo Bookings: override booking cost when we pass _custom_cost (existing behavior)
 		add_filter('woocommerce_bookings_calculated_booking_cost', [ $this, 'woo_override_booking_cost' ], 11, 3);
@@ -236,12 +238,24 @@ final class Plugin {
 		}
 
 		// ---- Notification Language: user profile fields (admin + My Account)
-		add_action( 'show_user_profile', [ Domain\NotificationLanguage::class, 'render_user_profile_field' ] );
-		add_action( 'edit_user_profile', [ Domain\NotificationLanguage::class, 'render_user_profile_field' ] );
-		add_action( 'personal_options_update', [ Domain\NotificationLanguage::class, 'save_user_profile_field' ] );
-		add_action( 'edit_user_profile_update', [ Domain\NotificationLanguage::class, 'save_user_profile_field' ] );
-		add_action( 'woocommerce_edit_account_form', [ Domain\NotificationLanguage::class, 'render_my_account_field' ] );
-		add_action( 'woocommerce_save_account_details', [ Domain\NotificationLanguage::class, 'save_my_account_field' ] );
+		add_action( 'show_user_profile', function( $user ) {
+			\TC_BF\Domain\NotificationLanguage::render_user_profile_field( $user );
+		} );
+		add_action( 'edit_user_profile', function( $user ) {
+			\TC_BF\Domain\NotificationLanguage::render_user_profile_field( $user );
+		} );
+		add_action( 'personal_options_update', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_user_profile_field( (int) $user_id );
+		} );
+		add_action( 'edit_user_profile_update', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_user_profile_field( (int) $user_id );
+		} );
+		add_action( 'woocommerce_edit_account_form', function() {
+			\TC_BF\Domain\NotificationLanguage::render_my_account_field();
+		} );
+		add_action( 'woocommerce_save_account_details', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_my_account_field( (int) $user_id );
+		} );
 
 		// ---- Cart display: render participant and pack badges after item name (priority 10 = shows first)
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_render_pack_badges' ], 10, 2);
