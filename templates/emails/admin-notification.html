@@ -2,30 +2,30 @@
 
   <!-- HEADER -->
   <div style="padding: 15px; background-color: #434c00; color: white;">
-    <h2 style="margin: 0; font-size: 18px;">[TCBF] New Booking Confirmed</h2>
+    <h2 style="margin: 0; font-size: 18px;">[:en][TCBF] New Booking Confirmed[:es][TCBF] Nueva Reserva Confirmada[:]</h2>
   </div>
 
   <!-- BOOKING DETAILS -->
   <div style="padding: 20px; background-color: #f9f9f9;">
     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
       <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #ddd; width: 35%;"><strong>Event</strong></td>
+        <td style="padding: 8px 0; border-bottom: 1px solid #ddd; width: 35%;"><strong>[:en]Event[:es]Evento[:]</strong></td>
         <td style="padding: 8px 0; border-bottom: 1px solid #ddd;">{Event:1}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>Date</strong></td>
+        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>[:en]Date[:es]Fecha[:]</strong></td>
         <td style="padding: 8px 0; border-bottom: 1px solid #ddd;">{Start date:131} — {End date:133} <span style="font-size: 12px; color: #888;">({tcbf:duration})</span></td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>Participant</strong></td>
+        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>[:en]Participant[:es]Participante[:]</strong></td>
         <td style="padding: 8px 0; border-bottom: 1px solid #ddd;">{[:en]Participants[:es]Participante[:] (Nombre):2.3} {[:en]Participants[:es]Participante[:] (Apellidos):2.6}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>Email</strong></td>
+        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>[:en]Email[:es]Email[:]</strong></td>
         <td style="padding: 8px 0; border-bottom: 1px solid #ddd;">{Email:21}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>Phone</strong></td>
+        <td style="padding: 8px 0; border-bottom: 1px solid #ddd;"><strong>[:en]Phone[:es]Teléfono[:]</strong></td>
         <td style="padding: 8px 0; border-bottom: 1px solid #ddd;">{[:es]Telefono[:en]Phone number[:]:123}</td>
       </tr>
     </table>
@@ -36,18 +36,18 @@
   <div style="padding: 0 20px 20px 20px; background-color: #f9f9f9;">
     <table style="width: 100%; border-collapse: collapse; background-color: white; border: 1px solid #ddd; font-size: 14px;">
       <tr style="background-color: #eee;">
-        <td colspan="2" style="padding: 8px; font-weight: bold;">Bike Rental</td>
+        <td colspan="2" style="padding: 8px; font-weight: bold;">[:en]Bike Rental[:es]Alquiler de Bicicleta[:]</td>
       </tr>
       <tr>
-        <td style="padding: 8px; width: 35%;"><strong>Model</strong></td>
+        <td style="padding: 8px; width: 35%;"><strong>[:en]Model[:es]Modelo[:]</strong></td>
         <td style="padding: 8px;">{Bike model and size:146}</td>
       </tr>
       <tr>
-        <td style="padding: 8px;"><strong>Pedals</strong></td>
+        <td style="padding: 8px;"><strong>[:en]Pedals[:es]Pedales[:]</strong></td>
         <td style="padding: 8px;">{[:en]Type of pedals[:es]Tipo de pedales[:]:60}</td>
       </tr>
       <tr>
-        <td style="padding: 8px;"><strong>Helmet</strong></td>
+        <td style="padding: 8px;"><strong>[:en]Helmet[:es]Casco[:]</strong></td>
         <td style="padding: 8px;">{[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]:61}</td>
       </tr>
     </table>
@@ -58,17 +58,17 @@
   <div style="padding: 0 20px 20px 20px; background-color: #f9f9f9;">
     <table style="width: 100%; border-collapse: collapse; background-color: white; border: 1px solid #ddd; font-size: 14px;">
       <tr style="background-color: #eee;">
-        <td colspan="2" style="padding: 8px; font-weight: bold;">Pricing</td>
+        <td colspan="2" style="padding: 8px; font-weight: bold;">[:en]Pricing[:es]Precios[:]</td>
       </tr>
       <tr>
-        <td style="padding: 8px; width: 35%;"><strong>Official price</strong></td>
+        <td style="padding: 8px; width: 35%;"><strong>[:en]Official price[:es]Precio oficial[:]</strong></td>
         <td style="padding: 8px;">{S:173:tcbf_eur}</td>
       </tr>
 
       <!-- Early Booking (conditional) -->
       [gravityforms action="conditional" merge_tag="{Descuento reserva anticipada:175}" condition="greater_than" value="0"]
       <tr style="background-color: #ede9fe;">
-        <td style="padding: 8px; color: #5b21b6;"><strong>Early booking (-{Early Booking Discount %:172}%)</strong></td>
+        <td style="padding: 8px; color: #5b21b6;"><strong>[:en]Early booking[:es]Reserva anticipada[:] (-{Early Booking Discount %:172}%)</strong></td>
         <td style="padding: 8px; color: #5b21b6; font-weight: bold;">-{Descuento reserva anticipada:175:tcbf_eur}</td>
       </tr>
       [/gravityforms]
@@ -76,13 +76,13 @@
       <!-- Partner Discount (conditional) -->
       [gravityforms action="conditional" merge_tag="{Discount code:154}" condition="isnot" value=""]
       <tr style="background-color: #f0fdf4;">
-        <td style="padding: 8px; color: #14532d;"><strong>Partner discount (-{Partner Discount %:152}%)</strong></td>
+        <td style="padding: 8px; color: #14532d;"><strong>[:en]Partner discount[:es]Descuento partner[:] (-{Partner Discount %:152}%)</strong></td>
         <td style="padding: 8px; color: #059669; font-weight: bold;">-{Descuento partner:176:tcbf_eur}</td>
       </tr>
       [/gravityforms]
 
       <tr style="background-color: #434c00;">
-        <td style="padding: 8px; color: white;"><strong>Total (client)</strong></td>
+        <td style="padding: 8px; color: white;"><strong>[:en]Total (client)[:es]Total (cliente)[:]</strong></td>
         <td style="padding: 8px; color: white; font-weight: bold;">{Total client:168:tcbf_eur}</td>
       </tr>
     </table>
@@ -93,18 +93,18 @@
   <div style="padding: 0 20px 20px 20px; background-color: #f9f9f9;">
     <table style="width: 100%; border-collapse: collapse; background-color: #fff3e0; border: 1px solid #ffcc80; font-size: 14px;">
       <tr style="background-color: #ffe0b2;">
-        <td colspan="2" style="padding: 8px; font-weight: bold;">Partner Attribution</td>
+        <td colspan="2" style="padding: 8px; font-weight: bold;">[:en]Partner Attribution[:es]Atribución Partner[:]</td>
       </tr>
       <tr>
-        <td style="padding: 8px; width: 35%;"><strong>Code</strong></td>
+        <td style="padding: 8px; width: 35%;"><strong>[:en]Code[:es]Código[:]</strong></td>
         <td style="padding: 8px;">{Discount code:154}</td>
       </tr>
       <tr>
-        <td style="padding: 8px;"><strong>Partner Email</strong></td>
+        <td style="padding: 8px;"><strong>[:en]Partner Email[:es]Email Partner[:]</strong></td>
         <td style="padding: 8px;">{Partner email:153}</td>
       </tr>
       <tr style="background-color: #e0f2fe;">
-        <td style="padding: 8px; color: #0369a1;"><strong>Commission ({Partner commission %:161}%)</strong></td>
+        <td style="padding: 8px; color: #0369a1;"><strong>[:en]Commission[:es]Comisión[:] ({Partner commission %:161}%)</strong></td>
         <td style="padding: 8px; color: #0369a1; font-weight: bold;">{Partner commission amount:165:tcbf_eur}</td>
       </tr>
     </table>
@@ -113,7 +113,7 @@
 
   <!-- INTERNAL IDS -->
   <div style="padding: 20px; background-color: #f0f0f0; font-size: 12px; color: #666;">
-    <strong>Internal:</strong> Entry #{entry_id} | Event ID: {Event:20} | User: {[:en]User[:es]Usuario[:]:5} ({User ID:167})
+    <strong>[:en]Internal[:es]Interno[:]:</strong> Entry #{entry_id} | Event ID: {Event:20} | [:en]User[:es]Usuario[:]: {[:en]User[:es]Usuario[:]:5} ({User ID:167})
   </div>
 
 </div>
