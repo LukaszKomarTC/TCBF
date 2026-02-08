@@ -289,7 +289,9 @@ final class Plugin {
 		add_action('woocommerce_checkout_order_processed', [ $this, 'entry_state_set_checkout_guard' ], 5, 3);
 
 		// ---- Notification Language: capture customer language on order
-		add_action('woocommerce_checkout_order_processed', [ Domain\NotificationLanguage::class, 'on_checkout_order_processed' ], 6, 3);
+		add_action('woocommerce_checkout_order_processed', function( $order_id, $posted_data, $order ) {
+			\TC_BF\Domain\NotificationLanguage::on_checkout_order_processed( (int) $order_id, $posted_data, $order );
+		}, 6, 3);
 
 		// ---- Entry State: mark entries as paid when payment succeeds
 		add_action('woocommerce_payment_complete', [ $this, 'entry_state_mark_paid' ], 25, 1);
