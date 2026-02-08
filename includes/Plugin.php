@@ -307,6 +307,10 @@ final class Plugin {
 		// ---- GF notifications: custom event + fire on paid-equivalent statuses
 		// Paid-equivalent: processing, completed, invoiced (see Woo_StatusPolicy)
 		add_filter('gform_notification_events', [ $this, 'gf_register_notification_events' ], 10, 1);
+		// Per-notification language switching (participant, partner, admin get different languages)
+		add_filter('gform_notification', function( $notification, $form, $entry ) {
+			return \TC_BF\Domain\NotificationLanguage::filter_notification_language( $notification, $form, $entry );
+		}, 5, 3);
 		add_action('woocommerce_gravityforms_entry_created', [ $this, 'bridge_gf_entry_id_to_order_item' ], 10, 5);
 		add_action('woocommerce_gravityforms_entry_created', function( $entry_id, $order_id, $order_item, $form_data, $lead_data ) {
 			\TC_BF\Domain\NotificationLanguage::on_gf_entry_linked_to_order( $entry_id, $order_id, $order_item, $form_data, $lead_data );

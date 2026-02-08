@@ -629,5 +629,126 @@ class NotificationLanguage {
 			}
 		}
 	}
+
+	/**
+	 * Filter GF notification to apply correct language based on recipient type
+	 *
+	 * Hook: gform_notification (priority 5, before content processing)
+	 *
+	 * Detects TCBF notification type from ID and switches qTranslate language:
+	 * - tcbf_participant_* → customer language (from entry/order)
+	 * - tcbf_partner_* → partner's user preference
+	 * - tcbf_admin_* → admin's user preference or site default
+	 *
+	 * @param array $notification GF notification array
+	 * @param array $form         GF form
+	 * @param array $entry        GF entry
+	 * @return array Modified notification
+	 */
+	public static function filter_notification_language( array $notification, array $form, array $entry ) : array {
+		// Only process TCBF notifications
+		$notification_id = $notification['id'] ?? '';
+		if ( strpos( $notification_id, 'tcbf_' ) !== 0 ) {
+			return $notification;
+		}
+
+		// Determine notification type and get appropriate language
+		$lang = self::get_default_language();
+
+		if ( strpos( $notification_id, 'tcbf_participant_' ) === 0 ) {
+			// Participant notification: use customer language from entry/order
+			$lang = self::get_language_for_entry( $entry );
+		} elseif ( strpos( $notification_id, 'tcbf_partner_' ) === 0 ) {
+			// Partner notification: use partner's language preference
+			$lang = self::get_partner_language_from_entry( $entry );
+		} elseif ( strpos( $notification_id, 'tcbf_admin_' ) === 0 ) {
+			// Admin notification: use admin preference or site default
+			$lang = self::for_admin();
+		}
+
+		// Switch qTranslate language for content processing
+		if ( ! empty( $lang ) ) {
+			global $q_config;
+			if ( isset( $q_config ) ) {
+				$q_config['language'] = $lang;
+			}
+
+			// Also switch WordPress locale for translations
+			if ( function_exists( 'switch_to_locale' ) ) {
+				$locale = self::lang_to_locale( $lang );
+				if ( $locale !== get_locale() ) {
+					switch_to_locale( $locale );
+				}
+			}
+		}
+
+		return $notification;
+	}
+
+	/**
+	 * Get customer language from GF entry
+	 *
+	 * @param array $entry GF entry
+	 * @return string Language code
+	 */
+	private static function get_language_for_entry( array $entry ) : string {
+		$entry_id = (int) ( $entry['id'] ?? 0 );
+		if ( $entry_id <= 0 ) {
+			return self::get_default_language();
+		}
+
+		// Check for override first
+		if ( function_exists( 'gform_get_meta' ) ) {
+			$override = \gform_get_meta( $entry_id, self::ENTRY_OVERRIDE_KEY );
+			if ( ! empty( $override ) ) {
+				return $override;
+			}
+
+			// Check entry language
+			$lang = \gform_get_meta( $entry_id, self::ENTRY_META_KEY );
+			if ( ! empty( $lang ) ) {
+				return $lang;
+			}
+		}
+
+		return self::get_default_language();
+	}
+
+	/**
+	 * Get partner's preferred language from entry context
+	 *
+	 * @param array $entry GF entry
+	 * @return string Language code
+	 */
+	private static function get_partner_language_from_entry( array $entry ) : string {
+		// Try to get partner user ID from entry
+		// Partner email is typically in a field - we need to find the user
+		$partner_email = '';
+
+		// Check common partner email field locations
+		if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_SemanticFields' ) ) {
+			$form_id = (int) ( $entry['form_id'] ?? 0 );
+			$partner_email = \TC_BF\Integrations\GravityForms\GF_SemanticFields::entry_value(
+				$entry,
+				$form_id,
+				'partner_email'
+			);
+		}
+
+		// Fallback: check field 104 (common partner email field)
+		if ( empty( $partner_email ) && ! empty( $entry['104'] ) ) {
+			$partner_email = $entry['104'];
+		}
+
+		if ( ! empty( $partner_email ) && is_email( $partner_email ) ) {
+			$user = get_user_by( 'email', $partner_email );
+			if ( $user ) {
+				return self::for_partner( $user->ID, $entry );
+			}
+		}
+
+		// Fallback to default
+		return self::get_default_language();
+	}
 }
 
