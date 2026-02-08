@@ -434,7 +434,7 @@ class NotificationLanguage {
 		}
 
 		// Check roles
-		$partner_roles = [ 'partner', 'tc_partner', 'hotel_partner' ];
+		$partner_roles = [ 'partner', 'tc_partner', 'hotel_partner', 'hotel' ];
 		if ( array_intersect( $partner_roles, $user->roles ) ) {
 			return true;
 		}
