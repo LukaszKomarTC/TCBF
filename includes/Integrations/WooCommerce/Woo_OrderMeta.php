@@ -16,6 +16,22 @@ class Woo_OrderMeta {
 	// Internal meta key prefixes/keys that should never be displayed to customers
 	const INTERNAL_META_PREFIXES = [ 'TC_', 'TCBF_', 'tcbf_', '_tcbf_', '_tc_', 'tc_', '_eb_', '_gf_' ];
 
+	// Display labels to hide in emails (WC GF Product Add-ons uses human-readable labels)
+	// These are partial matches (case-insensitive) against the display_key shown in emails
+	const HIDDEN_DISPLAY_LABELS = [
+		// Equipment choices - shown elsewhere or internal
+		'pedals', 'pedales', 'type of pedals', 'tipo de pedal',
+		'helmet', 'casco',
+		// Booking source - internal
+		'booking source', 'fuente de reserva', 'fuente',
+		// Client/participant - shown as badge
+		'client', 'cliente', 'participant', 'participante',
+		// Email - internal
+		'email', 'correo',
+		// Confirmation - internal
+		'confirmation', 'confirmaci',
+	];
+
 	// Explicit list of ALL internal meta keys to hide (both with and without underscore prefix)
 	const HIDDEN_META_KEYS = [
 		// TC group/pack meta
@@ -514,6 +530,19 @@ class Woo_OrderMeta {
 			if ( preg_match( '/^(tc|tcbf|gf|eb)_/i', $key_stripped ) ||
 			     preg_match( '/_(id|scope|role|eligible|amount|pct)$/i', $key_lower ) ) {
 				unset( $formatted_meta[ $id ] );
+				continue;
+			}
+
+			// Check display label (for WC GF Product Add-ons which uses human-readable labels)
+			// This catches fields like "Type of pedals", "Helmet (obligatory)", "Booking source"
+			$display_key = isset( $meta->display_key ) ? strtolower( (string) $meta->display_key ) : '';
+			if ( $display_key !== '' ) {
+				foreach ( self::HIDDEN_DISPLAY_LABELS as $hidden_label ) {
+					if ( strpos( $display_key, strtolower( $hidden_label ) ) !== false ) {
+						unset( $formatted_meta[ $id ] );
+						continue 2;
+					}
+				}
 			}
 		}
 

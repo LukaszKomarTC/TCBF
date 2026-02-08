@@ -1160,34 +1160,39 @@ class Woo_BookingLedger {
 			echo esc_html( $eb_label ) . ': -' . wp_strip_all_tags( wc_price( $eb_amount ) ) . "\n";
 			echo esc_html( $total_label ) . ': ' . wp_strip_all_tags( wc_price( $total ) ) . "\n";
 		} else {
-			// HTML breakdown with pack footer styling
+			// HTML breakdown with inline styles for email compatibility
+			// Uses table layout for maximum email client support (flex doesn't work everywhere)
 
-			// Participant badge (same style as cart)
+			// Participant badge
 			if ( ! empty( $participant_name ) ) {
-				echo '<div class="tcbf-pack-participant-badge">';
-				echo '<span class="tcbf-pack-participant-badge__icon">👤</span>';
-				echo '<span class="tcbf-pack-participant-badge__text">' . esc_html( $participant_name ) . '</span>';
+				echo '<div style="margin: 8px 0 6px 0; padding: 4px 8px; background-color: #f5f5f5; border-radius: 4px; display: inline-block; font-size: 12px;">';
+				echo '<span style="margin-right: 4px;">👤</span>';
+				echo '<span style="font-weight: 500;">' . esc_html( $participant_name ) . '</span>';
 				echo '</div>';
 			}
 
-			echo '<div class="tcbf-pack-footer tcbf-pack-footer--booking">';
+			// Price breakdown using table for email compatibility
+			echo '<table cellpadding="0" cellspacing="0" border="0" style="margin-top: 8px; padding: 8px; background-color: #fafafa; border-left: 3px solid #ccc; font-size: 12px; width: auto;">';
 
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-base">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html( $base_label ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $base ) ) . '</span>';
-			echo '</div>';
+			// Base price row
+			echo '<tr>';
+			echo '<td style="color: #666; padding: 2px 12px 2px 8px;">' . esc_html( $base_label ) . ':</td>';
+			echo '<td style="color: #666; padding: 2px 8px 2px 0; text-align: right;">' . wp_kses_post( wc_price( $base ) ) . '</td>';
+			echo '</tr>';
 
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html( $eb_label ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-' . wp_kses_post( wc_price( $eb_amount ) ) . '</span>';
-			echo '</div>';
+			// EB discount row (green)
+			echo '<tr>';
+			echo '<td style="color: #2e7d32; padding: 2px 12px 2px 8px;">' . esc_html( $eb_label ) . ':</td>';
+			echo '<td style="color: #2e7d32; font-weight: 500; padding: 2px 8px 2px 0; text-align: right;">-' . wp_kses_post( wc_price( $eb_amount ) ) . '</td>';
+			echo '</tr>';
 
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-total">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html( $total_label ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $total ) ) . '</span>';
-			echo '</div>';
+			// Total row (bold, with top border)
+			echo '<tr>';
+			echo '<td style="font-weight: 600; padding: 6px 12px 2px 8px; border-top: 1px solid #ddd;">' . esc_html( $total_label ) . ':</td>';
+			echo '<td style="font-weight: 600; padding: 6px 8px 2px 0; text-align: right; border-top: 1px solid #ddd;">' . wp_kses_post( wc_price( $total ) ) . '</td>';
+			echo '</tr>';
 
-			echo '</div>';
+			echo '</table>';
 		}
 	}
 
