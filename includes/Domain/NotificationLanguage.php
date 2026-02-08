@@ -600,13 +600,15 @@ class NotificationLanguage {
 	 *
 	 * Hook: woocommerce_gravityforms_entry_created (priority 15)
 	 *
-	 * @param int    $entry_id      GF Entry ID
-	 * @param array  $lead          GF Entry data
-	 * @param array  $form          GF Form
-	 * @param string $order_item_id Order item ID
-	 * @param int    $order_id      Order ID
+	 * @param int|mixed $entry_id   GF entry ID just created.
+	 * @param int|mixed $order_id   WC order ID.
+	 * @param mixed     $order_item WC_Order_Item_Product instance.
+	 * @param mixed     $form_data  Form config array.
+	 * @param mixed     $lead_data  Raw field values.
 	 */
-	public static function on_gf_entry_linked_to_order( int $entry_id, array $lead, array $form, string $order_item_id, int $order_id ) : void {
+	public static function on_gf_entry_linked_to_order( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		$entry_id = (int) $entry_id;
+		$order_id = (int) $order_id;
 		// Get entry language
 		$entry_lang = '';
 		if ( function_exists( 'gform_get_meta' ) ) {

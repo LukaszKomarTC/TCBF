@@ -308,7 +308,9 @@ final class Plugin {
 		// Paid-equivalent: processing, completed, invoiced (see Woo_StatusPolicy)
 		add_filter('gform_notification_events', [ $this, 'gf_register_notification_events' ], 10, 1);
 		add_action('woocommerce_gravityforms_entry_created', [ $this, 'bridge_gf_entry_id_to_order_item' ], 10, 5);
-		add_action('woocommerce_gravityforms_entry_created', [ Domain\NotificationLanguage::class, 'on_gf_entry_linked_to_order' ], 15, 5);
+		add_action('woocommerce_gravityforms_entry_created', function( $entry_id, $order_id, $order_item, $form_data, $lead_data ) {
+			\TC_BF\Domain\NotificationLanguage::on_gf_entry_linked_to_order( $entry_id, $order_id, $order_item, $form_data, $lead_data );
+		}, 15, 5);
 		add_action('woocommerce_payment_complete', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 1);
 		// All paid-equivalent statuses fire WC___paid event
 		add_action('woocommerce_order_status_processing', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 2);
