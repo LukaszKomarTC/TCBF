@@ -131,7 +131,9 @@ final class Plugin {
 		add_filter('gform_field_value_partners_enabled', [ $this, 'gf_populate_partners_enabled' ]);
 
 		// ---- GF: participant language (field 206) - auto-populate with current qTranslate language
-		add_filter('gform_field_value_participant_language', [ Domain\NotificationLanguage::class, 'get_current_language' ]);
+		add_filter('gform_field_value_participant_language', function() {
+			return Domain\NotificationLanguage::get_current_language();
+		});
 
 		// ---- GF: server-side validation (tamper-proof + self-heal)
 		add_filter('gform_validation', [ $this, 'gf_validation' ], 10, 1);
