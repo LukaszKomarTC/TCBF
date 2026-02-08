@@ -688,6 +688,12 @@ class NotificationLanguage {
 	/**
 	 * Get customer language from GF entry
 	 *
+	 * Resolution order (matches for_customer logic):
+	 * 1. Entry override (field 207) - admin/partner explicitly chose language
+	 * 2. Entry meta - submission language from field 206 or auto-detected
+	 * 3. Order meta - customer language captured at checkout
+	 * 4. Fallback - site default language
+	 *
 	 * @param array $entry GF entry
 	 * @return string Language code
 	 */
@@ -697,25 +703,89 @@ class NotificationLanguage {
 			return self::get_default_language();
 		}
 
-		// Check for override first
+		// Priority 1: Check for override first
 		if ( function_exists( 'gform_get_meta' ) ) {
 			$override = \gform_get_meta( $entry_id, self::ENTRY_OVERRIDE_KEY );
 			if ( ! empty( $override ) ) {
 				return $override;
 			}
 
-			// Check entry language
+			// Priority 2: Check entry language meta
 			$lang = \gform_get_meta( $entry_id, self::ENTRY_META_KEY );
 			if ( ! empty( $lang ) ) {
 				return $lang;
 			}
 		}
 
+		// Priority 3: Try to find order and check order meta
+		$order = self::find_order_by_entry_id( $entry_id );
+		if ( $order ) {
+			$order_lang = $order->get_meta( self::ORDER_META_KEY, true );
+			if ( ! empty( $order_lang ) ) {
+				return $order_lang;
+			}
+		}
+
+		// Priority 4: Fallback to default
 		return self::get_default_language();
 	}
 
 	/**
+	 * Find WC order that contains a specific GF entry
+	 *
+	 * @param int $entry_id GF entry ID
+	 * @return \WC_Order|null Order object or null if not found
+	 */
+	private static function find_order_by_entry_id( int $entry_id ) : ?\WC_Order {
+		if ( ! function_exists( 'wc_get_orders' ) ) {
+			return null;
+		}
+
+		// Search for orders with line items containing this entry ID
+		// This is expensive, so we cache the result on the entry meta
+		$cached_order_id = \gform_get_meta( $entry_id, '_tcbf_linked_order_id' );
+		if ( ! empty( $cached_order_id ) ) {
+			$order = wc_get_order( (int) $cached_order_id );
+			if ( $order ) {
+				return $order;
+			}
+		}
+
+		// Query recent orders (limit search for performance)
+		$orders = wc_get_orders( [
+			'limit'      => 50,
+			'orderby'    => 'date',
+			'order'      => 'DESC',
+			'status'     => [ 'processing', 'completed', 'on-hold', 'pending' ],
+		] );
+
+		foreach ( $orders as $order ) {
+			foreach ( $order->get_items() as $item ) {
+				$item_entry_id = $item->get_meta( '_gf_entry_id', true );
+				if ( (int) $item_entry_id === $entry_id ) {
+					// Cache for future lookups
+					\gform_update_meta( $entry_id, '_tcbf_linked_order_id', $order->get_id() );
+					return $order;
+				}
+
+				// Also check WC GF Product Add-ons location
+				$history = $item->get_meta( '_gravity_forms_history', true );
+				if ( is_array( $history ) && (int) ( $history['_gravity_form_linked_entry_id'] ?? 0 ) === $entry_id ) {
+					\gform_update_meta( $entry_id, '_tcbf_linked_order_id', $order->get_id() );
+					return $order;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Get partner's preferred language from entry context
+	 *
+	 * Note: Does NOT use participant override (field 207). Partner notifications
+	 * should use the partner's own language preference, not be affected by
+	 * the participant's language override setting.
 	 *
 	 * @param array $entry GF entry
 	 * @return string Language code
@@ -743,7 +813,9 @@ class NotificationLanguage {
 		if ( ! empty( $partner_email ) && is_email( $partner_email ) ) {
 			$user = get_user_by( 'email', $partner_email );
 			if ( $user ) {
-				return self::for_partner( $user->ID, $entry );
+				// Don't pass entry - partner should use their own preference,
+				// not be affected by participant override (field 207)
+				return self::for_partner( $user->ID );
 			}
 		}
 
