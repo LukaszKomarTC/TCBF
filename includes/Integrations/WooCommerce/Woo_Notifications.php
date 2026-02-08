@@ -152,6 +152,9 @@ class Woo_Notifications {
 		// No GF entries found - skip silently (may be non-pack order)
 		if ( ! $entry_ids ) return;
 
+		// Get customer language for notifications
+		$customer_lang = \TC_BF\Domain\NotificationLanguage::for_customer( $order );
+
 		$did_any = false;
 		foreach ( $entry_ids as $entry_id ) {
 			try {
@@ -167,8 +170,11 @@ class Woo_Notifications {
 				$form = \GFAPI::get_form( $form_id );
 				if ( ! is_array($form) || empty($form['id']) ) continue;
 
-				// Fire WC___paid event - GF conditional logic handles recipient decisions
-				\GFAPI::send_notifications( $form, $entry, 'WC___paid' );
+				// Fire WC___paid event with locale switching for customer language
+				// GF conditional logic handles recipient decisions
+				\TC_BF\Domain\NotificationLanguage::with_locale( $customer_lang, function() use ( $form, $entry ) {
+					\GFAPI::send_notifications( $form, $entry, 'WC___paid' );
+				} );
 				$did_any = true;
 			} catch ( \Throwable $e ) {
 				\TC_BF\Support\Logger::log('gf.notif.wc_paid.exception', [

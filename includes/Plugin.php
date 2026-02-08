@@ -179,6 +179,9 @@ final class Plugin {
 		// ---- GF: submission to cart (single source of truth)
 		add_action('gform_after_submission', [ $this, 'gf_after_submission_add_to_cart' ], 10, 2);
 
+		// ---- Notification Language: capture submission language on GF entry
+		add_action('gform_after_submission', [ Domain\NotificationLanguage::class, 'on_gf_submission' ], 5, 2);
+
 		// ---- Woo Bookings: override booking cost when we pass _custom_cost (existing behavior)
 		add_filter('woocommerce_bookings_calculated_booking_cost', [ $this, 'woo_override_booking_cost' ], 11, 3);
 
@@ -227,6 +230,14 @@ final class Plugin {
 			\TC_BF\Integrations\WooCommerce\Woo_OfflineGateway::init();
 		}
 
+		// ---- Notification Language: user profile fields (admin + My Account)
+		add_action( 'show_user_profile', [ Domain\NotificationLanguage::class, 'render_user_profile_field' ] );
+		add_action( 'edit_user_profile', [ Domain\NotificationLanguage::class, 'render_user_profile_field' ] );
+		add_action( 'personal_options_update', [ Domain\NotificationLanguage::class, 'save_user_profile_field' ] );
+		add_action( 'edit_user_profile_update', [ Domain\NotificationLanguage::class, 'save_user_profile_field' ] );
+		add_action( 'woocommerce_edit_account_form', [ Domain\NotificationLanguage::class, 'render_my_account_field' ] );
+		add_action( 'woocommerce_save_account_details', [ Domain\NotificationLanguage::class, 'save_my_account_field' ] );
+
 		// ---- Cart display: render participant and pack badges after item name (priority 10 = shows first)
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_render_pack_badges' ], 10, 2);
 
@@ -272,6 +283,9 @@ final class Plugin {
 		// ---- Entry State: set checkout guard when order is being created
 		add_action('woocommerce_checkout_order_processed', [ $this, 'entry_state_set_checkout_guard' ], 5, 3);
 
+		// ---- Notification Language: capture customer language on order
+		add_action('woocommerce_checkout_order_processed', [ Domain\NotificationLanguage::class, 'on_checkout_order_processed' ], 6, 3);
+
 		// ---- Entry State: mark entries as paid when payment succeeds
 		add_action('woocommerce_payment_complete', [ $this, 'entry_state_mark_paid' ], 25, 1);
 		add_action('woocommerce_order_status_processing', [ $this, 'entry_state_mark_paid' ], 25, 2);
@@ -287,6 +301,7 @@ final class Plugin {
 		// Paid-equivalent: processing, completed, invoiced (see Woo_StatusPolicy)
 		add_filter('gform_notification_events', [ $this, 'gf_register_notification_events' ], 10, 1);
 		add_action('woocommerce_gravityforms_entry_created', [ $this, 'bridge_gf_entry_id_to_order_item' ], 10, 5);
+		add_action('woocommerce_gravityforms_entry_created', [ Domain\NotificationLanguage::class, 'on_gf_entry_linked_to_order' ], 15, 5);
 		add_action('woocommerce_payment_complete', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 1);
 		// All paid-equivalent statuses fire WC___paid event
 		add_action('woocommerce_order_status_processing', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 2);

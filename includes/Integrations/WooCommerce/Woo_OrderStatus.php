@@ -157,14 +157,20 @@ class Woo_OrderStatus {
 	/**
 	 * Trigger the admin New Order email for invoiced orders.
 	 *
+	 * Uses the admin's preferred notification language for locale switching.
+	 *
 	 * @param int            $order_id Order ID.
 	 * @param \WC_Order|null $order    Order object.
 	 */
 	public static function trigger_admin_new_order_email( int $order_id, $order = null ) : void {
-		$emails = \WC()->mailer()->get_emails();
-		if ( isset( $emails['WC_Email_New_Order'] ) ) {
-			$emails['WC_Email_New_Order']->trigger( $order_id, $order );
-		}
+		$admin_lang = \TC_BF\Domain\NotificationLanguage::for_admin();
+
+		\TC_BF\Domain\NotificationLanguage::with_locale( $admin_lang, function() use ( $order_id, $order ) {
+			$emails = \WC()->mailer()->get_emails();
+			if ( isset( $emails['WC_Email_New_Order'] ) ) {
+				$emails['WC_Email_New_Order']->trigger( $order_id, $order );
+			}
+		} );
 	}
 
 	/**
@@ -173,6 +179,8 @@ class Woo_OrderStatus {
 	 * Mirrors WooCommerce payment_complete() behavior:
 	 * - Virtual products (bookings) → Customer Completed Order email
 	 * - Physical products → Customer Processing Order email
+	 *
+	 * Uses the customer's captured language for locale switching.
 	 *
 	 * @param int            $order_id Order ID.
 	 * @param \WC_Order|null $order    Order object.
@@ -185,21 +193,26 @@ class Woo_OrderStatus {
 			return;
 		}
 
-		$emails = \WC()->mailer()->get_emails();
+		// Get the customer's language captured at checkout/form submission
+		$customer_lang = \TC_BF\Domain\NotificationLanguage::for_customer( $order );
 
-		// Check if order needs processing (has physical items)
-		// Virtual-only orders (like bookings) return false → completed email
-		if ( $order->needs_processing() ) {
-			// Physical items present → Processing email
-			if ( isset( $emails['WC_Email_Customer_Processing_Order'] ) ) {
-				$emails['WC_Email_Customer_Processing_Order']->trigger( $order_id, $order );
+		\TC_BF\Domain\NotificationLanguage::with_locale( $customer_lang, function() use ( $order_id, $order ) {
+			$emails = \WC()->mailer()->get_emails();
+
+			// Check if order needs processing (has physical items)
+			// Virtual-only orders (like bookings) return false → completed email
+			if ( $order->needs_processing() ) {
+				// Physical items present → Processing email
+				if ( isset( $emails['WC_Email_Customer_Processing_Order'] ) ) {
+					$emails['WC_Email_Customer_Processing_Order']->trigger( $order_id, $order );
+				}
+			} else {
+				// All virtual items → Completed email
+				if ( isset( $emails['WC_Email_Customer_Completed_Order'] ) ) {
+					$emails['WC_Email_Customer_Completed_Order']->trigger( $order_id, $order );
+				}
 			}
-		} else {
-			// All virtual items → Completed email
-			if ( isset( $emails['WC_Email_Customer_Completed_Order'] ) ) {
-				$emails['WC_Email_Customer_Completed_Order']->trigger( $order_id, $order );
-			}
-		}
+		} );
 	}
 
 	/**
