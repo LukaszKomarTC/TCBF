@@ -132,7 +132,7 @@ final class Plugin {
 
 		// ---- GF: participant language (field 206) - auto-populate with current qTranslate language
 		add_filter('gform_field_value_participant_language', function() {
-			return Domain\NotificationLanguage::get_current_language();
+			return \TC_BF\Domain\NotificationLanguage::get_current_language();
 		});
 
 		// ---- GF: server-side validation (tamper-proof + self-heal)
