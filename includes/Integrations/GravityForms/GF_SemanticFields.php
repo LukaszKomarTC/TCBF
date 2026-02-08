@@ -68,6 +68,10 @@ final class GF_SemanticFields {
 	const KEY_LEDGER_TOTAL          = 'ledger_total';           // Final total after discounts
 	const KEY_LEDGER_COMMISSION     = 'ledger_commission';      // Partner commission amount
 
+	// Notification language fields
+	const KEY_PARTICIPANT_LANGUAGE           = 'participant_language';                    // Submission language (hidden, auto-populated)
+	const KEY_NOTIFICATION_LANGUAGE_OVERRIDE = 'participant_notification_language_override'; // Admin/partner override (select)
+
 	// =========================================================================
 	// LEGACY FALLBACK MAPS (temporary - to be removed once forms use inputName)
 	// =========================================================================
@@ -118,6 +122,8 @@ final class GF_SemanticFields {
 		self::KEY_LEDGER_PARTNER_AMOUNT    => 176,
 		self::KEY_LEDGER_TOTAL             => 168,
 		self::KEY_LEDGER_COMMISSION        => 165,
+		self::KEY_PARTICIPANT_LANGUAGE           => 206,
+		self::KEY_NOTIFICATION_LANGUAGE_OVERRIDE => 207,
 	];
 
 	/**
@@ -153,6 +159,8 @@ final class GF_SemanticFields {
 		self::KEY_LEDGER_COMMISSION        => 165,
 		self::KEY_PARTNERS_ENABLED         => 181,
 		self::KEY_EB_DISCOUNT_PCT          => 172,
+		self::KEY_PARTICIPANT_LANGUAGE           => 206,
+		self::KEY_NOTIFICATION_LANGUAGE_OVERRIDE => 207,
 	];
 
 	/**

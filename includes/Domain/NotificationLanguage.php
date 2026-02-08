@@ -122,6 +122,12 @@ class NotificationLanguage {
 	/**
 	 * Get language for customer notifications
 	 *
+	 * Resolution order:
+	 * 1. Entry override (field 207) - admin/partner explicitly chose language
+	 * 2. Order meta - customer language captured at checkout
+	 * 3. Entry meta - submission language from field 206 or auto-detected
+	 * 4. Fallback - site default language
+	 *
 	 * @param \WC_Order|int $order Order object or ID
 	 * @return string Language code
 	 */
@@ -134,13 +140,8 @@ class NotificationLanguage {
 			return self::get_default_language();
 		}
 
-		// Try order meta first
-		$lang = $order->get_meta( self::ORDER_META_KEY, true );
-		if ( ! empty( $lang ) ) {
-			return $lang;
-		}
-
-		// Try to get from linked GF entry
+		// Collect entry IDs from order items for override/language lookup
+		$entry_ids = [];
 		foreach ( $order->get_items() as $item ) {
 			$entry_id = $item->get_meta( '_gf_entry_id', true );
 			if ( ! $entry_id ) {
@@ -150,8 +151,30 @@ class NotificationLanguage {
 					$entry_id = $history['_gravity_form_linked_entry_id'];
 				}
 			}
+			if ( $entry_id ) {
+				$entry_ids[] = (int) $entry_id;
+			}
+		}
 
-			if ( $entry_id && class_exists( 'GFAPI' ) ) {
+		// Priority 1: Check for admin/partner override in linked entries
+		if ( ! empty( $entry_ids ) && class_exists( 'GFAPI' ) ) {
+			foreach ( $entry_ids as $entry_id ) {
+				$override = \gform_get_meta( $entry_id, self::ENTRY_OVERRIDE_KEY );
+				if ( ! empty( $override ) ) {
+					return $override;
+				}
+			}
+		}
+
+		// Priority 2: Try order meta (customer language captured at checkout)
+		$lang = $order->get_meta( self::ORDER_META_KEY, true );
+		if ( ! empty( $lang ) ) {
+			return $lang;
+		}
+
+		// Priority 3: Try entry meta (submission language from field 206 or auto-detected)
+		if ( ! empty( $entry_ids ) && class_exists( 'GFAPI' ) ) {
+			foreach ( $entry_ids as $entry_id ) {
 				$entry_lang = \gform_get_meta( $entry_id, self::ENTRY_META_KEY );
 				if ( ! empty( $entry_lang ) ) {
 					return $entry_lang;
@@ -159,7 +182,7 @@ class NotificationLanguage {
 			}
 		}
 
-		// Fallback to default
+		// Priority 4: Fallback to default
 		return self::get_default_language();
 	}
 
@@ -500,6 +523,10 @@ class NotificationLanguage {
 	 *
 	 * Hook: gform_after_submission (priority 5, before other handlers)
 	 *
+	 * Reads:
+	 * - Field 206 (participant_language): Auto-populated hidden field with qTranslate language
+	 * - Field 207 (participant_notification_language_override): Admin/partner override select
+	 *
 	 * @param array $entry GF entry
 	 * @param array $form  GF form
 	 */
@@ -508,7 +535,50 @@ class NotificationLanguage {
 			return;
 		}
 
-		self::store_on_entry( (int) $entry['id'] );
+		$entry_id = (int) $entry['id'];
+
+		// Check for admin/partner override (field 207)
+		// Use semantic field resolution if available, fallback to direct field ID
+		$override = '';
+		if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_SemanticFields' ) ) {
+			$override = \TC_BF\Integrations\GravityForms\GF_SemanticFields::entry_value(
+				$entry,
+				(int) ( $form['id'] ?? 0 ),
+				'participant_notification_language_override'
+			);
+		}
+		// Fallback: try field 207 directly
+		if ( empty( $override ) && ! empty( $entry['207'] ) ) {
+			$override = $entry['207'];
+		}
+
+		// Store override if set (validate against available languages)
+		if ( ! empty( $override ) ) {
+			$available = self::get_available_languages();
+			if ( isset( $available[ $override ] ) ) {
+				\gform_update_meta( $entry_id, self::ENTRY_OVERRIDE_KEY, $override );
+			}
+		}
+
+		// Get language from field 206, or detect current language
+		$lang = '';
+		if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_SemanticFields' ) ) {
+			$lang = \TC_BF\Integrations\GravityForms\GF_SemanticFields::entry_value(
+				$entry,
+				(int) ( $form['id'] ?? 0 ),
+				'participant_language'
+			);
+		}
+		// Fallback: try field 206 directly
+		if ( empty( $lang ) && ! empty( $entry['206'] ) ) {
+			$lang = $entry['206'];
+		}
+		// Final fallback: detect current language
+		if ( empty( $lang ) ) {
+			$lang = self::get_current_language();
+		}
+
+		self::store_on_entry( $entry_id, $lang );
 	}
 
 	/**
