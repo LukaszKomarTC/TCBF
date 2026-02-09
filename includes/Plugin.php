@@ -30,6 +30,7 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderStatus.php
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OfflineGateway.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Pack_Grouping.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_MyAccount.php';
 
 /**
  * TC Booking Flow Plugin Main Class (Orchestrator)
@@ -240,6 +241,11 @@ final class Plugin {
 		// ---- Offline Gateway: partner/admin invoice gateway (requires WooCommerce)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OfflineGateway') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_OfflineGateway::init();
+		}
+
+		// ---- My Account: enhanced orders table for hotel partners
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_MyAccount') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_MyAccount::init();
 		}
 
 		// ---- Notification Language: user profile fields (admin + My Account)
