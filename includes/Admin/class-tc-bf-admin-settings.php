@@ -401,6 +401,54 @@ final class Settings {
 		return $v > 0 ? $v : 55;
 	}
 
+	/**
+	 * Get the global fallback participation product ID.
+	 *
+	 * Used by Admin_Event_Meta (event edit screen) when displaying
+	 * the participation product selector.
+	 *
+	 * @return int Product ID or 0 if none set.
+	 */
+	public static function get_default_participation_product_id() : int {
+		return (int) get_option( self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID, 0 );
+	}
+
+	/**
+	 * Return bookable (WooCommerce Bookings) products as [product_id => label].
+	 *
+	 * Label format: "Title (#ID)".
+	 * Used by Admin_Event_Meta for the participation product dropdown.
+	 *
+	 * @return array<int, string> Array of product_id => label pairs.
+	 */
+	public static function get_bookable_products_for_select() : array {
+		if ( ! function_exists( 'get_posts' ) ) {
+			return [];
+		}
+
+		$products = get_posts([
+			'post_type'      => 'product',
+			'post_status'    => 'publish',
+			'posts_per_page' => 500,
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+			'tax_query'      => [[
+				'taxonomy' => 'product_type',
+				'field'    => 'slug',
+				'terms'    => ['booking'],
+			]],
+		]);
+
+		$out = [];
+		foreach ( $products as $p ) {
+			if ( empty( $p->ID ) ) {
+				continue;
+			}
+			$out[(int) $p->ID] = $p->post_title . ' (#' . $p->ID . ')';
+		}
+		return $out;
+	}
+
 	public static function is_debug() : bool {
 		return (int) get_option(self::OPT_DEBUG, 0) === 1;
 	}
