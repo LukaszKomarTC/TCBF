@@ -325,4 +325,137 @@ class Woo_Notifications {
 		}
 	}
 
+	/* =========================================================
+	 * WooCommerce Email Locale Switching
+	 *
+	 * Ensures WC emails render in the correct language based on recipient:
+	 * - Customer emails: Use customer's captured language
+	 * - Admin emails: Use admin's preferred language
+	 * ========================================================= */
+
+	/**
+	 * Previous qTranslate language (for restoration)
+	 *
+	 * @var string|null
+	 */
+	private static $prev_qtx_lang = null;
+
+	/**
+	 * Whether WP locale was switched
+	 *
+	 * @var bool
+	 */
+	private static $wp_locale_switched = false;
+
+	/**
+	 * Setup locale before WC email rendering.
+	 *
+	 * Hook: woocommerce_email_setup_locale
+	 *
+	 * @param \WC_Email $email Email object
+	 */
+	public static function setup_email_locale( $email ) : void {
+		if ( ! $email || ! is_object( $email ) ) {
+			return;
+		}
+
+		// Determine target language based on email type
+		$target_lang = self::get_email_target_language( $email );
+		if ( ! $target_lang ) {
+			return;
+		}
+
+		// Switch qTranslate language
+		if ( function_exists( 'qtranxf_getLanguage' ) ) {
+			self::$prev_qtx_lang = qtranxf_getLanguage();
+			if ( self::$prev_qtx_lang !== $target_lang ) {
+				global $q_config;
+				if ( isset( $q_config ) ) {
+					$q_config['language'] = $target_lang;
+				}
+			}
+		}
+
+		// Switch WordPress locale
+		$target_locale = \TC_BF\Domain\NotificationLanguage::lang_to_locale( $target_lang );
+		if ( function_exists( 'switch_to_locale' ) && $target_locale !== get_locale() ) {
+			switch_to_locale( $target_locale );
+			self::$wp_locale_switched = true;
+		}
+	}
+
+	/**
+	 * Restore locale after WC email rendering.
+	 *
+	 * Hook: woocommerce_email_restore_locale
+	 *
+	 * @param \WC_Email $email Email object
+	 */
+	public static function restore_email_locale( $email ) : void {
+		// Restore qTranslate language
+		if ( self::$prev_qtx_lang !== null && function_exists( 'qtranxf_getLanguage' ) ) {
+			global $q_config;
+			if ( isset( $q_config ) ) {
+				$q_config['language'] = self::$prev_qtx_lang;
+			}
+			self::$prev_qtx_lang = null;
+		}
+
+		// Restore WordPress locale
+		if ( self::$wp_locale_switched && function_exists( 'restore_previous_locale' ) ) {
+			restore_previous_locale();
+			self::$wp_locale_switched = false;
+		}
+	}
+
+	/**
+	 * Determine target language for an email.
+	 *
+	 * @param \WC_Email $email Email object
+	 * @return string|null Language code or null if cannot determine
+	 */
+	private static function get_email_target_language( $email ) : ?string {
+		// Get email ID
+		$email_id = '';
+		if ( property_exists( $email, 'id' ) ) {
+			$email_id = (string) $email->id;
+		}
+
+		// Admin emails: use admin's preferred language
+		$admin_email_ids = [
+			'new_order',
+			'cancelled_order',
+			'failed_order',
+			'new_booking',
+		];
+		if ( strpos( $email_id, 'admin_' ) === 0 || in_array( $email_id, $admin_email_ids, true ) ) {
+			return \TC_BF\Domain\NotificationLanguage::for_admin();
+		}
+
+		// Customer emails: try to get order and customer language
+		$order = null;
+		if ( property_exists( $email, 'object' ) && $email->object instanceof \WC_Order ) {
+			$order = $email->object;
+		}
+
+		if ( $order ) {
+			return \TC_BF\Domain\NotificationLanguage::for_customer( $order );
+		}
+
+		// Booking-related emails: try to get order from booking
+		if ( property_exists( $email, 'object' ) && class_exists( 'WC_Booking' ) && $email->object instanceof \WC_Booking ) {
+			$booking = $email->object;
+			$order_id = $booking->get_order_id();
+			if ( $order_id > 0 ) {
+				$order = wc_get_order( $order_id );
+				if ( $order ) {
+					return \TC_BF\Domain\NotificationLanguage::for_customer( $order );
+				}
+			}
+		}
+
+		// Fallback to site default
+		return \TC_BF\Domain\NotificationLanguage::get_default_language();
+	}
+
 }

@@ -865,7 +865,7 @@ class Woo_OrderMeta {
 
 		// Email-safe inline styles
 		echo '<div style="margin: 20px 0; padding: 16px 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa;">';
-		echo '<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700;">[:en]Booking Details[:es]Detalles de Reserva[:]</h3>';
+		echo '<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700;">' . esc_html( Woo::translate( '[:en]Booking Details[:es]Detalles de Reserva[:]' ) ) . '</h3>';
 
 		foreach ( $booking_items as $item_data ) {
 			self::render_single_booking_summary_email( $item_data );
@@ -1055,27 +1055,54 @@ class Woo_OrderMeta {
 				continue;
 			}
 
+			// Get event_id if present (Event Form bookings)
 			$event_id = (int) $item->get_meta( '_event_id', true );
 			if ( $event_id <= 0 ) {
-				// Also check without underscore
 				$event_id = (int) $item->get_meta( 'event_id', true );
 			}
 
-			if ( $event_id <= 0 ) {
-				continue; // Not a booking item
+			// Check if this item has a WC Booking associated
+			$booking_ids = [];
+			$has_wc_booking = false;
+			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
+				$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+				$has_wc_booking = ! empty( $booking_ids );
 			}
 
-			// Get event title
+			// Skip items that have neither event_id nor WC Booking
+			if ( $event_id <= 0 && ! $has_wc_booking ) {
+				continue;
+			}
+
+			// Get scope (participation vs rental)
+			$scope = (string) $item->get_meta( '_tc_scope', true );
+			if ( $scope === '' ) {
+				$scope = (string) $item->get_meta( 'tcbf_scope', true );
+			}
+
+			// Skip rental items (they're part of the pack, show only parent)
+			if ( $scope === 'rental' ) {
+				continue;
+			}
+
+			// Get event/product title
 			$event_title = (string) $item->get_meta( '_event_title', true );
 			if ( $event_title === '' ) {
 				$event_title = (string) $item->get_meta( 'event_title', true );
 			}
-			if ( $event_title === '' ) {
+			if ( $event_title === '' && $event_id > 0 ) {
 				$event_title = get_the_title( $event_id );
+			}
+			// Fallback to product name for standalone WC Bookings
+			if ( $event_title === '' ) {
+				$event_title = $item->get_name();
 			}
 
 			// Get event URL
-			$event_url = get_permalink( $event_id );
+			$event_url = '';
+			if ( $event_id > 0 ) {
+				$event_url = get_permalink( $event_id );
+			}
 			if ( ! $event_url ) {
 				$product = $item->get_product();
 				$event_url = $product ? $product->get_permalink() : '';
@@ -1093,48 +1120,35 @@ class Woo_OrderMeta {
 				$bicycle = (string) $item->get_meta( 'bicycle', true );
 			}
 
-			// Get scope (participation vs rental)
-			$scope = (string) $item->get_meta( '_tc_scope', true );
-			if ( $scope === '' ) {
-				$scope = (string) $item->get_meta( 'tcbf_scope', true );
-			}
-
-			// Skip rental items (they're part of the pack, show only parent)
-			if ( $scope === 'rental' ) {
-				continue;
-			}
-
-			// Get booking date and duration (if available via WooCommerce Bookings)
+			// Get booking date and duration from WC Booking
 			$booking_date = '';
 			$end_date = '';
 			$duration = 0;
 			$duration_text = '';
-			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
-				$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
-				if ( ! empty( $booking_ids ) ) {
-					try {
-						$booking = new \WC_Booking( (int) $booking_ids[0] );
-						// Validate booking was loaded properly
-						if ( $booking && $booking->get_product_id() > 0 && $booking->get_start() ) {
-							$start = $booking->get_start();
-							$end = $booking->get_end();
-							$booking_date = date_i18n( get_option( 'date_format' ), $start );
 
-							// Calculate duration in days
-							if ( $end && $end > $start ) {
-								$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
-								$day_label = Woo::translate( $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]' );
-								$duration_text = $duration . ' ' . $day_label;
+			if ( ! empty( $booking_ids ) ) {
+				try {
+					$booking = new \WC_Booking( (int) $booking_ids[0] );
+					// Validate booking was loaded properly
+					if ( $booking && $booking->get_product_id() > 0 && $booking->get_start() ) {
+						$start = $booking->get_start();
+						$end = $booking->get_end();
+						$booking_date = date_i18n( get_option( 'date_format' ), $start );
 
-								// Calculate end date as start + (duration - 1) days
-								if ( $duration > 1 ) {
-									$end_date = date_i18n( get_option( 'date_format' ), $start + ( $duration - 1 ) * DAY_IN_SECONDS );
-								}
+						// Calculate duration in days
+						if ( $end && $end > $start ) {
+							$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
+							$day_label = Woo::translate( $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]' );
+							$duration_text = $duration . ' ' . $day_label;
+
+							// Calculate end date as start + (duration - 1) days
+							if ( $duration > 1 ) {
+								$end_date = date_i18n( get_option( 'date_format' ), $start + ( $duration - 1 ) * DAY_IN_SECONDS );
 							}
 						}
-					} catch ( \Exception $e ) {
-						// Booking may be corrupted - skip silently
 					}
+				} catch ( \Exception $e ) {
+					// Booking may be corrupted - skip silently
 				}
 			}
 

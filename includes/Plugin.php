@@ -229,6 +229,10 @@ final class Plugin {
 		add_filter('woocommerce_email_subject_new_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_new_order_subject' ], 10, 2);
 		add_filter('woocommerce_email_subject_booking_reminder', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_booking_reminder_subject' ], 10, 2);
 
+		// ---- Email locale switching: switch WP locale and qTranslate language based on recipient
+		add_action('woocommerce_email_setup_locale', [ Integrations\WooCommerce\Woo_Notifications::class, 'setup_email_locale' ], 10, 1);
+		add_action('woocommerce_email_restore_locale', [ Integrations\WooCommerce\Woo_Notifications::class, 'restore_email_locale' ], 10, 1);
+
 		// ---- Template Loader: WooCommerce + Bookings template overrides (theme wins, can be disabled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Template_Loader') ) {
 			\TC_BF\Integrations\WooCommerce\Template_Loader::init();
