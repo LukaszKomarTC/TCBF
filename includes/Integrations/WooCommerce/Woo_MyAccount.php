@@ -256,12 +256,17 @@ final class Woo_MyAccount {
 			$booking_id = reset( $booking_ids );
 			$booking = new \WC_Booking( $booking_id );
 
+			// Validate booking was loaded properly (product_id > 0 means valid data)
+			if ( ! $booking || $booking->get_product_id() <= 0 ) {
+				return '';
+			}
+
 			$start_timestamp = $booking->get_start();
 			if ( $start_timestamp ) {
 				return esc_html( date_i18n( wc_date_format(), $start_timestamp ) );
 			}
 		} catch ( \Exception $e ) {
-			// Silently fail if booking cannot be loaded
+			// Silently fail if booking cannot be loaded or is corrupted
 		}
 
 		return '';
