@@ -1106,6 +1106,7 @@ class Woo_OrderMeta {
 
 			// Get booking date and duration (if available via WooCommerce Bookings)
 			$booking_date = '';
+			$end_date = '';
 			$duration = 0;
 			$duration_text = '';
 			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
@@ -1124,6 +1125,11 @@ class Woo_OrderMeta {
 								$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
 								$day_label = Woo::translate( $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]' );
 								$duration_text = $duration . ' ' . $day_label;
+
+								// Calculate end date as start + (duration - 1) days
+								if ( $duration > 1 ) {
+									$end_date = date_i18n( get_option( 'date_format' ), $start + ( $duration - 1 ) * DAY_IN_SECONDS );
+								}
 							}
 						}
 					} catch ( \Exception $e ) {
@@ -1144,6 +1150,7 @@ class Woo_OrderMeta {
 				'bicycle'       => $bicycle,
 				'size'          => $size,
 				'booking_date'  => $booking_date,
+				'end_date'      => $end_date,
 				'duration'      => $duration,
 				'duration_text' => $duration_text,
 				'scope'         => $scope,
@@ -1270,7 +1277,7 @@ class Woo_OrderMeta {
 		// Event title
 		if ( $item_data['event_title'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">[:en]Tour[:es]Tour[:]</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">' . esc_html( Woo::translate( '[:en]Tour[:es]Tour[:]' ) ) . '</td>';
 			if ( $item_data['event_url'] ) {
 				echo '<td style="padding: 4px 0; font-weight: 600;"><a href="' . esc_url( $item_data['event_url'] ) . '" style="color: #3d61aa; text-decoration: none;">' . esc_html( $item_data['event_title'] ) . '</a></td>';
 			} else {
@@ -1279,13 +1286,17 @@ class Woo_OrderMeta {
 			echo '</tr>';
 		}
 
-		// Date with duration
+		// Date with duration (show range for multi-day bookings)
 		if ( $item_data['booking_date'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">[:en]Date[:es]Fecha[:]</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . '</td>';
 			$date_display = esc_html( $item_data['booking_date'] );
+			// Show date range for multi-day bookings
+			if ( ! empty( $item_data['end_date'] ) ) {
+				$date_display .= ' — ' . esc_html( $item_data['end_date'] );
+			}
 			if ( ! empty( $item_data['duration_text'] ) ) {
-				$date_display .= ' <span style="color: #9ca3af; font-size: 12px;">(' . $item_data['duration_text'] . ')</span>';
+				$date_display .= ' <span style="color: #9ca3af; font-size: 12px;">(' . esc_html( $item_data['duration_text'] ) . ')</span>';
 			}
 			echo '<td style="padding: 4px 0;">' . $date_display . '</td>';
 			echo '</tr>';
@@ -1294,7 +1305,7 @@ class Woo_OrderMeta {
 		// Participant
 		if ( $item_data['participant'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">[:en]Participant[:es]Participante[:]</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html( Woo::translate( '[:en]Participant[:es]Participante[:]' ) ) . '</td>';
 			echo '<td style="padding: 4px 0;">' . esc_html( $item_data['participant'] ) . '</td>';
 			echo '</tr>';
 		}
@@ -1302,7 +1313,7 @@ class Woo_OrderMeta {
 		// Bike + Size
 		if ( $item_data['bicycle'] !== '' || $item_data['size'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">[:en]Bike[:es]Bicicleta[:]</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html( Woo::translate( '[:en]Bike[:es]Bicicleta[:]' ) ) . '</td>';
 			$bike_text = $item_data['bicycle'] !== '' ? $item_data['bicycle'] : '';
 			if ( $item_data['size'] !== '' ) {
 				$bike_text .= $bike_text !== '' ? ' (' . $item_data['size'] . ')' : $item_data['size'];
