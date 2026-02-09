@@ -199,6 +199,73 @@ class Woo_Notifications {
 		}
 	}
 
+	/* =========================================================
+	 * WooCommerce Email Subject Localization
+	 * ========================================================= */
+
+	/**
+	 * Filter customer completed order email subject with multilingual support.
+	 *
+	 * Hook: woocommerce_email_subject_customer_completed_order
+	 *
+	 * @param string    $subject Original subject.
+	 * @param \WC_Order $order   Order object.
+	 * @return string Localized subject.
+	 */
+	public static function filter_completed_order_subject( $subject, $order ) : string {
+		$order_id = $order->get_id();
+		$text = sprintf(
+			'[:es]Tu pedido [ #%d ] ha sido completado[:en]Your order [ #%d ] has been completed[:]',
+			$order_id,
+			$order_id
+		);
+		return Woo::translate( $text );
+	}
+
+	/**
+	 * Filter new order (admin) email subject with multilingual support.
+	 *
+	 * Hook: woocommerce_email_subject_new_order
+	 *
+	 * @param string    $subject Original subject.
+	 * @param \WC_Order $order   Order object.
+	 * @return string Localized subject.
+	 */
+	public static function filter_new_order_subject( $subject, $order ) : string {
+		$order_id = $order->get_id();
+		$text = sprintf(
+			'[:es]Nuevo pedido [ #%d ][:en]New order [ #%d ][:]',
+			$order_id,
+			$order_id
+		);
+		return Woo::translate( $text );
+	}
+
+	/**
+	 * Filter booking reminder email subject with multilingual support.
+	 *
+	 * Hook: woocommerce_email_subject_booking_reminder
+	 *
+	 * @param string $subject Original subject.
+	 * @param mixed  $booking Booking object.
+	 * @return string Localized subject.
+	 */
+	public static function filter_booking_reminder_subject( $subject, $booking ) : string {
+		$booking_id = is_object( $booking ) && method_exists( $booking, 'get_id' )
+			? $booking->get_id()
+			: 0;
+		$text = sprintf(
+			'[:es]Reserva #%d: ¡Recordatorio![:en]Booking #%d: Reminder![:]',
+			$booking_id,
+			$booking_id
+		);
+		return Woo::translate( $text );
+	}
+
+	/* =========================================================
+	 * GF Invoice Settlement Notifications
+	 * ========================================================= */
+
 	/**
 	 * Fire GF notifications when an invoice is settled.
 	 *

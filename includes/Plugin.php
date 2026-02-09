@@ -222,6 +222,11 @@ final class Plugin {
 		// ---- Email: render enhanced discount/commission blocks after order table (with visibility rules)
 		add_action('woocommerce_email_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_enhanced_blocks' ], 10, 4);
 
+		// ---- Email subjects: localize WooCommerce email subjects with qTranslate support
+		add_filter('woocommerce_email_subject_customer_completed_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_completed_order_subject' ], 10, 2);
+		add_filter('woocommerce_email_subject_new_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_new_order_subject' ], 10, 2);
+		add_filter('woocommerce_email_subject_booking_reminder', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_booking_reminder_subject' ], 10, 2);
+
 		// ---- Template Loader: WooCommerce + Bookings template overrides (theme wins, can be disabled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Template_Loader') ) {
 			\TC_BF\Integrations\WooCommerce\Template_Loader::init();
