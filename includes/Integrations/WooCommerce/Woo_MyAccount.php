@@ -119,8 +119,8 @@ final class Woo_MyAccount {
 				continue;
 			}
 
-			// Get participant name from item meta
-			$participant = $item->get_meta( 'participant', true );
+			// Get participant name from item meta (check multiple keys with fallbacks)
+			$participant = self::get_participant_from_item( $item );
 			if ( $participant !== '' ) {
 				$participants[] = esc_html( $participant );
 			}
@@ -129,6 +129,39 @@ final class Woo_MyAccount {
 		if ( $participants ) {
 			echo implode( '<br>', $participants );
 		}
+	}
+
+	/**
+	 * Get participant name from order item, checking multiple meta keys.
+	 *
+	 * Fallback order (matches Woo_OrderMeta pattern):
+	 * 1. _participant (TCBF primary)
+	 * 2. participant (legacy/display key)
+	 * 3. _tcbf_participant_name (standalone WC Bookings)
+	 *
+	 * @param \WC_Order_Item_Product $item Order item.
+	 * @return string Participant name or empty string.
+	 */
+	private static function get_participant_from_item( $item ): string {
+		// Primary: _participant
+		$participant = (string) $item->get_meta( '_participant', true );
+		if ( $participant !== '' ) {
+			return $participant;
+		}
+
+		// Fallback 1: participant (display key)
+		$participant = (string) $item->get_meta( 'participant', true );
+		if ( $participant !== '' ) {
+			return $participant;
+		}
+
+		// Fallback 2: _tcbf_participant_name (standalone WC Bookings)
+		$participant = (string) $item->get_meta( '_tcbf_participant_name', true );
+		if ( $participant !== '' ) {
+			return $participant;
+		}
+
+		return '';
 	}
 
 	/**
