@@ -865,7 +865,7 @@ class Woo_OrderMeta {
 
 		// Email-safe inline styles
 		echo '<div style="margin: 20px 0; padding: 16px 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa;">';
-		echo '<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700;">' . esc_html__( 'Booking Details', TC_BF_TEXTDOMAIN ) . '</h3>';
+		echo '<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700;">[:en]Booking Details[:es]Detalles de Reserva[:]</h3>';
 
 		foreach ( $booking_items as $item_data ) {
 			self::render_single_booking_summary_email( $item_data );
@@ -946,16 +946,23 @@ class Woo_OrderMeta {
 
 		$has_eb = ( $eb_amount > 0 );
 
-		// Commission visibility (admin emails only)
+		// Commission visibility: admin emails OR partner placing their own order
 		$partner_id = (int) $order->get_meta( 'partner_id', true );
 		$commission = 0.0;
 		$commission_rate = 0.0;
 		$show_commission = false;
 
-		if ( $partner_id > 0 && ! $is_customer_email ) {
+		if ( $partner_id > 0 ) {
 			$commission = (float) $order->get_meta( 'partner_commission', true );
 			$commission_rate = (float) $order->get_meta( 'partner_commission_rate', true );
-			$show_commission = ( $commission > 0 );
+
+			// Show commission if: admin email OR customer is the partner themselves
+			$customer_id = $order->get_customer_id();
+			$customer_is_partner = ( $customer_id > 0 && $customer_id === $partner_id );
+
+			if ( ! $is_customer_email || $customer_is_partner ) {
+				$show_commission = ( $commission > 0 );
+			}
 		}
 
 		// Nothing to show? Exit early
@@ -973,12 +980,12 @@ class Woo_OrderMeta {
 
 			// EB cell (gradient badge style - matches cart/checkout EB badges)
 			$eb_sub = $eb_pct > 0
-				? sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) )
-				: __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+				? number_format_i18n( $eb_pct, 0 ) . '% [:en]applied[:es]aplicado[:]'
+				: '[:en]Applied to booking[:es]Aplicado a la reserva[:]';
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px; vertical-align: top;">';
-			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</div>';
+			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Early booking discount[:es]Descuento reserva anticipada[:]</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $eb_sub ) . '</td>';
+			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $eb_sub . '</td>';
 			echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">-' . wp_kses_post( strip_tags( wc_price( $eb_amount, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 			echo '</tr></table>';
 			echo '</td>';
@@ -987,12 +994,12 @@ class Woo_OrderMeta {
 
 			// Commission cell (indigo gradient badge style)
 			$comm_sub = $commission_rate > 0
-				? sprintf( __( '%s%% of base', TC_BF_TEXTDOMAIN ), number_format_i18n( $commission_rate, 0 ) )
-				: __( 'Based on order total', TC_BF_TEXTDOMAIN );
+				? number_format_i18n( $commission_rate, 0 ) . '% [:en]of base[:es]del base[:]'
+				: '[:en]Based on order total[:es]Basado en el total[:]';
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px; vertical-align: top;">';
-			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Partner commission', TC_BF_TEXTDOMAIN ) . '</div>';
+			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Partner commission[:es]Comisión partner[:]</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $comm_sub ) . '</td>';
+			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $comm_sub . '</td>';
 			echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">' . wp_kses_post( strip_tags( wc_price( $commission, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 			echo '</tr></table>';
 			echo '</td>';
@@ -1004,12 +1011,12 @@ class Woo_OrderMeta {
 
 			if ( $has_eb ) {
 				$eb_sub = $eb_pct > 0
-					? sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) )
-					: __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+					? number_format_i18n( $eb_pct, 0 ) . '% [:en]applied[:es]aplicado[:]'
+					: '[:en]Applied to booking[:es]Aplicado a la reserva[:]';
 				echo '<div style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px;">';
-				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</div>';
+				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Early booking discount[:es]Descuento reserva anticipada[:]</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $eb_sub ) . '</td>';
+				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $eb_sub . '</td>';
 				echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">-' . wp_kses_post( strip_tags( wc_price( $eb_amount, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 				echo '</tr></table>';
 				echo '</div>';
@@ -1017,12 +1024,12 @@ class Woo_OrderMeta {
 
 			if ( $show_commission ) {
 				$comm_sub = $commission_rate > 0
-					? sprintf( __( '%s%% of base', TC_BF_TEXTDOMAIN ), number_format_i18n( $commission_rate, 0 ) )
-					: __( 'Based on order total', TC_BF_TEXTDOMAIN );
-				echo '<div style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px;">';
-				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Partner commission', TC_BF_TEXTDOMAIN ) . '</div>';
+					? number_format_i18n( $commission_rate, 0 ) . '% [:en]of base[:es]del base[:]'
+					: '[:en]Based on order total[:es]Basado en el total[:]';
+				echo '<div style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px; margin-top: 8px;">';
+				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Partner commission[:es]Comisión partner[:]</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $comm_sub ) . '</td>';
+				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $comm_sub . '</td>';
 				echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">' . wp_kses_post( strip_tags( wc_price( $commission, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 				echo '</tr></table>';
 				echo '</div>';
@@ -1097,14 +1104,25 @@ class Woo_OrderMeta {
 				continue;
 			}
 
-			// Get booking date (if available via WooCommerce Bookings)
+			// Get booking date and duration (if available via WooCommerce Bookings)
 			$booking_date = '';
+			$duration = 0;
+			$duration_text = '';
 			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
 				$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
 				if ( ! empty( $booking_ids ) ) {
 					$booking = new \WC_Booking( (int) $booking_ids[0] );
 					if ( $booking && $booking->get_start() ) {
-						$booking_date = date_i18n( get_option( 'date_format' ), $booking->get_start() );
+						$start = $booking->get_start();
+						$end = $booking->get_end();
+						$booking_date = date_i18n( get_option( 'date_format' ), $start );
+
+						// Calculate duration in days
+						if ( $end && $end > $start ) {
+							$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
+							$day_label = $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]';
+							$duration_text = $duration . ' ' . $day_label;
+						}
 					}
 				}
 			}
@@ -1121,6 +1139,8 @@ class Woo_OrderMeta {
 				'bicycle'       => $bicycle,
 				'size'          => $size,
 				'booking_date'  => $booking_date,
+				'duration'      => $duration,
+				'duration_text' => $duration_text,
 				'scope'         => $scope,
 			];
 		}
@@ -1235,6 +1255,7 @@ class Woo_OrderMeta {
 
 	/**
 	 * Render a single booking summary for emails (inline styles).
+	 * Uses qTranslate tags for multilingual support.
 	 *
 	 * @param array $item_data Booking item data
 	 */
@@ -1244,7 +1265,7 @@ class Woo_OrderMeta {
 		// Event title
 		if ( $item_data['event_title'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">' . esc_html__( 'Tour', TC_BF_TEXTDOMAIN ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">[:en]Tour[:es]Tour[:]</td>';
 			if ( $item_data['event_url'] ) {
 				echo '<td style="padding: 4px 0; font-weight: 600;"><a href="' . esc_url( $item_data['event_url'] ) . '" style="color: #3d61aa; text-decoration: none;">' . esc_html( $item_data['event_title'] ) . '</a></td>';
 			} else {
@@ -1253,18 +1274,22 @@ class Woo_OrderMeta {
 			echo '</tr>';
 		}
 
-		// Date
+		// Date with duration
 		if ( $item_data['booking_date'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html__( 'Date', TC_BF_TEXTDOMAIN ) . '</td>';
-			echo '<td style="padding: 4px 0;">' . esc_html( $item_data['booking_date'] ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">[:en]Date[:es]Fecha[:]</td>';
+			$date_display = esc_html( $item_data['booking_date'] );
+			if ( ! empty( $item_data['duration_text'] ) ) {
+				$date_display .= ' <span style="color: #9ca3af; font-size: 12px;">(' . $item_data['duration_text'] . ')</span>';
+			}
+			echo '<td style="padding: 4px 0;">' . $date_display . '</td>';
 			echo '</tr>';
 		}
 
 		// Participant
 		if ( $item_data['participant'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html__( 'Participant', TC_BF_TEXTDOMAIN ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">[:en]Participant[:es]Participante[:]</td>';
 			echo '<td style="padding: 4px 0;">' . esc_html( $item_data['participant'] ) . '</td>';
 			echo '</tr>';
 		}
@@ -1272,7 +1297,7 @@ class Woo_OrderMeta {
 		// Bike + Size
 		if ( $item_data['bicycle'] !== '' || $item_data['size'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html__( 'Bike', TC_BF_TEXTDOMAIN ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">[:en]Bike[:es]Bicicleta[:]</td>';
 			$bike_text = $item_data['bicycle'] !== '' ? $item_data['bicycle'] : '';
 			if ( $item_data['size'] !== '' ) {
 				$bike_text .= $bike_text !== '' ? ' (' . $item_data['size'] . ')' : $item_data['size'];
