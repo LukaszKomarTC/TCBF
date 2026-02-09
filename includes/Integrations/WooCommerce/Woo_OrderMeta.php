@@ -980,12 +980,12 @@ class Woo_OrderMeta {
 
 			// EB cell (gradient badge style - matches cart/checkout EB badges)
 			$eb_sub = $eb_pct > 0
-				? number_format_i18n( $eb_pct, 0 ) . '% [:en]applied[:es]aplicado[:]'
-				: '[:en]Applied to booking[:es]Aplicado a la reserva[:]';
+				? number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' )
+				: Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px; vertical-align: top;">';
-			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Early booking discount[:es]Descuento reserva anticipada[:]</div>';
+			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Early booking discount[:es]Descuento reserva anticipada[:]' ) ) . '</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $eb_sub . '</td>';
+			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $eb_sub ) . '</td>';
 			echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">-' . wp_kses_post( strip_tags( wc_price( $eb_amount, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 			echo '</tr></table>';
 			echo '</td>';
@@ -994,12 +994,12 @@ class Woo_OrderMeta {
 
 			// Commission cell (indigo gradient badge style)
 			$comm_sub = $commission_rate > 0
-				? number_format_i18n( $commission_rate, 0 ) . '% [:en]of base[:es]del base[:]'
-				: '[:en]Based on order total[:es]Basado en el total[:]';
+				? number_format_i18n( $commission_rate, 0 ) . '% ' . Woo::translate( '[:en]of base[:es]del base[:]' )
+				: Woo::translate( '[:en]Based on order total[:es]Basado en el total[:]' );
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px; vertical-align: top;">';
-			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Partner commission[:es]Comisión partner[:]</div>';
+			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Partner commission[:es]Comisión partner[:]' ) ) . '</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $comm_sub . '</td>';
+			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $comm_sub ) . '</td>';
 			echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">' . wp_kses_post( strip_tags( wc_price( $commission, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 			echo '</tr></table>';
 			echo '</td>';
@@ -1011,12 +1011,12 @@ class Woo_OrderMeta {
 
 			if ( $has_eb ) {
 				$eb_sub = $eb_pct > 0
-					? number_format_i18n( $eb_pct, 0 ) . '% [:en]applied[:es]aplicado[:]'
-					: '[:en]Applied to booking[:es]Aplicado a la reserva[:]';
+					? number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' )
+					: Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
 				echo '<div style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px;">';
-				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Early booking discount[:es]Descuento reserva anticipada[:]</div>';
+				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Early booking discount[:es]Descuento reserva anticipada[:]' ) ) . '</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $eb_sub . '</td>';
+				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $eb_sub ) . '</td>';
 				echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">-' . wp_kses_post( strip_tags( wc_price( $eb_amount, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 				echo '</tr></table>';
 				echo '</div>';
@@ -1024,12 +1024,12 @@ class Woo_OrderMeta {
 
 			if ( $show_commission ) {
 				$comm_sub = $commission_rate > 0
-					? number_format_i18n( $commission_rate, 0 ) . '% [:en]of base[:es]del base[:]'
-					: '[:en]Based on order total[:es]Basado en el total[:]';
+					? number_format_i18n( $commission_rate, 0 ) . '% ' . Woo::translate( '[:en]of base[:es]del base[:]' )
+					: Woo::translate( '[:en]Based on order total[:es]Basado en el total[:]' );
 				echo '<div style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px; margin-top: 8px;">';
-				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">[:en]Partner commission[:es]Comisión partner[:]</div>';
+				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Partner commission[:es]Comisión partner[:]' ) ) . '</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
-				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . $comm_sub . '</td>';
+				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $comm_sub ) . '</td>';
 				echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">' . wp_kses_post( strip_tags( wc_price( $commission, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
 				echo '</tr></table>';
 				echo '</div>';
@@ -1111,18 +1111,23 @@ class Woo_OrderMeta {
 			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
 				$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
 				if ( ! empty( $booking_ids ) ) {
-					$booking = new \WC_Booking( (int) $booking_ids[0] );
-					if ( $booking && $booking->get_start() ) {
-						$start = $booking->get_start();
-						$end = $booking->get_end();
-						$booking_date = date_i18n( get_option( 'date_format' ), $start );
+					try {
+						$booking = new \WC_Booking( (int) $booking_ids[0] );
+						// Validate booking was loaded properly
+						if ( $booking && $booking->get_product_id() > 0 && $booking->get_start() ) {
+							$start = $booking->get_start();
+							$end = $booking->get_end();
+							$booking_date = date_i18n( get_option( 'date_format' ), $start );
 
-						// Calculate duration in days
-						if ( $end && $end > $start ) {
-							$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
-							$day_label = $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]';
-							$duration_text = $duration . ' ' . $day_label;
+							// Calculate duration in days
+							if ( $end && $end > $start ) {
+								$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
+								$day_label = Woo::translate( $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]' );
+								$duration_text = $duration . ' ' . $day_label;
+							}
 						}
+					} catch ( \Exception $e ) {
+						// Booking may be corrupted - skip silently
 					}
 				}
 			}
@@ -1741,9 +1746,14 @@ class Woo_OrderMeta {
 			return '';
 		}
 
-		$booking = new \WC_Booking( (int) $booking_ids[0] );
-		if ( $booking && $booking->get_start() ) {
-			return date_i18n( get_option( 'date_format' ), $booking->get_start() );
+		try {
+			$booking = new \WC_Booking( (int) $booking_ids[0] );
+			// Validate booking was loaded properly
+			if ( $booking && $booking->get_product_id() > 0 && $booking->get_start() ) {
+				return date_i18n( get_option( 'date_format' ), $booking->get_start() );
+			}
+		} catch ( \Exception $e ) {
+			// Booking may be corrupted - return empty
 		}
 
 		return '';
@@ -1784,14 +1794,29 @@ class Woo_OrderMeta {
 			return $result;
 		}
 
-		$booking  = new \WC_Booking( (int) $booking_ids[0] );
-		$start_ts = $booking ? $booking->get_start() : 0;
-		$end_ts   = $booking ? $booking->get_end() : 0;
+		try {
+			$booking = new \WC_Booking( (int) $booking_ids[0] );
 
-		if ( $start_ts > 0 && $end_ts > 0 && $end_ts > $start_ts ) {
-			$result['duration'] = (int) ceil( ( $end_ts - $start_ts ) / DAY_IN_SECONDS );
-			// End date: last day of booking (end_ts is exclusive/checkout date)
-			$result['end_date'] = date_i18n( get_option( 'date_format' ), $end_ts - DAY_IN_SECONDS );
+			// Validate booking was loaded properly
+			if ( ! $booking || $booking->get_product_id() <= 0 ) {
+				return $result;
+			}
+
+			$start_ts = $booking->get_start();
+			$end_ts   = $booking->get_end();
+
+			if ( $start_ts > 0 && $end_ts > 0 && $end_ts > $start_ts ) {
+				$result['duration'] = (int) ceil( ( $end_ts - $start_ts ) / DAY_IN_SECONDS );
+
+				// Calculate end date as start + (duration - 1) days
+				// This is more reliable than subtracting from end_ts, which varies
+				// based on how WC Bookings stores all-day vs hourly bookings
+				if ( $result['duration'] > 1 ) {
+					$result['end_date'] = date_i18n( get_option( 'date_format' ), $start_ts + ( $result['duration'] - 1 ) * DAY_IN_SECONDS );
+				}
+			}
+		} catch ( \Exception $e ) {
+			// Booking may be corrupted - return empty
 		}
 
 		return $result;
