@@ -221,6 +221,9 @@ final class Plugin {
 		// ---- Email: render TCBF Summary block before order table
 		add_action('woocommerce_email_before_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_summary_block' ], 10, 4);
 
+		// ---- Email: render inline booking details per item (participant, event, date, EB badge, pack footers)
+		add_action('woocommerce_order_item_meta_end', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_item_booking_details' ], 10, 4);
+
 		// ---- Email: render enhanced discount/commission blocks after order table (with visibility rules)
 		add_action('woocommerce_email_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_enhanced_blocks' ], 10, 4);
 

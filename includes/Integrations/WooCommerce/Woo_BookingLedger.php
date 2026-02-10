@@ -1129,6 +1129,11 @@ class Woo_BookingLedger {
 			return;
 		}
 
+		// Skip in email context — Woo_OrderMeta handles email rendering with inline styles
+		if ( Woo_OrderMeta::is_rendering_email() ) {
+			return;
+		}
+
 		// Check for our ledger meta
 		$base            = (float) $item->get_meta( '_tcbf_ledger_base' );
 		$eb_amount       = (float) $item->get_meta( '_tcbf_ledger_eb_amount' );
