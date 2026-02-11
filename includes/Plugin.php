@@ -224,6 +224,9 @@ final class Plugin {
 		// ---- Email: render inline booking details per item (participant, event, date, EB badge, pack footers)
 		add_action('woocommerce_order_item_meta_end', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_item_booking_details' ], 10, 4);
 
+		// ---- Email: show original (pre-EB) price in the WC product table price column for EB items
+		add_filter('woocommerce_order_formatted_line_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_email_line_subtotal' ], 10, 3);
+
 		// ---- Email: render enhanced discount/commission blocks after order table (with visibility rules)
 		add_action('woocommerce_email_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_enhanced_blocks' ], 10, 4);
 

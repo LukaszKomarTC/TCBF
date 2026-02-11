@@ -70,6 +70,10 @@ class Woo_OrderMeta {
 
 		// GF meta
 		'gf_entry_id', '_gf_entry_id',
+
+		// Notification / language meta (leaked from WC Bookings or GF)
+		'notification_language', '_notification_language',
+		'Notification Language',
 	];
 
 	/** @var int|null Order ID for which email rendering is active (set by render_email_summary_block) */
@@ -514,6 +518,10 @@ class Woo_OrderMeta {
 			$key_lower    = strtolower( $key );
 			$key_stripped = ltrim( $key_lower, '_' );
 
+			// Also check display_key (WC auto-formats "notification_language" → "Notification Language")
+			$display_key       = isset( $meta->display_key ) ? (string) $meta->display_key : '';
+			$display_key_lower = strtolower( $display_key );
+
 			// Check prefixes (case-insensitive)
 			foreach ( self::INTERNAL_META_PREFIXES as $prefix ) {
 				$prefix_lower = strtolower( $prefix );
@@ -523,9 +531,10 @@ class Woo_OrderMeta {
 				}
 			}
 
-			// Check explicit key list (case-insensitive)
+			// Check explicit key list (case-insensitive) against both raw key and display_key
 			foreach ( self::HIDDEN_META_KEYS as $hidden_key ) {
-				if ( strtolower( $hidden_key ) === $key_lower || strtolower( $hidden_key ) === $key_stripped ) {
+				$hidden_lower = strtolower( $hidden_key );
+				if ( $hidden_lower === $key_lower || $hidden_lower === $key_stripped || $hidden_lower === $display_key_lower ) {
 					unset( $formatted_meta[ $id ] );
 					continue 2;
 				}
@@ -1539,6 +1548,42 @@ class Woo_OrderMeta {
 		return self::$email_rendering_order_id !== null;
 	}
 
+	/**
+	 * Override line subtotal in WC emails to show original (pre-EB) price for EB items.
+	 *
+	 * Hooked to woocommerce_order_formatted_line_subtotal (priority 10).
+	 * Only active during email rendering (is_rendering_email check).
+	 *
+	 * @param string                 $subtotal Formatted subtotal HTML
+	 * @param \WC_Order_Item_Product $item     Order item
+	 * @param \WC_Order              $order    Order object
+	 * @return string Modified subtotal or original
+	 */
+	public static function override_email_line_subtotal( $subtotal, $item, $order ) {
+		if ( ! self::is_rendering_email() ) {
+			return $subtotal;
+		}
+
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return $subtotal;
+		}
+
+		// Check for EB base price (original price before discount)
+		$eb_base = (float) self::get_item_meta_ci( $item, '_eb_base_price' );
+		if ( $eb_base <= 0 ) {
+			$eb_base = (float) self::get_item_meta_ci( $item, '_tcbf_ledger_base' );
+		}
+
+		if ( $eb_base <= 0 ) {
+			return $subtotal;
+		}
+
+		$qty        = max( 1, (int) $item->get_quantity() );
+		$base_total = $eb_base * $qty;
+
+		return wc_price( $base_total );
+	}
+
 	/* =========================================================
 	 * Email: Inline Booking Details per Order Item
 	 *
@@ -1644,11 +1689,19 @@ class Woo_OrderMeta {
 				echo '</tr>';
 			}
 
-			// Booking date
+			// Booking date (with end date and duration when available)
 			if ( $record['booking_date'] !== '' ) {
+				$date_display = esc_html( $record['booking_date'] );
+				if ( ! empty( $record['end_date'] ) ) {
+					$date_display .= ' — ' . esc_html( $record['end_date'] );
+				}
+				if ( $record['duration'] > 0 ) {
+					$day_label = $record['duration'] === 1 ? __( 'day', TC_BF_TEXTDOMAIN ) : __( 'days', TC_BF_TEXTDOMAIN );
+					$date_display .= ' <span style="color:#9ca3af; font-size:11px;">(' . esc_html( $record['duration'] . ' ' . $day_label ) . ')</span>';
+				}
 				echo '<tr>';
 				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html__( 'Date', TC_BF_TEXTDOMAIN ) . '</td>';
-				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['booking_date'] ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . $date_display . '</td>';
 				echo '</tr>';
 			}
 
@@ -1818,12 +1871,6 @@ class Woo_OrderMeta {
 	private static function render_email_pack_footer_inline( array $pack_totals ) : void {
 		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px; border-top:1px solid #e5e7eb;">';
 
-		// Base price
-		echo '<tr>';
-		echo '<td style="padding:4px 0; font-size:12px; color:#6b7280;">' . esc_html( $pack_totals['base_label'] ) . '</td>';
-		echo '<td style="padding:4px 0; font-size:12px; text-align:right;">' . wp_kses_post( wc_price( $pack_totals['base_price'] ) ) . '</td>';
-		echo '</tr>';
-
 		// EB discount
 		if ( $pack_totals['eb_discount'] > 0 ) {
 			echo '<tr>';
@@ -1852,11 +1899,6 @@ class Woo_OrderMeta {
 	 */
 	private static function render_email_standalone_eb_footer_inline( float $base_total, float $eb_total, float $final_total ) : void {
 		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px; border-top:1px solid #e5e7eb;">';
-
-		echo '<tr>';
-		echo '<td style="padding:4px 0; font-size:12px; color:#6b7280;">' . esc_html__( 'Price before EB', TC_BF_TEXTDOMAIN ) . '</td>';
-		echo '<td style="padding:4px 0; font-size:12px; text-align:right;">' . wp_kses_post( wc_price( $base_total ) ) . '</td>';
-		echo '</tr>';
 
 		echo '<tr>';
 		echo '<td style="padding:4px 0; font-size:12px; color:#15803d;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</td>';
@@ -2140,8 +2182,6 @@ class Woo_OrderMeta {
 		} catch ( \Exception $e ) {
 			// Booking may be corrupted - return empty
 		}
-
-		return '';
 	}
 
 	/**
