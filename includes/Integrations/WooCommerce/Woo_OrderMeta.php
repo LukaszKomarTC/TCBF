@@ -30,6 +30,8 @@ class Woo_OrderMeta {
 		'email', 'correo',
 		// Confirmation - internal
 		'confirmation', 'confirmaci',
+		// Notification language - GF field #207 (display_key in Spanish: "Idioma de notificación")
+		'idioma de notificaci', 'notification language',
 	];
 
 	// Explicit list of ALL internal meta keys to hide (both with and without underscore prefix)
@@ -1744,41 +1746,35 @@ class Woo_OrderMeta {
 			}
 		}
 
-		// === EB BADGE (all item types) ===
-		if ( $record['eb_eligible'] && ( $record['eb_pct'] > 0 || $record['eb_amount'] > 0 ) ) {
-			$qty        = max( 1, (int) $record['item']->get_quantity() );
-			$eb_display = $record['eb_amount'] * $qty;
-
-			echo '<tr>';
-			echo '<td colspan="2" style="padding:4px 0;">';
-			echo '<span style="display:inline-block; background-color:#5e52a6; background-image:linear-gradient(45deg,#3d61aa 0%,#b74d96 100%); color:#ffffff; padding:4px 10px; border-radius:3px; font-size:11px; font-weight:600;">';
-			if ( $record['eb_pct'] > 0 ) {
-				echo esc_html( number_format_i18n( $record['eb_pct'], 0 ) ) . '% | ';
-			}
-			echo '-' . wp_kses_post( strip_tags( wc_price( $eb_display ), '<span>' ) );
-			echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
-			echo '</span>';
-			echo '</td>';
-			echo '</tr>';
-		}
-
 		echo '</table>';
 
-		// === PACK FOOTER (rendered after the last item in a group) ===
+		// === EB BANNER: visual separator with badge + total ===
+
+		// PACK: rendered after the last item in a group
 		if ( $group_id > 0 && ( $cache['group_last_item'][ $group_id ] ?? 0 ) === $item_id ) {
 			$pack_totals = $cache['group_totals'][ $group_id ] ?? null;
 			if ( $pack_totals && $pack_totals['has_eb'] ) {
-				self::render_email_pack_footer_inline( $pack_totals );
+				self::render_email_eb_banner(
+					$pack_totals['eb_pct'],
+					$pack_totals['eb_discount'],
+					$pack_totals['pack_total'],
+					$pack_totals['base_price'],   // pack total before EB
+					$pack_totals['total_label']
+				);
 			}
 		}
 
-		// === STANDALONE EB FOOTER ===
+		// STANDALONE: single item with EB
 		if ( $is_standalone && $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0 ) {
 			$qty         = max( 1, (int) $record['item']->get_quantity() );
 			$base_total  = $record['eb_base'] * $qty;
 			$eb_total    = $record['eb_amount'] * $qty;
 			$final_total = $base_total - $eb_total;
-			self::render_email_standalone_eb_footer_inline( $base_total, $eb_total, $final_total );
+			self::render_email_eb_banner(
+				$record['eb_pct'],
+				$eb_total,
+				$final_total
+			);
 		}
 	}
 
@@ -1862,54 +1858,58 @@ class Woo_OrderMeta {
 	}
 
 	/**
-	 * Render pack pricing footer with email-safe inline styles.
+	 * Render EB summary banner with email-safe inline styles.
 	 *
-	 * Shows: base price, EB discount, pack total.
+	 * Used for both standalone items and pack footers.
+	 * Displays a visually separated banner inside the product cell:
+	 * - Pack mode: "Pack total: XX€" line + badge + final total
+	 * - Standalone: badge + final total (single line)
 	 *
-	 * @param array $pack_totals Pack totals from calculate_pack_totals()
+	 * @param float $eb_pct        EB discount percentage (0 if unknown)
+	 * @param float $eb_amount     EB discount amount (total, qty-adjusted)
+	 * @param float $final_total   Final price after EB discount
+	 * @param float $pack_base     Pack base price before EB (0 = standalone, skip pack total line)
+	 * @param string $total_label  Label for the total (default "Total")
 	 */
-	private static function render_email_pack_footer_inline( array $pack_totals ) : void {
-		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px; border-top:1px solid #e5e7eb;">';
+	private static function render_email_eb_banner( float $eb_pct, float $eb_amount, float $final_total, float $pack_base = 0.0, string $total_label = '' ) : void {
+		if ( $total_label === '' ) {
+			$total_label = __( 'Total', TC_BF_TEXTDOMAIN );
+		}
 
-		// EB discount
-		if ( $pack_totals['eb_discount'] > 0 ) {
+		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:10px; background:#f8f5ff; border-radius:4px;">';
+
+		// Pack total line (only for packs with base price)
+		if ( $pack_base > 0 ) {
 			echo '<tr>';
-			echo '<td style="padding:4px 0; font-size:12px; color:#15803d;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</td>';
-			echo '<td style="padding:4px 0; font-size:12px; color:#15803d; text-align:right;">-' . wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ) . '</td>';
+			echo '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#6b7280;">';
+			echo esc_html( $total_label ) . ': ';
+			echo wp_kses_post( wc_price( $pack_base ) );
+			echo '</td>';
 			echo '</tr>';
 		}
 
-		// Total
+		// Badge + final total row
 		echo '<tr>';
-		echo '<td style="padding:4px 0; font-size:12px; font-weight:700;">' . esc_html( $pack_totals['total_label'] ) . '</td>';
-		echo '<td style="padding:4px 0; font-size:12px; font-weight:700; text-align:right;">' . wp_kses_post( wc_price( $pack_totals['pack_total'] ) ) . '</td>';
+
+		// Left: EB gradient badge
+		echo '<td style="padding:6px 10px; vertical-align:middle;">';
+		echo '<span style="display:inline-block; background-color:#5e52a6; background-image:linear-gradient(45deg,#3d61aa 0%,#b74d96 100%); color:#ffffff; padding:4px 10px; border-radius:3px; font-size:11px; font-weight:600;">';
+		if ( $eb_pct > 0 ) {
+			echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+		}
+		echo '-' . wp_kses_post( strip_tags( wc_price( $eb_amount ), '<span>' ) );
+		echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+		echo '</span>';
+		echo '</td>';
+
+		// Right: prominent total
+		echo '<td style="padding:6px 10px; text-align:right; vertical-align:middle;">';
+		echo '<span style="font-size:14px; font-weight:800; color:#1a1a1a;">';
+		echo wp_kses_post( wc_price( $final_total ) );
+		echo '</span>';
+		echo '</td>';
+
 		echo '</tr>';
-
-		echo '</table>';
-	}
-
-	/**
-	 * Render standalone EB footer with email-safe inline styles.
-	 *
-	 * Shows: base price, EB discount, total.
-	 *
-	 * @param float $base_total  Base price (before EB)
-	 * @param float $eb_total    EB discount amount
-	 * @param float $final_total Final total after discount
-	 */
-	private static function render_email_standalone_eb_footer_inline( float $base_total, float $eb_total, float $final_total ) : void {
-		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px; border-top:1px solid #e5e7eb;">';
-
-		echo '<tr>';
-		echo '<td style="padding:4px 0; font-size:12px; color:#15803d;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</td>';
-		echo '<td style="padding:4px 0; font-size:12px; color:#15803d; text-align:right;">-' . wp_kses_post( wc_price( $eb_total ) ) . '</td>';
-		echo '</tr>';
-
-		echo '<tr>';
-		echo '<td style="padding:4px 0; font-size:12px; font-weight:700;">' . esc_html__( 'Total', TC_BF_TEXTDOMAIN ) . '</td>';
-		echo '<td style="padding:4px 0; font-size:12px; font-weight:700; text-align:right;">' . wp_kses_post( wc_price( $final_total ) ) . '</td>';
-		echo '</tr>';
-
 		echo '</table>';
 	}
 
@@ -2261,6 +2261,7 @@ class Woo_OrderMeta {
 		$pack_eb_discount = 0.0;
 		$pack_base_price  = 0.0;
 		$has_eb           = false;
+		$eb_pct           = 0;    // Max EB percentage across group items
 		$base_from_meta   = true; // Track if we have authoritative base prices
 		$has_rental       = false; // Track if this is a true pack (participation + rental)
 
@@ -2280,6 +2281,9 @@ class Woo_OrderMeta {
 			if ( $record['eb_eligible'] && $record['eb_amount'] > 0 ) {
 				$pack_eb_discount += $record['eb_amount'] * $qty;
 				$has_eb = true;
+				if ( $record['eb_pct'] > $eb_pct ) {
+					$eb_pct = $record['eb_pct'];
+				}
 			}
 
 			// Base price: prefer stored _eb_base_price (per unit * qty)
@@ -2313,6 +2317,7 @@ class Woo_OrderMeta {
 			'base_price'   => $pack_base_price,
 			'base_label'   => $base_label,
 			'eb_discount'  => $pack_eb_discount,
+			'eb_pct'       => $eb_pct,
 			'pack_total'   => $pack_total,
 			'total_label'  => $total_label,
 			'has_eb'       => $has_eb,
