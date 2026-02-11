@@ -633,11 +633,15 @@ class Woo_OrderMeta {
 		$currency = $order->get_currency();
 
 		// === Gather EB data ===
-		$eb_amount = (float) $order->get_meta( 'early_booking_discount_amount', true );
-		$eb_pct    = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_amount   = (float) $order->get_meta( 'early_booking_discount_amount', true );
+		$eb_pct      = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_combined = false; // True when items have different EB percentages
 
 		// Fallback: aggregate EB data from item-level meta (for orders created before v0.9.1)
 		if ( $eb_amount <= 0 ) {
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
 			foreach ( $order->get_items() as $item ) {
 				if ( ! $item instanceof \WC_Order_Item_Product ) {
 					continue;
@@ -658,10 +662,51 @@ class Woo_OrderMeta {
 
 				if ( $item_amt > 0 ) {
 					$eb_amount += $item_amt * $qty;
-					if ( $eb_pct <= 0 && $item_pct > 0 ) {
-						$eb_pct = $item_pct;
+
+					// Track uniform vs mixed percentages
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
 					}
 				}
+			}
+
+			// Resolve: uniform → use the common pct, mixed → combined (no pct)
+			if ( $first_eb_pct !== null ) {
+				$eb_pct      = $eb_pct_uniform ? $first_eb_pct : 0;
+				$eb_combined = ! $eb_pct_uniform;
+			}
+		} else {
+			// Order-level meta exists — still check items for uniform/mixed detection
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
+			foreach ( $order->get_items() as $item ) {
+				if ( ! $item instanceof \WC_Order_Item_Product ) {
+					continue;
+				}
+				$item_pct = (float) $item->get_meta( '_eb_pct', true );
+				if ( $item_pct <= 0 ) {
+					$item_pct = (float) $item->get_meta( '_tcbf_ledger_eb_pct', true );
+				}
+				$item_amt = (float) $item->get_meta( '_eb_amount', true );
+				if ( $item_amt <= 0 ) {
+					$item_amt = (float) $item->get_meta( '_tcbf_ledger_eb_amount', true );
+				}
+
+				if ( $item_amt > 0 ) {
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
+					}
+				}
+			}
+
+			if ( $first_eb_pct !== null && ! $eb_pct_uniform ) {
+				$eb_pct      = 0;
+				$eb_combined = true;
 			}
 		}
 
@@ -700,9 +745,13 @@ class Woo_OrderMeta {
 
 		// === EB column ===
 		if ( $has_eb ) {
-			$eb_sub = $eb_pct > 0
-				? sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) )
-				: __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+			if ( $eb_combined ) {
+				$eb_sub = __( 'Combined discount', TC_BF_TEXTDOMAIN );
+			} elseif ( $eb_pct > 0 ) {
+				$eb_sub = sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) );
+			} else {
+				$eb_sub = __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+			}
 
 			echo '<div class="tcbf-explainer-item tcbf-explainer-eb">';
 			echo '<div class="tcbf-explainer-label">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</div>';
@@ -942,11 +991,15 @@ class Woo_OrderMeta {
 		$currency = $order->get_currency();
 
 		// === Gather EB data ===
-		$eb_amount = (float) $order->get_meta( 'early_booking_discount_amount', true );
-		$eb_pct    = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_amount   = (float) $order->get_meta( 'early_booking_discount_amount', true );
+		$eb_pct      = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_combined = false; // True when items have different EB percentages
 
 		// Fallback: aggregate EB data from item-level meta (for orders created before v0.9.1)
 		if ( $eb_amount <= 0 ) {
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
 			foreach ( $order->get_items() as $item ) {
 				if ( ! $item instanceof \WC_Order_Item_Product ) {
 					continue;
@@ -967,10 +1020,51 @@ class Woo_OrderMeta {
 
 				if ( $item_amt > 0 ) {
 					$eb_amount += $item_amt * $qty;
-					if ( $eb_pct <= 0 && $item_pct > 0 ) {
-						$eb_pct = $item_pct;
+
+					// Track uniform vs mixed percentages
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
 					}
 				}
+			}
+
+			// Resolve: uniform → use the common pct, mixed → combined (no pct)
+			if ( $first_eb_pct !== null ) {
+				$eb_pct      = $eb_pct_uniform ? $first_eb_pct : 0;
+				$eb_combined = ! $eb_pct_uniform;
+			}
+		} else {
+			// Order-level meta exists — still check items for uniform/mixed detection
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
+			foreach ( $order->get_items() as $item ) {
+				if ( ! $item instanceof \WC_Order_Item_Product ) {
+					continue;
+				}
+				$item_pct = (float) $item->get_meta( '_eb_pct', true );
+				if ( $item_pct <= 0 ) {
+					$item_pct = (float) $item->get_meta( '_tcbf_ledger_eb_pct', true );
+				}
+				$item_amt = (float) $item->get_meta( '_eb_amount', true );
+				if ( $item_amt <= 0 ) {
+					$item_amt = (float) $item->get_meta( '_tcbf_ledger_eb_amount', true );
+				}
+
+				if ( $item_amt > 0 ) {
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
+					}
+				}
+			}
+
+			if ( $first_eb_pct !== null && ! $eb_pct_uniform ) {
+				$eb_pct      = 0;
+				$eb_combined = true;
 			}
 		}
 
@@ -1009,9 +1103,13 @@ class Woo_OrderMeta {
 			echo '<tr>';
 
 			// EB cell (gradient badge style - matches cart/checkout EB badges)
-			$eb_sub = $eb_pct > 0
-				? number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' )
-				: Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
+			if ( $eb_combined ) {
+				$eb_sub = Woo::translate( '[:en]Combined discount[:es]Descuento combinado[:]' );
+			} elseif ( $eb_pct > 0 ) {
+				$eb_sub = number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' );
+			} else {
+				$eb_sub = Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
+			}
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px; vertical-align: top;">';
 			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Early booking discount[:es]Descuento reserva anticipada[:]' ) ) . '</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
@@ -1040,9 +1138,13 @@ class Woo_OrderMeta {
 			echo '<tr><td colspan="2">';
 
 			if ( $has_eb ) {
-				$eb_sub = $eb_pct > 0
-					? number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' )
-					: Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
+				if ( $eb_combined ) {
+					$eb_sub = Woo::translate( '[:en]Combined discount[:es]Descuento combinado[:]' );
+				} elseif ( $eb_pct > 0 ) {
+					$eb_sub = number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' );
+				} else {
+					$eb_sub = Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
+				}
 				echo '<div style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px;">';
 				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Early booking discount[:es]Descuento reserva anticipada[:]' ) ) . '</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
