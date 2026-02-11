@@ -1759,7 +1759,8 @@ class Woo_OrderMeta {
 					$pack_totals['eb_discount'],
 					$pack_totals['pack_total'],
 					$pack_totals['base_price'],   // pack total before EB
-					$pack_totals['total_label']
+					$pack_totals['base_label'],
+					$pack_totals['eb_combined']
 				);
 			}
 		}
@@ -1862,27 +1863,28 @@ class Woo_OrderMeta {
 	 *
 	 * Used for both standalone items and pack footers.
 	 * Displays a visually separated banner inside the product cell:
-	 * - Pack mode: "Pack total: XX€" line + badge + final total
+	 * - Pack mode: "Pack price before EB: XX€" line + badge + final total
 	 * - Standalone: badge + final total (single line)
 	 *
-	 * @param float $eb_pct        EB discount percentage (0 if unknown)
-	 * @param float $eb_amount     EB discount amount (total, qty-adjusted)
-	 * @param float $final_total   Final price after EB discount
-	 * @param float $pack_base     Pack base price before EB (0 = standalone, skip pack total line)
-	 * @param string $total_label  Label for the total (default "Total")
+	 * @param float  $eb_pct       EB discount percentage (0 if unknown or mixed)
+	 * @param float  $eb_amount    EB discount amount (total, qty-adjusted)
+	 * @param float  $final_total  Final price after EB discount
+	 * @param float  $pack_base    Pack base price before EB (0 = standalone, skip pack line)
+	 * @param string $base_label   Label for the pack base price line (default "Total")
+	 * @param bool   $is_combined  True when pack items have different EB percentages
 	 */
-	private static function render_email_eb_banner( float $eb_pct, float $eb_amount, float $final_total, float $pack_base = 0.0, string $total_label = '' ) : void {
-		if ( $total_label === '' ) {
-			$total_label = __( 'Total', TC_BF_TEXTDOMAIN );
+	private static function render_email_eb_banner( float $eb_pct, float $eb_amount, float $final_total, float $pack_base = 0.0, string $base_label = '', bool $is_combined = false ) : void {
+		if ( $base_label === '' ) {
+			$base_label = __( 'Total', TC_BF_TEXTDOMAIN );
 		}
 
 		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:10px; background:#f8f5ff; border-radius:4px;">';
 
-		// Pack total line (only for packs with base price)
+		// Pack base price line (only for packs)
 		if ( $pack_base > 0 ) {
 			echo '<tr>';
 			echo '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#6b7280;">';
-			echo esc_html( $total_label ) . ': ';
+			echo esc_html( $base_label ) . ': ';
 			echo wp_kses_post( wc_price( $pack_base ) );
 			echo '</td>';
 			echo '</tr>';
@@ -1894,11 +1896,15 @@ class Woo_OrderMeta {
 		// Left: EB gradient badge
 		echo '<td style="padding:6px 10px; vertical-align:middle;">';
 		echo '<span style="display:inline-block; background-color:#5e52a6; background-image:linear-gradient(45deg,#3d61aa 0%,#b74d96 100%); color:#ffffff; padding:4px 10px; border-radius:3px; font-size:11px; font-weight:600;">';
-		if ( $eb_pct > 0 ) {
+		if ( $eb_pct > 0 && ! $is_combined ) {
 			echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
 		}
 		echo '-' . wp_kses_post( strip_tags( wc_price( $eb_amount ), '<span>' ) );
-		echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+		if ( $is_combined ) {
+			echo ' ' . esc_html__( 'Combined EB discount', TC_BF_TEXTDOMAIN );
+		} else {
+			echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+		}
 		echo '</span>';
 		echo '</td>';
 
@@ -2261,9 +2267,11 @@ class Woo_OrderMeta {
 		$pack_eb_discount = 0.0;
 		$pack_base_price  = 0.0;
 		$has_eb           = false;
-		$eb_pct           = 0;    // Max EB percentage across group items
-		$base_from_meta   = true; // Track if we have authoritative base prices
-		$has_rental       = false; // Track if this is a true pack (participation + rental)
+		$eb_pct           = 0;       // EB percentage (uniform value or 0 if mixed)
+		$first_eb_pct     = null;    // First EB pct seen (for uniform detection)
+		$eb_pct_uniform   = true;    // All EB-eligible items share the same pct
+		$base_from_meta   = true;    // Track if we have authoritative base prices
+		$has_rental       = false;   // Track if this is a true pack (participation + rental)
 
 		// Tax display mode for order context
 		$inc_tax = ( 'incl' === get_option( 'woocommerce_tax_display_cart' ) );
@@ -2281,8 +2289,13 @@ class Woo_OrderMeta {
 			if ( $record['eb_eligible'] && $record['eb_amount'] > 0 ) {
 				$pack_eb_discount += $record['eb_amount'] * $qty;
 				$has_eb = true;
-				if ( $record['eb_pct'] > $eb_pct ) {
-					$eb_pct = $record['eb_pct'];
+
+				// Track whether all EB items share the same percentage
+				$item_pct = $record['eb_pct'];
+				if ( $first_eb_pct === null ) {
+					$first_eb_pct = $item_pct;
+				} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+					$eb_pct_uniform = false;
 				}
 			}
 
@@ -2298,6 +2311,10 @@ class Woo_OrderMeta {
 
 		// Calculate pack total (after EB)
 		$pack_total = $pack_base_price - $pack_eb_discount;
+
+		// Resolve EB percentage: uniform → show pct, mixed → combined (no pct)
+		$eb_combined = $has_eb && ! $eb_pct_uniform;
+		$eb_pct      = ( $eb_pct_uniform && $first_eb_pct !== null ) ? $first_eb_pct : 0;
 
 		// Use "Pack" prefix only if this is a true pack (has rental bike)
 		// For participation-only, use simpler labels
@@ -2318,6 +2335,7 @@ class Woo_OrderMeta {
 			'base_label'   => $base_label,
 			'eb_discount'  => $pack_eb_discount,
 			'eb_pct'       => $eb_pct,
+			'eb_combined'  => $eb_combined,
 			'pack_total'   => $pack_total,
 			'total_label'  => $total_label,
 			'has_eb'       => $has_eb,
