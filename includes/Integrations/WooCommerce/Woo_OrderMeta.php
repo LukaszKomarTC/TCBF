@@ -2249,16 +2249,9 @@ class Woo_OrderMeta {
 		$helmet  = trim( (string) ( $gf_lead['61'] ?? '' ) );
 
 		// Fallback: pack items are added programmatically (no _gravity_forms_history),
-		// but they carry the GF entry ID — load it directly via GFAPI.
+		// but _gf_entry_id is persisted to order items by woo_checkout_create_order_line_item().
 		if ( ( $pedals === '' || $helmet === '' ) && class_exists( '\GFAPI' ) ) {
-			$gf_entry_id = (int) self::get_item_meta_ci( $item, '_tcbf_gf_entry_id' );
-			if ( $gf_entry_id <= 0 ) {
-				// Also check inside booking meta
-				$booking_data = $item->get_meta( 'booking', true );
-				if ( is_array( $booking_data ) && isset( $booking_data['_entry_id'] ) ) {
-					$gf_entry_id = (int) $booking_data['_entry_id'];
-				}
-			}
+			$gf_entry_id = (int) self::get_item_meta_ci( $item, '_gf_entry_id' );
 			if ( $gf_entry_id > 0 ) {
 				$gf_entry = \GFAPI::get_entry( $gf_entry_id );
 				if ( is_array( $gf_entry ) ) {
