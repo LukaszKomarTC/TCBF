@@ -1980,8 +1980,8 @@ class Woo_OrderMeta {
 			$base_label = __( 'Total', TC_BF_TEXTDOMAIN );
 		}
 
-		$html = '<tr><td colspan="3" style="padding:0;">';
-		$html .= '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin:8px 0 4px; background:#f8f5ff; border-radius:4px;">';
+		$html = '<tr><td colspan="3" style="padding:0; background:#f8f5ff;">';
+		$html .= '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse;">';
 
 		// Pack base price line (only for packs)
 		if ( $pack_base > 0 ) {
@@ -2091,6 +2091,44 @@ class Woo_OrderMeta {
 			$group_parent[ $gid ]     = $parent_id;
 			$group_last_item[ $gid ]  = end( $item_ids );
 			$group_totals[ $gid ]     = self::calculate_pack_totals( $order, $group_records );
+
+			// Inherit pedals/helmet within group (parent↔children share equipment choices)
+			if ( $parent_id > 0 && isset( $records[ $parent_id ] ) ) {
+				$parent_pedals = $records[ $parent_id ]['pedals'];
+				$parent_helmet = $records[ $parent_id ]['helmet'];
+
+				// If parent is empty, try to get from first child that has data
+				if ( $parent_pedals === '' || $parent_helmet === '' ) {
+					foreach ( $item_ids as $iid ) {
+						if ( $iid === $parent_id ) continue;
+						if ( $parent_pedals === '' && $records[ $iid ]['pedals'] !== '' ) {
+							$parent_pedals = $records[ $iid ]['pedals'];
+						}
+						if ( $parent_helmet === '' && $records[ $iid ]['helmet'] !== '' ) {
+							$parent_helmet = $records[ $iid ]['helmet'];
+						}
+						if ( $parent_pedals !== '' && $parent_helmet !== '' ) break;
+					}
+					// Write back to parent record
+					if ( $records[ $parent_id ]['pedals'] === '' && $parent_pedals !== '' ) {
+						$records[ $parent_id ]['pedals'] = $parent_pedals;
+					}
+					if ( $records[ $parent_id ]['helmet'] === '' && $parent_helmet !== '' ) {
+						$records[ $parent_id ]['helmet'] = $parent_helmet;
+					}
+				}
+
+				// Propagate from parent to children that lack data
+				foreach ( $item_ids as $iid ) {
+					if ( $iid === $parent_id ) continue;
+					if ( $records[ $iid ]['pedals'] === '' && $parent_pedals !== '' ) {
+						$records[ $iid ]['pedals'] = $parent_pedals;
+					}
+					if ( $records[ $iid ]['helmet'] === '' && $parent_helmet !== '' ) {
+						$records[ $iid ]['helmet'] = $parent_helmet;
+					}
+				}
+			}
 		}
 
 		self::$email_item_cache = [
@@ -2247,6 +2285,30 @@ class Woo_OrderMeta {
 		$gf_lead = self::get_gf_lead_from_item( $item );
 		$pedals  = trim( (string) ( $gf_lead['60'] ?? '' ) );
 		$helmet  = trim( (string) ( $gf_lead['61'] ?? '' ) );
+
+		// Fallback: pack items are added programmatically (no _gravity_forms_history),
+		// but they carry the GF entry ID — load it directly via GFAPI.
+		if ( ( $pedals === '' || $helmet === '' ) && class_exists( '\GFAPI' ) ) {
+			$gf_entry_id = (int) self::get_item_meta_ci( $item, '_tcbf_gf_entry_id' );
+			if ( $gf_entry_id <= 0 ) {
+				// Also check inside booking meta
+				$booking_data = $item->get_meta( 'booking', true );
+				if ( is_array( $booking_data ) && isset( $booking_data['_entry_id'] ) ) {
+					$gf_entry_id = (int) $booking_data['_entry_id'];
+				}
+			}
+			if ( $gf_entry_id > 0 ) {
+				$gf_entry = \GFAPI::get_entry( $gf_entry_id );
+				if ( is_array( $gf_entry ) ) {
+					if ( $pedals === '' ) {
+						$pedals = trim( (string) ( $gf_entry['60'] ?? '' ) );
+					}
+					if ( $helmet === '' ) {
+						$helmet = trim( (string) ( $gf_entry['61'] ?? '' ) );
+					}
+				}
+			}
+		}
 
 		// Get EB (Early Booking) meta - check Event Form keys first
 		$eb_eligible = (int) self::get_item_meta_ci( $item, '_eb_eligible' );
