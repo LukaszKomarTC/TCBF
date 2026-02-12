@@ -2091,44 +2091,6 @@ class Woo_OrderMeta {
 			$group_parent[ $gid ]     = $parent_id;
 			$group_last_item[ $gid ]  = end( $item_ids );
 			$group_totals[ $gid ]     = self::calculate_pack_totals( $order, $group_records );
-
-			// Inherit pedals/helmet within group (parent↔children share equipment choices)
-			if ( $parent_id > 0 && isset( $records[ $parent_id ] ) ) {
-				$parent_pedals = $records[ $parent_id ]['pedals'];
-				$parent_helmet = $records[ $parent_id ]['helmet'];
-
-				// If parent is empty, try to get from first child that has data
-				if ( $parent_pedals === '' || $parent_helmet === '' ) {
-					foreach ( $item_ids as $iid ) {
-						if ( $iid === $parent_id ) continue;
-						if ( $parent_pedals === '' && $records[ $iid ]['pedals'] !== '' ) {
-							$parent_pedals = $records[ $iid ]['pedals'];
-						}
-						if ( $parent_helmet === '' && $records[ $iid ]['helmet'] !== '' ) {
-							$parent_helmet = $records[ $iid ]['helmet'];
-						}
-						if ( $parent_pedals !== '' && $parent_helmet !== '' ) break;
-					}
-					// Write back to parent record
-					if ( $records[ $parent_id ]['pedals'] === '' && $parent_pedals !== '' ) {
-						$records[ $parent_id ]['pedals'] = $parent_pedals;
-					}
-					if ( $records[ $parent_id ]['helmet'] === '' && $parent_helmet !== '' ) {
-						$records[ $parent_id ]['helmet'] = $parent_helmet;
-					}
-				}
-
-				// Propagate from parent to children that lack data
-				foreach ( $item_ids as $iid ) {
-					if ( $iid === $parent_id ) continue;
-					if ( $records[ $iid ]['pedals'] === '' && $parent_pedals !== '' ) {
-						$records[ $iid ]['pedals'] = $parent_pedals;
-					}
-					if ( $records[ $iid ]['helmet'] === '' && $parent_helmet !== '' ) {
-						$records[ $iid ]['helmet'] = $parent_helmet;
-					}
-				}
-			}
 		}
 
 		self::$email_item_cache = [
