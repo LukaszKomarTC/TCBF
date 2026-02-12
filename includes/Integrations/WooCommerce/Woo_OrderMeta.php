@@ -1824,6 +1824,26 @@ class Woo_OrderMeta {
 				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['size'] ) . '</td>';
 				echo '</tr>';
 			}
+
+			// Pedals (language-sensitive: both label and value use qTranslate)
+			if ( $record['pedals'] !== '' ) {
+				$pedals_label = Woo::translate( '[:en]Pedals[:es]Pedales[:]' );
+				$pedals_value = Woo::translate( $record['pedals'] );
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $pedals_value ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Helmet (language-sensitive: both label and value use qTranslate)
+			if ( $record['helmet'] !== '' ) {
+				$helmet_label = Woo::translate( '[:en]Helmet[:es]Casco[:]' );
+				$helmet_value = Woo::translate( $record['helmet'] );
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $helmet_value ) . '</td>';
+				echo '</tr>';
+			}
 		}
 
 		// === CHILD (rental): "Part of tour pack" badge + size ===
@@ -1844,6 +1864,26 @@ class Woo_OrderMeta {
 				echo '<tr>';
 				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; width:90px; vertical-align:top;">' . esc_html__( 'Size', TC_BF_TEXTDOMAIN ) . '</td>';
 				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['size'] ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Pedals (language-sensitive: both label and value use qTranslate)
+			if ( $record['pedals'] !== '' ) {
+				$pedals_label = Woo::translate( '[:en]Pedals[:es]Pedales[:]' );
+				$pedals_value = Woo::translate( $record['pedals'] );
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $pedals_value ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Helmet (language-sensitive: both label and value use qTranslate)
+			if ( $record['helmet'] !== '' ) {
+				$helmet_label = Woo::translate( '[:en]Helmet[:es]Casco[:]' );
+				$helmet_value = Woo::translate( $record['helmet'] );
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $helmet_value ) . '</td>';
 				echo '</tr>';
 			}
 		}
