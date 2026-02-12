@@ -28,9 +28,10 @@ final class Template_Loader {
 	 */
 	private const TEMPLATE_MAP = [
 		// WooCommerce core templates
-		'order/order-details.php'      => 'woocommerce',
-		'cart/cart.php'                => 'woocommerce',
-		'checkout/review-order.php'    => 'woocommerce',
+		'order/order-details.php'          => 'woocommerce',
+		'cart/cart.php'                    => 'woocommerce',
+		'checkout/review-order.php'        => 'woocommerce',
+		'emails/email-order-items.php'     => 'woocommerce',
 
 		// WooCommerce Bookings templates
 		'order/booking-summary-list.php' => 'woocommerce-bookings',

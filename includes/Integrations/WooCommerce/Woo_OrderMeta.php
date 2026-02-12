@@ -1889,36 +1889,140 @@ class Woo_OrderMeta {
 		}
 
 		echo '</table>';
+	}
 
-		// === EB BANNER: visual separator with badge + total ===
+	/**
+	 * Return full-width extra <tr> rows to inject after a product row in WC emails.
+	 *
+	 * Called from our email-order-items.php template override. Returns EB banners,
+	 * pack summaries, etc. as complete <tr>...</tr> HTML, or '' if nothing to add.
+	 *
+	 * @param \WC_Order              $order   The order
+	 * @param int                    $item_id Order item ID
+	 * @param \WC_Order_Item_Product $item    Order item
+	 * @return string HTML string of <tr> rows (or empty)
+	 */
+	public static function get_email_item_extra_rows( \WC_Order $order, int $item_id, $item ) : string {
+		// Only during email rendering
+		if ( self::$email_rendering_order_id === null ) {
+			return '';
+		}
+		if ( (int) $order->get_id() !== self::$email_rendering_order_id ) {
+			return '';
+		}
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return '';
+		}
 
-		// PACK: rendered after the last item in a group
+		// Build cache on first call
+		if ( self::$email_item_cache === null ) {
+			self::build_email_item_cache( $order );
+		}
+
+		$cache = self::$email_item_cache;
+		if ( ! isset( $cache['records'][ $item_id ] ) ) {
+			return '';
+		}
+
+		$record      = $cache['records'][ $item_id ];
+		$group_id    = $record['group_id'];
+		$is_standalone = in_array( $item_id, $cache['standalone'], true );
+
+		$html = '';
+
+		// PACK: EB banner after the last item in a group
 		if ( $group_id > 0 && ( $cache['group_last_item'][ $group_id ] ?? 0 ) === $item_id ) {
 			$pack_totals = $cache['group_totals'][ $group_id ] ?? null;
 			if ( $pack_totals && $pack_totals['has_eb'] ) {
-				self::render_email_eb_banner(
+				$html .= self::build_email_eb_banner_row(
 					$pack_totals['eb_pct'],
 					$pack_totals['eb_discount'],
 					$pack_totals['pack_total'],
-					$pack_totals['base_price'],   // pack total before EB
+					$pack_totals['base_price'],
 					$pack_totals['base_label'],
 					$pack_totals['eb_combined']
 				);
 			}
 		}
 
-		// STANDALONE: single item with EB
+		// STANDALONE: EB banner for single item with EB
 		if ( $is_standalone && $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0 ) {
 			$qty         = max( 1, (int) $record['item']->get_quantity() );
 			$base_total  = $record['eb_base'] * $qty;
 			$eb_total    = $record['eb_amount'] * $qty;
 			$final_total = $base_total - $eb_total;
-			self::render_email_eb_banner(
+			$html .= self::build_email_eb_banner_row(
 				$record['eb_pct'],
 				$eb_total,
 				$final_total
 			);
 		}
+
+		return $html;
+	}
+
+	/**
+	 * Build a full-width EB banner as a <tr> row for the email items table.
+	 *
+	 * Returns a complete <tr><td colspan="3">...</td></tr> string containing
+	 * the EB discount badge and total, styled with the purple banner design.
+	 *
+	 * @param float  $eb_pct      EB percentage (0 if combined/unknown)
+	 * @param float  $eb_amount   Total EB discount amount
+	 * @param float  $final_total Final total after EB
+	 * @param float  $pack_base   Pack base price before EB (0 for standalone)
+	 * @param string $base_label  Label for the base price line
+	 * @param bool   $is_combined Whether this is a combined (mixed %) EB
+	 * @return string Complete <tr> HTML
+	 */
+	private static function build_email_eb_banner_row( float $eb_pct, float $eb_amount, float $final_total, float $pack_base = 0.0, string $base_label = '', bool $is_combined = false ) : string {
+		if ( $base_label === '' ) {
+			$base_label = __( 'Total', TC_BF_TEXTDOMAIN );
+		}
+
+		$html = '<tr><td colspan="3" style="padding:0;">';
+		$html .= '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin:8px 0 4px; background:#f8f5ff; border-radius:4px;">';
+
+		// Pack base price line (only for packs)
+		if ( $pack_base > 0 ) {
+			$html .= '<tr>';
+			$html .= '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#6b7280;">';
+			$html .= esc_html( $base_label ) . ': ';
+			$html .= wp_kses_post( wc_price( $pack_base ) );
+			$html .= '</td>';
+			$html .= '</tr>';
+		}
+
+		// Badge + final total row
+		$html .= '<tr>';
+
+		// Left: EB gradient badge
+		$html .= '<td style="padding:6px 10px; vertical-align:middle;">';
+		$html .= '<span style="display:inline-block; background-color:#5e52a6; background-image:linear-gradient(45deg,#3d61aa 0%,#b74d96 100%); color:#ffffff; padding:4px 10px; border-radius:3px; font-size:11px; font-weight:600;">';
+		if ( $eb_pct > 0 && ! $is_combined ) {
+			$html .= esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+		}
+		$html .= '-' . wp_kses_post( strip_tags( wc_price( $eb_amount ), '<span>' ) );
+		if ( $is_combined ) {
+			$html .= ' ' . esc_html__( 'Combined EB discount', TC_BF_TEXTDOMAIN );
+		} else {
+			$html .= ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+		}
+		$html .= '</span>';
+		$html .= '</td>';
+
+		// Right: prominent total
+		$html .= '<td style="padding:6px 10px; text-align:right; vertical-align:middle;">';
+		$html .= '<span style="font-size:14px; font-weight:800; color:#1a1a1a;">';
+		$html .= wp_kses_post( wc_price( $final_total ) );
+		$html .= '</span>';
+		$html .= '</td>';
+
+		$html .= '</tr>';
+		$html .= '</table>';
+		$html .= '</td></tr>';
+
+		return $html;
 	}
 
 	/**
@@ -1998,67 +2102,6 @@ class Woo_OrderMeta {
 			'group_totals'     => $group_totals,
 			'standalone'       => $standalone,
 		];
-	}
-
-	/**
-	 * Render EB summary banner with email-safe inline styles.
-	 *
-	 * Used for both standalone items and pack footers.
-	 * Displays a visually separated banner inside the product cell:
-	 * - Pack mode: "Pack price before EB: XX€" line + badge + final total
-	 * - Standalone: badge + final total (single line)
-	 *
-	 * @param float  $eb_pct       EB discount percentage (0 if unknown or mixed)
-	 * @param float  $eb_amount    EB discount amount (total, qty-adjusted)
-	 * @param float  $final_total  Final price after EB discount
-	 * @param float  $pack_base    Pack base price before EB (0 = standalone, skip pack line)
-	 * @param string $base_label   Label for the pack base price line (default "Total")
-	 * @param bool   $is_combined  True when pack items have different EB percentages
-	 */
-	private static function render_email_eb_banner( float $eb_pct, float $eb_amount, float $final_total, float $pack_base = 0.0, string $base_label = '', bool $is_combined = false ) : void {
-		if ( $base_label === '' ) {
-			$base_label = __( 'Total', TC_BF_TEXTDOMAIN );
-		}
-
-		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:10px; background:#f8f5ff; border-radius:4px;">';
-
-		// Pack base price line (only for packs)
-		if ( $pack_base > 0 ) {
-			echo '<tr>';
-			echo '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#6b7280;">';
-			echo esc_html( $base_label ) . ': ';
-			echo wp_kses_post( wc_price( $pack_base ) );
-			echo '</td>';
-			echo '</tr>';
-		}
-
-		// Badge + final total row
-		echo '<tr>';
-
-		// Left: EB gradient badge
-		echo '<td style="padding:6px 10px; vertical-align:middle;">';
-		echo '<span style="display:inline-block; background-color:#5e52a6; background-image:linear-gradient(45deg,#3d61aa 0%,#b74d96 100%); color:#ffffff; padding:4px 10px; border-radius:3px; font-size:11px; font-weight:600;">';
-		if ( $eb_pct > 0 && ! $is_combined ) {
-			echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
-		}
-		echo '-' . wp_kses_post( strip_tags( wc_price( $eb_amount ), '<span>' ) );
-		if ( $is_combined ) {
-			echo ' ' . esc_html__( 'Combined EB discount', TC_BF_TEXTDOMAIN );
-		} else {
-			echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
-		}
-		echo '</span>';
-		echo '</td>';
-
-		// Right: prominent total
-		echo '<td style="padding:6px 10px; text-align:right; vertical-align:middle;">';
-		echo '<span style="font-size:14px; font-weight:800; color:#1a1a1a;">';
-		echo wp_kses_post( wc_price( $final_total ) );
-		echo '</span>';
-		echo '</td>';
-
-		echo '</tr>';
-		echo '</table>';
 	}
 
 	/**
