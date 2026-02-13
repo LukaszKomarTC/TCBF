@@ -136,9 +136,22 @@ foreach ( $items as $item_id => $item ) :
 			echo wp_kses_post( apply_filters( 'woocommerce_email_order_item_quantity', $qty_display, $item ) );
 			?>
 		</td>
-		<td class="td font-family text-align-<?php echo esc_attr( $price_text_align ); ?>" style="vertical-align:middle;">
-			<?php echo wp_kses_post( $order->get_formatted_line_subtotal( $item ) ); ?>
-		</td>
+		<?php
+		$tcbf_item_has_eb = false;
+		if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
+			$tcbf_item_has_eb = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_email_item_has_eb( $order, (int) $item_id, $item );
+		}
+		$tcbf_price_html = $order->get_formatted_line_subtotal( $item );
+		?>
+		<?php if ( $tcbf_item_has_eb ) : ?>
+			<td class="td font-family" style="vertical-align:middle; text-align:right; padding:6px 10px;">
+				<del style="color:#9ca3af; font-size:12px;"><?php echo wp_kses_post( $tcbf_price_html ); ?></del>
+			</td>
+		<?php else : ?>
+			<td class="td font-family" style="vertical-align:middle; text-align:right; padding:6px 10px; background:#f8f5ff;">
+				<span style="font-size:14px; font-weight:800; color:#1a1a1a;"><?php echo wp_kses_post( $tcbf_price_html ); ?></span>
+			</td>
+		<?php endif; ?>
 	</tr>
 	<?php
 

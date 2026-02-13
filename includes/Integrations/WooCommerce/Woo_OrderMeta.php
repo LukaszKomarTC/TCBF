@@ -1825,24 +1825,25 @@ class Woo_OrderMeta {
 				echo '</tr>';
 			}
 
-			// Pedals (language-sensitive: both label and value use qTranslate)
-			if ( $record['pedals'] !== '' ) {
-				$pedals_label = Woo::translate( '[:en]Pedals[:es]Pedales[:]' );
-				$pedals_value = Woo::translate( $record['pedals'] );
-				echo '<tr>';
-				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
-				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $pedals_value ) . '</td>';
-				echo '</tr>';
-			}
+			// Pedals/helmet only on standalone (rental) items, not on participation parent
+			if ( $is_standalone ) {
+				if ( $record['pedals'] !== '' ) {
+					$pedals_label = Woo::translate( '[:en]Pedals[:es]Pedales[:]' );
+					$pedals_value = Woo::translate( $record['pedals'] );
+					echo '<tr>';
+					echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
+					echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $pedals_value ) . '</td>';
+					echo '</tr>';
+				}
 
-			// Helmet (language-sensitive: both label and value use qTranslate)
-			if ( $record['helmet'] !== '' ) {
-				$helmet_label = Woo::translate( '[:en]Helmet[:es]Casco[:]' );
-				$helmet_value = Woo::translate( $record['helmet'] );
-				echo '<tr>';
-				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
-				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $helmet_value ) . '</td>';
-				echo '</tr>';
+				if ( $record['helmet'] !== '' ) {
+					$helmet_label = Woo::translate( '[:en]Helmet[:es]Casco[:]' );
+					$helmet_value = Woo::translate( $record['helmet'] );
+					echo '<tr>';
+					echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
+					echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $helmet_value ) . '</td>';
+					echo '</tr>';
+				}
 			}
 		}
 
@@ -1889,6 +1890,54 @@ class Woo_OrderMeta {
 		}
 
 		echo '</table>';
+	}
+
+	/**
+	 * Check whether an order item has an EB discount in the email context.
+	 *
+	 * Called from the email-order-items.php template to decide price cell styling:
+	 * strikethrough for discounted items, bold for non-discounted.
+	 *
+	 * @param \WC_Order $order   The order
+	 * @param int       $item_id Order item ID
+	 * @param mixed     $item    Order item
+	 * @return bool True if the item (or its pack group) has an EB discount
+	 */
+	public static function get_email_item_has_eb( \WC_Order $order, int $item_id, $item ) : bool {
+		if ( self::$email_rendering_order_id === null ) {
+			return false;
+		}
+		if ( (int) $order->get_id() !== self::$email_rendering_order_id ) {
+			return false;
+		}
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return false;
+		}
+		if ( self::$email_item_cache === null ) {
+			self::build_email_item_cache( $order );
+		}
+
+		$cache = self::$email_item_cache;
+		if ( ! isset( $cache['records'][ $item_id ] ) ) {
+			return false;
+		}
+
+		$record      = $cache['records'][ $item_id ];
+		$group_id    = $record['group_id'];
+		$is_standalone = in_array( $item_id, $cache['standalone'], true );
+
+		// Pack item: check if the group has EB
+		if ( $group_id > 0 ) {
+			$pack_totals = $cache['group_totals'][ $group_id ] ?? null;
+			return $pack_totals && $pack_totals['has_eb'];
+		}
+
+		// Standalone: check individual EB fields
+		if ( $is_standalone ) {
+			return $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+		}
+
+		return false;
 	}
 
 	/**
