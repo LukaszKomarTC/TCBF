@@ -155,6 +155,12 @@ msgstr "Tour"
 msgid "Size"
 msgstr "Talla"
 
+msgid "Pedals"
+msgstr "Pedales"
+
+msgid "Helmet"
+msgstr "Casco"
+
 # TCBF Pack Totals
 msgid "Pack price before EB"
 msgstr "Precio del pack antes de EB"
