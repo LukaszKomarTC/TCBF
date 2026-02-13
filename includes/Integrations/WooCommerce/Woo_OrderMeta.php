@@ -1590,10 +1590,32 @@ class Woo_OrderMeta {
 	 * Used on the My Account → Orders list.
 	 */
 	public static function filter_order_again_action( array $actions, \WC_Order $order ) : array {
-		if ( self::is_booking_order( $order ) ) {
+		if ( self::order_has_bookings( $order ) ) {
 			unset( $actions['order-again'] );
 		}
 		return $actions;
+	}
+
+	/**
+	 * Check if an order contains any booking products.
+	 *
+	 * Broader than is_booking_order(): also checks WC Bookings product type
+	 * so older orders (without TCBF meta) are still detected.
+	 */
+	public static function order_has_bookings( \WC_Order $order ) : bool {
+		if ( self::is_booking_order( $order ) ) {
+			return true;
+		}
+		foreach ( $order->get_items( 'line_item' ) as $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+			$product = $item->get_product();
+			if ( $product && $product->is_type( 'booking' ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

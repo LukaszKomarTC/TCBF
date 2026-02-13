@@ -66,7 +66,9 @@ $is_tcbf_booking_order = class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_
 	&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::is_booking_order( $order );
 
 // Remove "Order again" for booking orders — bookings require dates and cannot be re-added to cart.
-if ( $is_tcbf_booking_order ) {
+// Uses order_has_bookings() which checks both TCBF meta (newer) and WC Bookings product type (older).
+if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
+	&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::order_has_bookings( $order ) ) {
 	unset( $actions['order-again'] );
 }
 ?>
