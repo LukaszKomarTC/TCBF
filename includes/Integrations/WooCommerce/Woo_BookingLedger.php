@@ -86,15 +86,8 @@ class Woo_BookingLedger {
 		add_action( 'woocommerce_after_mini_cart_item_name', [ __CLASS__, 'render_cart_notify_badge' ], 12, 2 );
 		add_action( 'woocommerce_checkout_cart_item_product_name', [ __CLASS__, 'render_cart_notify_badge' ], 12, 2 );
 
-		// Render booking footer rows (price breakdown) as separate table rows
-		// Same pattern as event pack footers
-		add_action( 'woocommerce_cart_contents', [ __CLASS__, 'render_booking_footer_rows' ], 15 );
-
 		// Persist ledger to order
 		add_action( 'woocommerce_checkout_create_order_line_item', [ __CLASS__, 'persist_ledger_to_order' ], 25, 4 );
-
-		// Display EB breakdown in order items (thank you page, order emails, admin)
-		add_action( 'woocommerce_order_item_meta_end', [ __CLASS__, 'render_order_item_eb_breakdown' ], 15, 4 );
 
 		// AJAX endpoint for live ledger calculation (same logic as cart)
 		add_action( 'wp_ajax_tcbf_calc_ledger', [ __CLASS__, 'ajax_calc_ledger' ] );
