@@ -1688,6 +1688,80 @@ class Woo_OrderMeta {
 		return wc_price( $base_total );
 	}
 
+	/**
+	 * Override cart item price display to show original price with strikethrough
+	 * for EB items, and bold for non-EB items.
+	 *
+	 * @param string $price     Formatted price HTML
+	 * @param array  $cart_item Cart item data
+	 * @param string $cart_item_key Cart item key
+	 * @return string Modified price HTML
+	 */
+	public static function override_cart_item_price( $price, $cart_item, $cart_item_key ) {
+		$eb_base = self::get_cart_item_eb_base( $cart_item );
+		if ( $eb_base > 0 ) {
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base ) ) . '</del>';
+		}
+		return '<span class="tcbf-price-final">' . wp_kses_post( $price ) . '</span>';
+	}
+
+	/**
+	 * Override cart item subtotal display (price * qty).
+	 *
+	 * @param string $subtotal  Formatted subtotal HTML
+	 * @param array  $cart_item Cart item data
+	 * @param string $cart_item_key Cart item key
+	 * @return string Modified subtotal HTML
+	 */
+	public static function override_cart_item_subtotal( $subtotal, $cart_item, $cart_item_key ) {
+		$eb_base = self::get_cart_item_eb_base( $cart_item );
+		if ( $eb_base > 0 ) {
+			$qty = max( 1, (int) $cart_item['quantity'] );
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del>';
+		}
+		return '<span class="tcbf-price-final">' . wp_kses_post( $subtotal ) . '</span>';
+	}
+
+	/**
+	 * Public accessor for get_cart_item_eb_base (used by templates).
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Base price (>0 if EB applied, 0 otherwise)
+	 */
+	public static function get_cart_item_eb_base_public( array $cart_item ) : float {
+		return self::get_cart_item_eb_base( $cart_item );
+	}
+
+	/**
+	 * Get the original EB base price from a cart item (before discount).
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Base price (>0 if EB applied, 0 otherwise)
+	 */
+	private static function get_cart_item_eb_base( array $cart_item ) : float {
+		// Event Form packs: booking meta has _eb_base_price
+		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
+			$booking = $cart_item['booking'];
+			$eligible = ! empty( $booking[ \TC_BF\Plugin::BK_EB_ELIGIBLE ] );
+			if ( $eligible ) {
+				$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
+				if ( $base > 0 ) {
+					return $base;
+				}
+			}
+		}
+
+		// WC Bookings: ledger meta
+		if ( ! empty( $cart_item['_tcbf_ledger_processed'] ) ) {
+			$eb_amount = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+			if ( $eb_amount > 0 ) {
+				return (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+			}
+		}
+
+		return 0.0;
+	}
+
 	/* =========================================================
 	 * Email: Inline Booking Details per Order Item
 	 *
@@ -2217,7 +2291,7 @@ class Woo_OrderMeta {
 				$eb_total = $record['eb_amount'] * $qty;
 				$final_total = $base_total - $eb_total;
 
-				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total );
+				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total, $record['eb_pct'] );
 			}
 
 			echo '</div>';
@@ -2603,8 +2677,6 @@ class Woo_OrderMeta {
 	 * @param array $pack_totals Pack totals from calculate_pack_totals()
 	 */
 	private static function render_pack_footer( array $pack_totals ) : void {
-		// Only show footer if there's EB or if explicitly requested
-		// For now, always show if EB exists; otherwise skip footer
 		if ( ! $pack_totals['has_eb'] ) {
 			return;
 		}
@@ -2617,19 +2689,21 @@ class Woo_OrderMeta {
 		echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $pack_totals['base_price'] ) ) . '</span>';
 		echo '</div>';
 
-		// EB discount line (only if has EB)
-		if ( $pack_totals['has_eb'] && $pack_totals['eb_discount'] > 0 ) {
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-' . wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ) . '</span>';
-			echo '</div>';
+		// Gradient badge + bold total line
+		echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-eb-row">';
+		echo '<span class="tcbf-eb-badge">';
+		if ( ! empty( $pack_totals['eb_combined'] ) ) {
+			echo wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ) . ' ' . esc_html__( 'Combined EB discount', TC_BF_TEXTDOMAIN );
+		} else {
+			$eb_pct = $pack_totals['eb_pct'] ?? 0;
+			if ( $eb_pct > 0 ) {
+				echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+			}
+			echo '-' . wp_kses_post( strip_tags( wc_price( $pack_totals['eb_discount'] ) ) );
+			echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
 		}
-
-		// Total line (Pack total or Total depending on whether rental exists)
-		$total_label = $pack_totals['total_label'] ?? __( 'Pack total', TC_BF_TEXTDOMAIN );
-		echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-total">';
-		echo '<span class="tcbf-pack-footer-label">' . esc_html( $total_label ) . '</span>';
-		echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $pack_totals['pack_total'] ) ) . '</span>';
+		echo '</span>';
+		echo '<span class="tcbf-pack-footer-value tcbf-pack-footer-total-value">' . wp_kses_post( wc_price( $pack_totals['pack_total'] ) ) . '</span>';
 		echo '</div>';
 
 		echo '</div>';
@@ -2649,6 +2723,7 @@ class Woo_OrderMeta {
 		$has_eb           = false;
 		$base_from_meta   = true;
 		$has_rental       = false; // Track if this is a true pack (participation + rental)
+		$eb_pcts          = [];
 
 		foreach ( $cart_items as $cart_item ) {
 			$qty = max( 1, (int) $cart_item['quantity'] );
@@ -2685,6 +2760,9 @@ class Woo_OrderMeta {
 			if ( $eb_eligible && $eb_amount > 0 ) {
 				$pack_eb_discount += $eb_amount * $qty;
 				$has_eb = true;
+				if ( $eb_pct > 0 ) {
+					$eb_pcts[] = $eb_pct;
+				}
 			}
 
 			// Base price from meta or line subtotal
@@ -2716,6 +2794,11 @@ class Woo_OrderMeta {
 			$total_label = __( 'Total', TC_BF_TEXTDOMAIN );
 		}
 
+		// Determine EB percentage: uniform or combined
+		$unique_pcts = array_unique( $eb_pcts );
+		$eb_pct_val  = count( $unique_pcts ) === 1 ? $unique_pcts[0] : 0;
+		$eb_combined = count( $unique_pcts ) > 1;
+
 		return [
 			'base_price'   => $pack_base_price,
 			'base_label'   => $base_label,
@@ -2724,6 +2807,8 @@ class Woo_OrderMeta {
 			'total_label'  => $total_label,
 			'has_eb'       => $has_eb,
 			'is_pack'      => $has_rental,
+			'eb_pct'       => $eb_pct_val,
+			'eb_combined'  => $eb_combined,
 		];
 	}
 
@@ -2897,6 +2982,27 @@ class Woo_OrderMeta {
 	}
 
 	/**
+	 * Build price HTML for order item: strikethrough original for EB, bold for non-EB.
+	 *
+	 * @param \WC_Order $order  The order
+	 * @param array     $record Item record from build_item_record()
+	 * @return string Price HTML
+	 */
+	private static function build_order_price_html( \WC_Order $order, array $record ) : string {
+		$item = $record['item'];
+		$has_eb = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+
+		if ( $has_eb ) {
+			$qty        = max( 1, (int) $item->get_quantity() );
+			$base_total = $record['eb_base'] * $qty;
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $base_total ) ) . '</del>';
+		}
+
+		$price_html = $order->get_formatted_line_subtotal( $item );
+		return '<span class="tcbf-price-final">' . wp_kses_post( $price_html ) . '</span>';
+	}
+
+	/**
 	 * Render a parent (tour/participation) row.
 	 *
 	 * @param \WC_Order $order The order
@@ -2919,8 +3025,9 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = $record['event_url'] ?: $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		// Check if viewer can see participant status badge (admin or partner-owner)
 		$show_participant_badge = self::can_viewer_see_participant_badge( $order );
@@ -2970,21 +3077,6 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
-		// EB badge line (if applicable)
-		if ( $record['eb_eligible'] && ( $record['eb_pct'] > 0 || $record['eb_amount'] > 0 ) ) {
-			echo '<div class="tcbf-eb-line">';
-			echo '<span class="tcbf-eb-badge">';
-			echo '<span class="tcbf-eb-icon">⏰</span>';
-			if ( $record['eb_pct'] > 0 ) {
-				echo '<span class="tcbf-eb-pct">' . esc_html( number_format_i18n( $record['eb_pct'], 0 ) ) . '%</span>';
-				echo '<span class="tcbf-eb-sep">|</span>';
-			}
-			echo '<span class="tcbf-eb-amt">' . wp_kses_post( wc_price( $record['eb_amount'] ) ) . '</span>';
-			echo '<span class="tcbf-eb-label">' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
-			echo '</div>';
-		}
-
 		// Meta lines
 		echo '<div class="tcbf-order-meta-lines">';
 
@@ -3024,28 +3116,13 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
-		// Pedals
-		if ( $record['pedals'] !== '' ) {
-			echo '<div class="tcbf-meta-line">';
-			echo '<span class="tcbf-meta-label">' . esc_html__( 'Pedals', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['pedals'] ) . '</span>';
-			echo '</div>';
-		}
-
-		// Helmet
-		if ( $record['helmet'] !== '' ) {
-			echo '<div class="tcbf-meta-line">';
-			echo '<span class="tcbf-meta-label">' . esc_html__( 'Helmet', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['helmet'] ) . '</span>';
-			echo '</div>';
-		}
-
 		echo '</div>'; // .tcbf-order-meta-lines
 
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
-		echo '<div class="tcbf-order-price">' . wp_kses_post( $price_html ) . '</div>';
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
 
 		echo '</div>'; // .tcbf-order-row
 	}
@@ -3108,8 +3185,9 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		echo '<div class="tcbf-order-row tcbf-order-row--child">';
 
@@ -3140,21 +3218,6 @@ class Woo_OrderMeta {
 		echo '<span class="tcbf-badge-included">' . esc_html( $badge_text ) . '</span>';
 		echo '</div>';
 
-		// EB badge line for child (if applicable)
-		if ( $record['eb_eligible'] && ( $record['eb_pct'] > 0 || $record['eb_amount'] > 0 ) ) {
-			echo '<div class="tcbf-eb-line">';
-			echo '<span class="tcbf-eb-badge">';
-			echo '<span class="tcbf-eb-icon">⏰</span>';
-			if ( $record['eb_pct'] > 0 ) {
-				echo '<span class="tcbf-eb-pct">' . esc_html( number_format_i18n( $record['eb_pct'], 0 ) ) . '%</span>';
-				echo '<span class="tcbf-eb-sep">|</span>';
-			}
-			echo '<span class="tcbf-eb-amt">' . wp_kses_post( wc_price( $record['eb_amount'] ) ) . '</span>';
-			echo '<span class="tcbf-eb-label">' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
-			echo '</div>';
-		}
-
 		// Talla line
 		if ( $record['size'] !== '' ) {
 			echo '<div class="tcbf-meta-line tcbf-talla-line">';
@@ -3182,7 +3245,8 @@ class Woo_OrderMeta {
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
-		echo '<div class="tcbf-order-price">' . wp_kses_post( $price_html ) . '</div>';
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
 
 		echo '</div>'; // .tcbf-order-row
 	}
@@ -3209,8 +3273,9 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = $record['event_url'] ?: $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		// Quantity
 		$qty = $item->get_quantity();
@@ -3263,19 +3328,6 @@ class Woo_OrderMeta {
 				echo '<span class="' . esc_attr( $notify_class ) . '" title="' . esc_attr( $notify_title ) . '" aria-label="' . esc_attr( $notify_title ) . '"></span>';
 			}
 
-			echo '</div>';
-		}
-
-		// EB badge (if applicable)
-		if ( $record['eb_eligible'] && $record['eb_amount'] > 0 ) {
-			echo '<div class="tcbf-eb-line">';
-			echo '<span class="tcbf-eb-badge">';
-			echo '<span class="tcbf-eb-icon">⏰</span>';
-			echo '<span class="tcbf-eb-pct">' . esc_html( round( $record['eb_pct'] ) ) . '%</span>';
-			echo '<span class="tcbf-eb-sep">|</span>';
-			echo '<span class="tcbf-eb-amt">' . wp_kses_post( wc_price( $record['eb_amount'] * $qty ) ) . '</span>';
-			echo '<span class="tcbf-eb-label">' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
 			echo '</div>';
 		}
 
@@ -3339,7 +3391,8 @@ class Woo_OrderMeta {
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
-		echo '<div class="tcbf-order-price">' . wp_kses_post( $price_html ) . '</div>';
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
 
 		echo '</div>'; // .tcbf-order-row
 	}
@@ -3351,20 +3404,24 @@ class Woo_OrderMeta {
 	 * @param float $eb_total EB discount amount
 	 * @param float $final_total Final total after discount
 	 */
-	private static function render_standalone_summary_footer( float $base_total, float $eb_total, float $final_total ) : void {
+	private static function render_standalone_summary_footer( float $base_total, float $eb_total, float $final_total, float $eb_pct = 0 ) : void {
 		?>
 		<div class="tcbf-standalone-summary">
 			<div class="tcbf-standalone-summary-line tcbf-summary-base">
 				<span class="tcbf-summary-label"><?php esc_html_e( 'Price before EB', TC_BF_TEXTDOMAIN ); ?></span>
 				<span class="tcbf-summary-value"><?php echo wp_kses_post( wc_price( $base_total ) ); ?></span>
 			</div>
-			<div class="tcbf-standalone-summary-line tcbf-summary-eb">
-				<span class="tcbf-summary-label"><?php esc_html_e( 'Early booking discount', TC_BF_TEXTDOMAIN ); ?></span>
-				<span class="tcbf-summary-value tcbf-summary-discount">-<?php echo wp_kses_post( wc_price( $eb_total ) ); ?></span>
-			</div>
-			<div class="tcbf-standalone-summary-line tcbf-summary-total">
-				<span class="tcbf-summary-label"><?php esc_html_e( 'Total', TC_BF_TEXTDOMAIN ); ?></span>
-				<span class="tcbf-summary-value"><?php echo wp_kses_post( wc_price( $final_total ) ); ?></span>
+			<div class="tcbf-standalone-summary-line tcbf-summary-eb-row">
+				<span class="tcbf-eb-badge">
+					<?php
+					if ( $eb_pct > 0 ) {
+						echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+					}
+					echo '-' . wp_kses_post( strip_tags( wc_price( $eb_total ) ) );
+					echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+					?>
+				</span>
+				<span class="tcbf-summary-value tcbf-pack-footer-total-value"><?php echo wp_kses_post( wc_price( $final_total ) ); ?></span>
 			</div>
 		</div>
 		<?php
@@ -3707,6 +3764,24 @@ class Woo_OrderMeta {
 			font-weight: 600;
 			color: #6b7280;
 		}
+		/* Strikethrough original price for EB items */
+		.tcbf-price-original {
+			text-decoration: line-through;
+			color: #1a1a1a;
+			font-weight: 400;
+			font-size: 14px;
+		}
+		/* Bold price for non-EB items */
+		.tcbf-order-price--final {
+			background: #f8f5ff;
+			padding: 6px 10px;
+			border-radius: 4px;
+		}
+		.tcbf-price-final {
+			font-size: 16px;
+			font-weight: 800;
+			color: #1a1a1a;
+		}
 
 		/* Standalone row (non-pack items) - matches parent row styling */
 		.tcbf-order-row--standalone {
@@ -3760,6 +3835,20 @@ class Woo_OrderMeta {
 			font-weight: 700;
 			color: #111827;
 			font-size: 14px;
+		}
+		/* EB row with gradient badge + bold total */
+		.tcbf-pack-footer-eb-row,
+		.tcbf-summary-eb-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 6px 0;
+			margin-top: 4px;
+		}
+		.tcbf-pack-footer-total-value {
+			font-weight: 800 !important;
+			font-size: 16px !important;
+			color: #1a1a1a !important;
 		}
 
 		/* Responsive - tablet */

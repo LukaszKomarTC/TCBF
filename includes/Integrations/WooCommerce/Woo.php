@@ -178,6 +178,28 @@ final class Woo {
 					"value" => $size,
 				];
 			}
+
+			// Add pedals/helmet for rental items (from GF entry via _tcbf_gf_entry_id on booking meta)
+			$entry_id = isset( $booking[\TC_BF\Plugin::BK_ENTRY_ID] ) ? (int) $booking[\TC_BF\Plugin::BK_ENTRY_ID] : 0;
+			if ( $entry_id > 0 && class_exists( '\GFAPI' ) ) {
+				$gf_entry = \GFAPI::get_entry( $entry_id );
+				if ( is_array( $gf_entry ) ) {
+					$pedals = trim( (string) ( $gf_entry['60'] ?? '' ) );
+					$helmet = trim( (string) ( $gf_entry['61'] ?? '' ) );
+					if ( $pedals !== '' ) {
+						$item_data[] = [
+							"name"  => self::translate('[:en]Pedals[:es]Pedales[:]'),
+							"value" => self::translate( $pedals ),
+						];
+					}
+					if ( $helmet !== '' ) {
+						$item_data[] = [
+							"name"  => self::translate('[:en]Helmet[:es]Casco[:]'),
+							"value" => self::translate( $helmet ),
+						];
+					}
+				}
+			}
 		}
 
 		// Participant name: Now shown via hook (woocommerce_after_cart_item_name)

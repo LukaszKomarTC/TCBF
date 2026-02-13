@@ -287,10 +287,9 @@ final class Plugin {
 		// ---- Cart display: render participant and pack badges after item name (priority 10 = shows first)
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_render_pack_badges' ], 10, 2);
 
-		// ---- Cart display: show EB discount badge after item name (priority 15 = shows after participant badge)
-		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
-		add_action('woocommerce_after_mini_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
-		add_action('woocommerce_checkout_cart_item_product_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
+		// ---- Cart/checkout: show original price with strikethrough for EB, bold for non-EB
+		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
+		add_filter('woocommerce_cart_item_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_subtotal' ], 10, 3);
 
 		// ---- Cart display: add event link to participation items (title)
 		add_filter('woocommerce_cart_item_name', [ $this, 'woo_add_pack_badge_to_title' ], 10, 3);
@@ -1331,6 +1330,33 @@ final class Plugin {
 			echo "}\n";
 			echo ".tcbf-cart-eb-badge .woocommerce-Price-currencySymbol {\n";
 			echo "  padding-right: 0 !important;\n";
+			echo "}\n";
+
+			echo "\n/* Cart/checkout price styling: strikethrough EB, bold non-EB */\n";
+			echo ".tcbf-price-original {\n";
+			echo "  text-decoration: line-through;\n";
+			echo "  color: #1a1a1a;\n";
+			echo "  font-weight: 400;\n";
+			echo "}\n";
+			echo ".product-subtotal .tcbf-price-final,\n";
+			echo ".product-price .tcbf-price-final,\n";
+			echo ".product-total .tcbf-price-final {\n";
+			echo "  font-weight: 800;\n";
+			echo "  color: #1a1a1a;\n";
+			echo "}\n";
+
+			echo "\n/* EB row with gradient badge + bold total in cart/checkout footers */\n";
+			echo ".tcbf-pack-footer-eb-row,\n";
+			echo ".tcbf-summary-eb-row {\n";
+			echo "  display: flex;\n";
+			echo "  justify-content: space-between;\n";
+			echo "  align-items: center;\n";
+			echo "  padding: 4px 0;\n";
+			echo "  margin-top: 4px;\n";
+			echo "}\n";
+			echo ".tcbf-pack-footer-total-value {\n";
+			echo "  font-weight: 800 !important;\n";
+			echo "  font-size: 16px !important;\n";
 			echo "}\n";
 
 			echo "\n/* Inline Pack Badge (in product title) */\n";
