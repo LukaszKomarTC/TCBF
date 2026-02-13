@@ -231,7 +231,14 @@ if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
 		</table>
 	<?php endif; ?>
 
-	<?php do_action( 'woocommerce_order_details_after_order_table', $order ); ?>
+	<?php
+	// Remove WC core "Order Again" button for booking orders — bookings require date/resource selection.
+	if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
+		&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::order_has_bookings( $order ) ) {
+		remove_action( 'woocommerce_order_details_after_order_table', 'woocommerce_order_again_button' );
+	}
+	do_action( 'woocommerce_order_details_after_order_table', $order );
+	?>
 </section>
 
 <?php
