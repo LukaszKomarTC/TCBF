@@ -213,6 +213,47 @@ final class Woo {
 	}
 
 	/**
+	 * Lock quantity display for booking products and specific categories.
+	 *
+	 * Bookings are date-bound and cannot have their quantity changed.
+	 * Runs at priority 20 (after Pack_Grouping::lock_pack_quantity at 10).
+	 *
+	 * @param string $product_quantity Quantity HTML
+	 * @param string $cart_item_key    Cart item key
+	 * @param array  $cart_item        Cart item data
+	 * @return string Modified quantity HTML
+	 */
+	public static function lock_cart_item_quantity( $product_quantity, $cart_item_key, $cart_item ) {
+		if ( empty( $cart_item['data'] ) || ! is_object( $cart_item['data'] ) ) {
+			return $product_quantity;
+		}
+
+		// Pack items already locked by Pack_Grouping at priority 10.
+		if ( ! empty( $cart_item[ Pack_Grouping::META_GROUP_ID ] ) ) {
+			return $product_quantity;
+		}
+
+		$product  = $cart_item['data'];
+		$quantity = (int) ( $cart_item['quantity'] ?? 1 );
+
+		// Booking products: always lock quantity.
+		if ( method_exists( $product, 'is_type' ) && $product->is_type( 'booking' ) ) {
+			return sprintf( '<span class="quantity">%d</span>', $quantity );
+		}
+
+		// Specific product categories: lock quantity.
+		$pid = ! empty( $cart_item['product_id'] ) ? (int) $cart_item['product_id'] : 0;
+		if ( $pid ) {
+			$lock_term_ids = array( 199, 241, 290 );
+			if ( has_term( $lock_term_ids, 'product_cat', $pid ) ) {
+				return sprintf( '<span class="quantity">%d</span>', $quantity );
+			}
+		}
+
+		return $product_quantity;
+	}
+
+	/**
 	 * Translate qTranslate strings using available translation functions
 	 *
 	 * Supports tc_sc_event_tr, qTranslate-X, and legacy qTranslate.

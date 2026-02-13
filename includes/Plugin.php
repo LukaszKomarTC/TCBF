@@ -203,6 +203,10 @@ final class Plugin {
 		// ---- Cart display: show booking meta to the customer
 		add_filter('woocommerce_get_item_data', [ $this, 'woo_cart_item_data' ], 20, 2);
 
+		// ---- Cart display: lock quantity for booking products and specific categories
+		add_filter('woocommerce_cart_item_quantity', [ Integrations\WooCommerce\Woo::class, 'lock_cart_item_quantity' ], 20, 3);
+		add_filter('woocommerce_widget_cart_item_quantity', [ Integrations\WooCommerce\Woo::class, 'lock_cart_item_quantity' ], 20, 3);
+
 		// ---- Cart display: hide WooCommerce Bookings meta fields we don't want to show
 		add_filter('woocommerce_order_item_display_meta_key', [ $this, 'woo_filter_cart_meta_labels' ], 10, 3);
 
