@@ -566,7 +566,6 @@ final class Sc_Event_Extras {
         if ( $cat_array2 && ! is_wp_error($cat_array2) ) {
             foreach ( $cat_array2 as $cat_id_obj ) {
                 $slug = (string) $cat_id_obj->slug;
-                echo "<script>console.log('" . esc_js($slug) . "-X');</script>";
                 ${"fill_field_{$slug}"} = function() { return "X"; };
                 add_filter('gform_field_value_' . $slug, ${"fill_field_{$slug}"} );
             }

@@ -242,10 +242,11 @@ final class Woo {
 		}
 
 		// Specific product categories: lock quantity.
+		// Filterable so term IDs can be adjusted per environment.
 		$pid = ! empty( $cart_item['product_id'] ) ? (int) $cart_item['product_id'] : 0;
 		if ( $pid ) {
-			$lock_term_ids = array( 199, 241, 290 );
-			if ( has_term( $lock_term_ids, 'product_cat', $pid ) ) {
+			$lock_term_ids = apply_filters( 'tcbf_quantity_lock_category_ids', array( 199, 241, 290 ) );
+			if ( ! empty( $lock_term_ids ) && has_term( $lock_term_ids, 'product_cat', $pid ) ) {
 				return sprintf( '<span class="quantity">%d</span>', $quantity );
 			}
 		}
