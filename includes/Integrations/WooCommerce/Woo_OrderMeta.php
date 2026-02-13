@@ -1599,8 +1599,13 @@ class Woo_OrderMeta {
 	/**
 	 * Check if an order contains any booking products.
 	 *
-	 * Broader than is_booking_order(): also checks WC Bookings product type
-	 * so older orders (without TCBF meta) are still detected.
+	 * Broader than is_booking_order(): uses layered detection so even
+	 * older orders (without TCBF meta) are caught.
+	 *
+	 * Tiers (OR logic):
+	 *  1. TCBF meta markers (_event_id, tc_group_id, _tcbf_ledger_base)
+	 *  2. WC Bookings item meta (_booking_id)
+	 *  3. WC Bookings product type (product->is_type('booking'))
 	 */
 	public static function order_has_bookings( \WC_Order $order ) : bool {
 		if ( self::is_booking_order( $order ) ) {
@@ -1610,6 +1615,11 @@ class Woo_OrderMeta {
 			if ( ! $item instanceof \WC_Order_Item_Product ) {
 				continue;
 			}
+			// Tier 2: WC Bookings meta on the order item
+			if ( $item->get_meta( '_booking_id' ) ) {
+				return true;
+			}
+			// Tier 3: product type
 			$product = $item->get_product();
 			if ( $product && $product->is_type( 'booking' ) ) {
 				return true;
