@@ -1902,7 +1902,7 @@ class Woo_OrderMeta {
 			// Pedals/helmet only on standalone (rental) items, not on participation parent
 			if ( $is_standalone ) {
 				if ( $record['pedals'] !== '' ) {
-					$pedals_label = Woo::translate( '[:en]Pedals[:es]Pedales[:]' );
+					$pedals_label = Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' );
 					$pedals_value = Woo::translate( $record['pedals'] );
 					echo '<tr>';
 					echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
@@ -1911,7 +1911,7 @@ class Woo_OrderMeta {
 				}
 
 				if ( $record['helmet'] !== '' ) {
-					$helmet_label = Woo::translate( '[:en]Helmet[:es]Casco[:]' );
+					$helmet_label = Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' );
 					$helmet_value = Woo::translate( $record['helmet'] );
 					echo '<tr>';
 					echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
@@ -1944,7 +1944,7 @@ class Woo_OrderMeta {
 
 			// Pedals (language-sensitive: both label and value use qTranslate)
 			if ( $record['pedals'] !== '' ) {
-				$pedals_label = Woo::translate( '[:en]Pedals[:es]Pedales[:]' );
+				$pedals_label = Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' );
 				$pedals_value = Woo::translate( $record['pedals'] );
 				echo '<tr>';
 				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
@@ -1954,7 +1954,7 @@ class Woo_OrderMeta {
 
 			// Helmet (language-sensitive: both label and value use qTranslate)
 			if ( $record['helmet'] !== '' ) {
-				$helmet_label = Woo::translate( '[:en]Helmet[:es]Casco[:]' );
+				$helmet_label = Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' );
 				$helmet_value = Woo::translate( $record['helmet'] );
 				echo '<tr>';
 				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
@@ -3229,16 +3229,16 @@ class Woo_OrderMeta {
 		// Pedals
 		if ( $record['pedals'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
-			echo '<span class="tcbf-meta-label">' . esc_html__( 'Pedals', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['pedals'] ) . '</span>';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['pedals'] ) ) . '</span>';
 			echo '</div>';
 		}
 
 		// Helmet
 		if ( $record['helmet'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
-			echo '<span class="tcbf-meta-label">' . esc_html__( 'Helmet', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['helmet'] ) . '</span>';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['helmet'] ) ) . '</span>';
 			echo '</div>';
 		}
 
@@ -3373,16 +3373,16 @@ class Woo_OrderMeta {
 		// Pedals
 		if ( $record['pedals'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
-			echo '<span class="tcbf-meta-label">' . esc_html__( 'Pedals', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['pedals'] ) . '</span>';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['pedals'] ) ) . '</span>';
 			echo '</div>';
 		}
 
 		// Helmet
 		if ( $record['helmet'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
-			echo '<span class="tcbf-meta-label">' . esc_html__( 'Helmet', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['helmet'] ) . '</span>';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['helmet'] ) ) . '</span>';
 			echo '</div>';
 		}
 

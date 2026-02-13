@@ -153,7 +153,8 @@ final class Woo {
 				$name = isset( $data['name'] ) ? $data['name'] : '';
 				$name_lower = strtolower( $name );
 
-				// Skip date, duration, persons, resource (duplicates or irrelevant)
+				// Skip date, duration, persons, resource, pedals, helmet (duplicates or irrelevant)
+				// Pedals/helmet are re-added below with canonical labels matching the GF form.
 				if ( strpos( $name_lower, 'booking date' ) !== false ||
 				     strpos( $name_lower, 'fecha de la reserva' ) !== false ||
 				     strpos( $name_lower, 'booking dates' ) !== false ||
@@ -162,7 +163,10 @@ final class Woo {
 				     strpos( $name_lower, 'persons' ) !== false ||
 				     strpos( $name_lower, 'personas' ) !== false ||
 				     strpos( $name_lower, 'resource' ) !== false ||
-				     strpos( $name_lower, 'recurso' ) !== false ) {
+				     strpos( $name_lower, 'recurso' ) !== false ||
+				     strpos( $name_lower, 'pedal' ) !== false ||
+				     strpos( $name_lower, 'helmet' ) !== false ||
+				     strpos( $name_lower, 'casco' ) !== false ) {
 					continue; // Skip this field
 				}
 
@@ -188,13 +192,13 @@ final class Woo {
 					$helmet = trim( (string) ( $gf_entry['61'] ?? '' ) );
 					if ( $pedals !== '' ) {
 						$item_data[] = [
-							"name"  => self::translate('[:en]Pedals[:es]Pedales[:]'),
+							"name"  => self::translate('[:en]Type of pedals[:es]Tipo de pedales[:]'),
 							"value" => self::translate( $pedals ),
 						];
 					}
 					if ( $helmet !== '' ) {
 						$item_data[] = [
-							"name"  => self::translate('[:en]Helmet[:es]Casco[:]'),
+							"name"  => self::translate('[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]'),
 							"value" => self::translate( $helmet ),
 						];
 					}

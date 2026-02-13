@@ -158,8 +158,14 @@ msgstr "Talla"
 msgid "Pedals"
 msgstr "Pedales"
 
+msgid "Type of pedals"
+msgstr "Tipo de pedales"
+
 msgid "Helmet"
 msgstr "Casco"
+
+msgid "Helmet (obligatory)"
+msgstr "Casco (obligatorio)"
 
 # TCBF Pack Totals
 msgid "Pack price before EB"
