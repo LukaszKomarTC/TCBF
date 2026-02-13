@@ -145,7 +145,7 @@ foreach ( $items as $item_id => $item ) :
 		?>
 		<?php if ( $tcbf_item_has_eb ) : ?>
 			<td class="td font-family" style="vertical-align:middle; text-align:right; padding:6px 10px;">
-				<del style="color:#9ca3af; font-size:12px;"><?php echo wp_kses_post( $tcbf_price_html ); ?></del>
+				<del style="color:#1a1a1a; font-size:12px;"><?php echo wp_kses_post( $tcbf_price_html ); ?></del>
 			</td>
 		<?php else : ?>
 			<td class="td font-family" style="vertical-align:middle; text-align:right; padding:6px 10px; background:#f8f5ff;">

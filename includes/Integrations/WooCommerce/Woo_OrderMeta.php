@@ -2035,7 +2035,7 @@ class Woo_OrderMeta {
 		// Pack base price line (only for packs)
 		if ( $pack_base > 0 ) {
 			$html .= '<tr>';
-			$html .= '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#6b7280;">';
+			$html .= '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#1a1a1a;">';
 			$html .= esc_html( $base_label ) . ': ';
 			$html .= wp_kses_post( wc_price( $pack_base ) );
 			$html .= '</td>';
