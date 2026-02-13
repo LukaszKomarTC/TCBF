@@ -64,6 +64,11 @@ if ( $show_downloads ) {
  */
 $is_tcbf_booking_order = class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
 	&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::is_booking_order( $order );
+
+// Remove "Order again" for booking orders — bookings require dates and cannot be re-added to cart.
+if ( $is_tcbf_booking_order ) {
+	unset( $actions['order-again'] );
+}
 ?>
 <section class="woocommerce-order-details">
 	<?php

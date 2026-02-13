@@ -1584,6 +1584,19 @@ class Woo_OrderMeta {
 	}
 
 	/**
+	 * Remove "Order again" action for booking orders.
+	 *
+	 * Bookings require specific dates and cannot simply be re-added to cart.
+	 * Used on the My Account → Orders list.
+	 */
+	public static function filter_order_again_action( array $actions, \WC_Order $order ) : array {
+		if ( self::is_booking_order( $order ) ) {
+			unset( $actions['order-again'] );
+		}
+		return $actions;
+	}
+
+	/**
 	 * Get item meta case-insensitively (tries with/without underscore, upper/lower).
 	 *
 	 * @param \WC_Order_Item_Product $item The order item
