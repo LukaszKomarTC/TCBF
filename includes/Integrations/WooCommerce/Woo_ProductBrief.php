@@ -457,7 +457,7 @@ body.single-product .tc-badges {
   gap: 8px; margin: 10px 0 16px;
 }
 body.single-product .tc-badge {
-  background: #f7f4ed; border: 1px solid #c8a974; border-radius: 8px;
+  border: 1px solid #000000;
   padding: 8px 10px; font-size: 13px; font-weight: 500; color: #333;
   text-align: center; line-height: 1.35; box-shadow: 0 1px 2px rgba(0,0,0,.05);
 }
