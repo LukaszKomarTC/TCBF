@@ -193,7 +193,7 @@ final class Woo_ProductBrief {
 
 		// Pricing rules (tiered/volume discounts)
 		$pricing_rules = get_post_meta( $product_id, '_wc_booking_pricing', true );
-		$tiers = self::parse_pricing_tiers( $pricing_rules, $single_day_price, $base_cost, $unit_label );
+		$tiers = self::parse_pricing_tiers( $pricing_rules, $single_day_price, $base_cost, $unit_label, $product_id );
 
 		// Build table
 		$header = Woo::translate( '[:en]Prices (VAT included)[:es]Precios (IVA incluido)[:]' );
@@ -220,12 +220,16 @@ final class Woo_ProductBrief {
 	 * @param float  $single_price    Price for 1 block (base + block cost).
 	 * @param float  $base_cost       One-time base cost.
 	 * @param string $unit_label      Translated unit label ("day"/"día").
+	 * @param int    $product_id      Product ID (to read max duration).
 	 * @return array Array of ['label' => '...', 'price' => '...'].
 	 */
-	private static function parse_pricing_tiers( $rules, float $single_price, float $base_cost, string $unit_label ) : array {
+	private static function parse_pricing_tiers( $rules, float $single_price, float $base_cost, string $unit_label, int $product_id = 0 ) : array {
 		$tiers = [];
 		$unit_singular = Woo::translate( '[:en]1 day[:es]1 día[:]' );
 		$per_unit      = Woo::translate( '[:en]/ day[:es]/ día[:]' );
+
+		// Max bookable duration — if the last tier's "to" meets or exceeds this, show "N+" instead
+		$max_duration = $product_id ? (int) get_post_meta( $product_id, '_wc_booking_max_duration', true ) : 0;
 
 		// First tier: single unit at base price
 		$tiers[] = [
@@ -268,8 +272,11 @@ final class Woo_ProductBrief {
 				continue;
 			}
 
-			// Build label
-			if ( $to > 0 && $to < 9999 ) {
+			// Build label — collapse last tier to "N+" when "to" meets/exceeds max bookable duration
+			$is_open_ended = ( $to <= 0 || $to >= 9999 )
+				|| ( $max_duration > 0 && $to >= $max_duration );
+
+			if ( ! $is_open_ended ) {
 				$label = $from . '–' . $to . ' ' . $unit_label;
 			} else {
 				$label = $from . '+ ' . $unit_label;
