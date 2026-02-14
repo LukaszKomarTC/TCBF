@@ -448,7 +448,7 @@ final class Woo_ProductBrief {
 .tc-brief .price-table tr:last-child td { border-bottom: 1px solid #eee; }
 
 .tc-brief .note {
-  background: #faf6f0; border-left: 3px solid #c8a974;
+  background: rgba(67,76,0,0.1); border-left: 3px solid #434c00;
   padding: 10px 12px; font-size: 13px; color: #333; margin: 10px 0 0;
 }
 
