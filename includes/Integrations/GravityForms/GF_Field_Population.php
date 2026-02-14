@@ -55,6 +55,12 @@ final class GF_Field_Population {
 		add_filter( 'gform_field_value_user_role', [ __CLASS__, 'populate_user_role' ] );
 		add_filter( 'gform_field_value_user_display_name', [ __CLASS__, 'populate_user_display_name' ] );
 		add_filter( 'gform_field_value_user_email', [ __CLASS__, 'populate_user_email' ] );
+
+		// Clear admin-only checkbox defaults for non-admin/hotel users.
+		// Field 118 (Confirmation checkbox) has isSelected=true, which leaks
+		// through conditional logic and shows field 207 (Notification Language)
+		// even when field 118 is hidden for guests.
+		add_filter( 'gform_pre_render', [ __CLASS__, 'clear_admin_checkbox_defaults' ], 8, 1 );
 	}
 
 	/**
@@ -354,6 +360,42 @@ final class GF_Field_Population {
 		}
 		$roles = (array) $user->roles;
 		return $roles ? reset( $roles ) : '';
+	}
+
+	/**
+	 * Clear isSelected default on the Confirmation checkbox (field 118)
+	 * for non-admin/hotel users.
+	 *
+	 * Field 118 has isSelected=true by default. GF hides it for guests
+	 * via conditional logic on field 6 (user_role), but the pre-checked
+	 * value leaks through and triggers field 207 (Notification Language)
+	 * to show. Clearing the default prevents the cascade.
+	 *
+	 * @param array $form GF form array.
+	 * @return array Modified form.
+	 */
+	public static function clear_admin_checkbox_defaults( array $form ) : array {
+		// Only clear for non-admin/hotel users.
+		$allowed_roles = [ 'administrator', 'shop_manager', 'hotel' ];
+		if ( is_user_logged_in() ) {
+			$user  = wp_get_current_user();
+			$roles = (array) $user->roles;
+			if ( array_intersect( $roles, $allowed_roles ) ) {
+				return $form; // Admin/hotel — keep default checked.
+			}
+		}
+
+		// Clear isSelected on field 118 choices.
+		foreach ( $form['fields'] as &$field ) {
+			if ( (int) $field->id === 118 && ! empty( $field->choices ) ) {
+				foreach ( $field->choices as &$choice ) {
+					$choice['isSelected'] = false;
+				}
+				break;
+			}
+		}
+
+		return $form;
 	}
 
 	/**
