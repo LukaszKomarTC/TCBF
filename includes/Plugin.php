@@ -251,6 +251,9 @@ final class Plugin {
 			\TC_BF\Integrations\WooCommerce\Template_Loader::init();
 		}
 
+		// ---- Product Brief: booking rules & price table above short description
+		\TC_BF\Integrations\WooCommerce\Woo_ProductBrief::init();
+
 		// ---- Order Status: register custom order statuses (invoiced, settled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderStatus') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_OrderStatus::init();
