@@ -257,6 +257,11 @@ final class Woo_ProductBrief {
 			$from = (int) ( $rule['from'] ?? 0 );
 			$to   = (int) ( $rule['to'] ?? 0 );
 
+			// Skip single-unit rule — already covered by the "1 day" base tier
+			if ( $from <= 1 && $to <= 1 ) {
+				continue;
+			}
+
 			// Calculate the effective per-block price from the rule.
 			// WC Bookings pricing rules can use modifiers (multiply, equals, etc.)
 			$modifier   = $rule['base_modifier'] ?? '';
