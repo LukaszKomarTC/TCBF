@@ -37,6 +37,7 @@ require_once TC_BF_PATH . 'includes/Domain/BookingLedger.php';
 require_once TC_BF_PATH . 'includes/Domain/NotificationLanguage.php';
 require_once TC_BF_PATH . 'includes/Admin/Admin_Product_Category_EB.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_BookingLedger.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_ProductBrief.php';
 
 // TCBF-14: Product Partner Configuration (category-based partner enable/disable)
 require_once TC_BF_PATH . 'includes/Domain/ProductPartnerConfig.php';
