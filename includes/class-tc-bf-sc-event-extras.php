@@ -726,11 +726,12 @@ final class Sc_Event_Extras {
             // - 50 = MTB rental flag
             // - 56 = E-bike rental flag
             // - 170 = Gravel rental flag
+            // NOTE: check non-empty string (meta exists), NOT > 0, so that price "0" (rental included) still shows.
             var tcBfAvailFlags = {
-                55: (tcBfToFloat(tcBfMetaPrices.road)   > 0) ? 'X' : '',
-                50: (tcBfToFloat(tcBfMetaPrices.mtb)    > 0) ? 'X' : '',
-                56: (tcBfToFloat(tcBfMetaPrices.ebike)  > 0) ? 'X' : '',
-                170:(tcBfToFloat(tcBfMetaPrices.gravel) > 0) ? 'X' : ''
+                55: (tcBfMetaPrices.road   !== '') ? 'X' : '',
+                50: (tcBfMetaPrices.mtb    !== '') ? 'X' : '',
+                56: (tcBfMetaPrices.ebike  !== '') ? 'X' : '',
+                170:(tcBfMetaPrices.gravel !== '') ? 'X' : ''
             };
 
             // Apply GF conditional-logic driver flags (X / empty) and schedule ONE logic+total refresh.
