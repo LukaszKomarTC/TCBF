@@ -1131,10 +1131,12 @@ final class Sc_Event_Extras {
                 $sel.find('option').eq(3).addClass('ebike');
                 $sel.find('option').eq(4).addClass('gravel');
 
-                if (tcBfToFloat(tcBfMetaPrices.road)   <= 0) $sel.find('.road').remove();
-                if (tcBfToFloat(tcBfMetaPrices.mtb)    <= 0) $sel.find('.mtb').remove();
-                if (tcBfToFloat(tcBfMetaPrices.ebike)  <= 0) $sel.find('.ebike').remove();
-                if (tcBfToFloat(tcBfMetaPrices.gravel) <= 0) $sel.find('.gravel').remove();
+                // Remove rental type options that have NO price configured (empty meta = not available).
+                // A price of "0" means rental is included — keep the option visible.
+                if (tcBfMetaPrices.road   === '') $sel.find('.road').remove();
+                if (tcBfMetaPrices.mtb    === '') $sel.find('.mtb').remove();
+                if (tcBfMetaPrices.ebike  === '') $sel.find('.ebike').remove();
+                if (tcBfMetaPrices.gravel === '') $sel.find('.gravel').remove();
 
                 // Auto-select rental type and reveal the corresponding bike-choice field
                 var defaultRentalClass = "<?php echo esc_js((string)$default_rental_class); ?>";
