@@ -8,6 +8,10 @@
  * - Subsequent toggles → inherit existing address, no prompt
  * - Changing address updates all transport items
  *
+ * Identification:
+ * - Each toggle uses the rental's cart_item_key as identifier (data-cart-key)
+ * - Transport child items reference their parent rental via _tcbf_transport_parent_key
+ *
  * Depends on: jQuery, tcbfTransport (wp_localize_script)
  * Optional: Google Maps Places API (for autocomplete)
  */
@@ -22,7 +26,7 @@
 	var i18n   = config.i18n || {};
 	var $modal = null;
 	var autocomplete = null;
-	var pendingGroupId = null;
+	var pendingCartKey = null;
 	var selectedPlace = null;
 
 	/* ================================================================
@@ -49,7 +53,7 @@
 			.off('change.tcbfTransport')
 			.on('change.tcbfTransport', function () {
 				var $input   = $(this);
-				var groupId  = $input.data('group-id');
+				var cartKey  = $input.data('cart-key');
 				var enabled  = $input.is(':checked') ? '1' : '0';
 				var $toggle  = $input.closest('.tcbf-transport-toggle');
 
@@ -57,7 +61,7 @@
 
 				$.post(config.ajaxUrl, {
 					action:   'tcbf_transport_toggle',
-					group_id: groupId,
+					cart_key: cartKey,
 					enabled:  enabled,
 					nonce:    config.nonce
 				}, function (response) {
@@ -73,7 +77,7 @@
 
 					if (data.action === 'needs_address') {
 						// First toggle — need address
-						pendingGroupId = groupId;
+						pendingCartKey = cartKey;
 						openAddressModal();
 						return;
 					}
@@ -106,7 +110,7 @@
 		$(document).off('click.tcbfChangeAddr', '.tcbf-transport-change-address');
 		$(document).on('click.tcbfChangeAddr', '.tcbf-transport-change-address', function (e) {
 			e.preventDefault();
-			pendingGroupId = null; // changing address, not adding new
+			pendingCartKey = null; // changing address, not adding new
 			openAddressModal();
 		});
 	}
@@ -203,12 +207,12 @@
 		$('body').removeClass('tcbf-modal-open');
 
 		// If closing without confirming and there was a pending toggle, revert it
-		if (revertToggle && pendingGroupId) {
-			var $input = $('.tcbf-transport-toggle__input[data-group-id="' + pendingGroupId + '"]');
+		if (revertToggle && pendingCartKey) {
+			var $input = $('.tcbf-transport-toggle__input[data-cart-key="' + pendingCartKey + '"]');
 			$input.prop('checked', false);
 		}
 
-		pendingGroupId = null;
+		pendingCartKey = null;
 		selectedPlace = null;
 	}
 
@@ -225,7 +229,7 @@
 			address:  selectedPlace.address,
 			lat:      selectedPlace.lat,
 			lng:      selectedPlace.lng,
-			group_id: pendingGroupId || 0,
+			cart_key: pendingCartKey || '',
 			nonce:    config.nonce
 		}, function (response) {
 			if (!response.success) {

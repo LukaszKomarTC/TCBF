@@ -12,16 +12,21 @@ if ( ! defined('ABSPATH') ) exit;
  * Woo_Transport — Cart-level transport addon for bike rentals
  *
  * Architecture:
- * - Transport is a per-pack toggle on rental child items in the cart
+ * - Transport is a per-rental toggle on bookable products in the cart
+ * - Works with standalone WC Bookings rentals (via WC GF Product Add-on)
+ *   AND with TCBF event pack rental items
  * - ONE delivery address per order (stored in WC session)
  * - First toggle ON → opens address picker modal; subsequent toggles inherit the same address
- * - Each toggled-on pack gets a transport child item (scope = 'transport')
+ * - Each toggled-on rental gets a transport child item (scope = 'transport')
  * - Mixed orders allowed: some bikes transported, others not
  * - Price is per-bike based on zone (delivery type)
  *
+ * Identification:
+ * - Transport child items reference their parent rental via _tcbf_transport_parent_key (cart item key)
+ * - For TCBF pack items, tc_group_id is also set for pack integrity
+ *
  * Data flow:
  * - Address stored in WC()->session as 'tcbf_transport_address' (order-level)
- * - Transport child items carry tc_group_id + tc_group_role=child + tcbf_scope=transport
  * - AJAX endpoints: tcbf_transport_toggle, tcbf_transport_set_address, tcbf_transport_quote
  */
 final class Woo_Transport {
@@ -37,7 +42,7 @@ final class Woo_Transport {
 	 */
 	public static function init() : void {
 
-		// AJAX: toggle transport on/off for a pack
+		// AJAX: toggle transport on/off for a rental
 		add_action( 'wp_ajax_tcbf_transport_toggle', [ __CLASS__, 'ajax_toggle_transport' ] );
 		add_action( 'wp_ajax_nopriv_tcbf_transport_toggle', [ __CLASS__, 'ajax_toggle_transport' ] );
 
@@ -75,14 +80,14 @@ final class Woo_Transport {
 	}
 
 	/* ================================================================
-	 * AJAX: Toggle transport on/off for a pack
+	 * AJAX: Toggle transport on/off for a rental
 	 * ================================================================ */
 
 	/**
-	 * Toggle transport for a specific pack (group_id)
+	 * Toggle transport for a specific rental cart item
 	 *
 	 * POST params:
-	 * - group_id: int (GF entry ID / pack group)
+	 * - cart_key: string (cart item key of the rental)
 	 * - enabled: '1' or '0'
 	 * - nonce: security nonce
 	 *
@@ -91,18 +96,18 @@ final class Woo_Transport {
 	 * - If address exists, adds transport child item and returns updated cart fragment
 	 *
 	 * When disabling:
-	 * - Removes transport child item from the pack
+	 * - Removes transport child item
 	 * - If no more transport items remain, optionally clears the address
 	 */
 	public static function ajax_toggle_transport() : void {
 
 		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
 
-		$group_id = isset( $_POST['group_id'] ) ? (int) $_POST['group_id'] : 0;
+		$cart_key = isset( $_POST['cart_key'] ) ? sanitize_text_field( wp_unslash( $_POST['cart_key'] ) ) : '';
 		$enabled  = isset( $_POST['enabled'] ) ? (string) $_POST['enabled'] : '0';
 
-		if ( $group_id <= 0 ) {
-			wp_send_json_error( [ 'message' => 'Invalid group_id' ] );
+		if ( $cart_key === '' ) {
+			wp_send_json_error( [ 'message' => 'Invalid cart key' ] );
 		}
 
 		if ( ! WC() || ! WC()->cart ) {
@@ -111,21 +116,27 @@ final class Woo_Transport {
 
 		$cart = WC()->cart;
 
+		// Verify the rental item exists
+		$rental_item = $cart->get_cart_item( $cart_key );
+		if ( ! $rental_item ) {
+			wp_send_json_error( [ 'message' => 'Cart item not found' ] );
+		}
+
 		if ( $enabled === '1' ) {
-			// Enable transport for this pack
+			// Enable transport for this rental
 			$address = self::get_session_address();
 
 			if ( empty( $address ) ) {
 				// No address yet — tell frontend to show the address picker modal
 				wp_send_json_success( [
-					'action'        => 'needs_address',
-					'group_id'      => $group_id,
-					'message'       => 'Address required',
+					'action'   => 'needs_address',
+					'cart_key' => $cart_key,
+					'message'  => 'Address required',
 				] );
 			}
 
 			// Address exists — add transport child item
-			$result = self::add_transport_item( $group_id, $address );
+			$result = self::add_transport_item( $cart_key, $rental_item, $address );
 
 			if ( is_wp_error( $result ) ) {
 				wp_send_json_error( [ 'message' => $result->get_error_message() ] );
@@ -133,15 +144,15 @@ final class Woo_Transport {
 
 			wp_send_json_success( [
 				'action'    => 'added',
-				'group_id'  => $group_id,
+				'cart_key'  => $cart_key,
 				'price'     => $result['price'],
 				'zone'      => $result['zone_name'] ?? '',
 				'fragments' => self::get_cart_fragments(),
 			] );
 
 		} else {
-			// Disable transport for this pack
-			self::remove_transport_item( $group_id );
+			// Disable transport for this rental
+			self::remove_transport_item( $cart_key );
 
 			// If no transport items remain, clear the session address
 			if ( ! self::cart_has_any_transport() ) {
@@ -150,7 +161,7 @@ final class Woo_Transport {
 
 			wp_send_json_success( [
 				'action'    => 'removed',
-				'group_id'  => $group_id,
+				'cart_key'  => $cart_key,
 				'fragments' => self::get_cart_fragments(),
 			] );
 		}
@@ -167,12 +178,12 @@ final class Woo_Transport {
 	 * - address: string (formatted address from Google Places)
 	 * - lat: float
 	 * - lng: float
-	 * - group_id: int (the pack that triggered the address picker)
+	 * - cart_key: string (the rental that triggered the address picker)
 	 * - nonce: security nonce
 	 *
 	 * After setting address:
 	 * - Resolves zone and calculates quote
-	 * - Adds transport child item for the triggering pack
+	 * - Adds transport child item for the triggering rental
 	 * - Recalculates prices for any existing transport items (same address for all)
 	 */
 	public static function ajax_set_address() : void {
@@ -182,7 +193,7 @@ final class Woo_Transport {
 		$address_text = isset( $_POST['address'] ) ? sanitize_text_field( wp_unslash( $_POST['address'] ) ) : '';
 		$lat          = isset( $_POST['lat'] ) ? (float) $_POST['lat'] : 0.0;
 		$lng          = isset( $_POST['lng'] ) ? (float) $_POST['lng'] : 0.0;
-		$group_id     = isset( $_POST['group_id'] ) ? (int) $_POST['group_id'] : 0;
+		$cart_key     = isset( $_POST['cart_key'] ) ? sanitize_text_field( wp_unslash( $_POST['cart_key'] ) ) : '';
 
 		if ( $address_text === '' || ( $lat == 0.0 && $lng == 0.0 ) ) {
 			wp_send_json_error( [ 'message' => 'Invalid address' ] );
@@ -210,12 +221,15 @@ final class Woo_Transport {
 			'dropoff_lng' => $lng,
 		] );
 
-		// If a group_id was provided, add transport item for that pack
-		if ( $group_id > 0 ) {
-			$result = self::add_transport_item( $group_id, $address_data );
+		// If a cart_key was provided, add transport item for that rental
+		if ( $cart_key !== '' && WC() && WC()->cart ) {
+			$rental_item = WC()->cart->get_cart_item( $cart_key );
+			if ( $rental_item ) {
+				$result = self::add_transport_item( $cart_key, $rental_item, $address_data );
 
-			if ( is_wp_error( $result ) ) {
-				wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+				if ( is_wp_error( $result ) ) {
+					wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+				}
 			}
 		}
 
@@ -226,7 +240,7 @@ final class Woo_Transport {
 			'action'      => 'address_set',
 			'address'     => $address_data,
 			'quote'       => $quote,
-			'group_id'    => $group_id,
+			'cart_key'    => $cart_key,
 			'fragments'   => self::get_cart_fragments(),
 		] );
 	}
@@ -266,13 +280,14 @@ final class Woo_Transport {
 	 * ================================================================ */
 
 	/**
-	 * Add a transport child item to a pack
+	 * Add a transport child item for a rental
 	 *
-	 * @param int   $group_id     Pack group ID (GF entry ID)
-	 * @param array $address_data Address data from session
+	 * @param string $rental_cart_key Cart item key of the rental
+	 * @param array  $rental_item     The rental cart item data
+	 * @param array  $address_data    Address data from session
 	 * @return array|\WP_Error Result with price/zone info, or error
 	 */
-	private static function add_transport_item( int $group_id, array $address_data ) {
+	private static function add_transport_item( string $rental_cart_key, array $rental_item, array $address_data ) {
 
 		if ( ! WC() || ! WC()->cart ) {
 			return new \WP_Error( 'no_cart', 'Cart not available' );
@@ -280,23 +295,17 @@ final class Woo_Transport {
 
 		$cart = WC()->cart;
 
-		// Check if transport already exists for this pack
-		if ( self::pack_has_transport( $group_id ) ) {
+		// Check if transport already exists for this rental
+		if ( self::rental_has_transport( $rental_cart_key ) ) {
 			// Update the existing transport item's address data instead
-			self::update_transport_item_address( $group_id, $address_data );
+			self::update_transport_item_address( $rental_cart_key, $address_data );
 
-			$quote = self::calculate_pack_transport_quote( $address_data );
+			$quote = self::calculate_transport_quote( $address_data );
 			return [
 				'price'     => $quote['price_total'],
 				'zone_name' => $address_data['zone_name'] ?? '',
 				'updated'   => true,
 			];
-		}
-
-		// Find the rental item in this pack to get booking data
-		$rental_item = self::find_pack_rental( $group_id );
-		if ( ! $rental_item ) {
-			return new \WP_Error( 'no_rental', 'No rental found in pack' );
 		}
 
 		// Get transport product ID
@@ -311,32 +320,42 @@ final class Woo_Transport {
 		}
 
 		// Calculate quote
-		$quote = self::calculate_pack_transport_quote( $address_data );
+		$quote = self::calculate_transport_quote( $address_data );
 
 		// Build cart item meta for transport child
 		$rental_booking = isset( $rental_item['booking'] ) ? (array) $rental_item['booking'] : [];
 
 		$cart_item_meta = [
 			'booking' => [
-				\TC_BF\Plugin::BK_EVENT_ID    => $rental_booking[ \TC_BF\Plugin::BK_EVENT_ID ] ?? 0,
-				\TC_BF\Plugin::BK_EVENT_TITLE => $rental_booking[ \TC_BF\Plugin::BK_EVENT_TITLE ] ?? '',
-				\TC_BF\Plugin::BK_ENTRY_ID    => $group_id,
 				\TC_BF\Plugin::BK_SCOPE       => self::SCOPE_TRANSPORT,
 				\TC_BF\Plugin::BK_CUSTOM_COST => wc_format_decimal( $quote['price_total'], 2 ),
 			],
-			Pack_Grouping::META_GROUP_ID   => $group_id,
-			Pack_Grouping::META_GROUP_ROLE => Pack_Grouping::ROLE_CHILD,
-			Pack_Grouping::META_SCOPE      => self::SCOPE_TRANSPORT,
-			'_tcbf_scope'                  => self::SCOPE_TRANSPORT,
-			'_tcbf_event_id'               => $rental_booking[ \TC_BF\Plugin::BK_EVENT_ID ] ?? 0,
-			'_tcbf_gf_entry_id'            => $group_id,
-			'_tcbf_transport_address'      => $address_data['address'] ?? '',
-			'_tcbf_transport_lat'          => $address_data['lat'] ?? 0,
-			'_tcbf_transport_lng'          => $address_data['lng'] ?? 0,
-			'_tcbf_transport_zone_id'      => $address_data['zone_id'] ?? '',
-			'_tcbf_transport_zone_name'    => $address_data['zone_name'] ?? '',
-			'_tcbf_transport_price'        => $quote['price_total'],
+			Pack_Grouping::META_SCOPE          => self::SCOPE_TRANSPORT,
+			'_tcbf_scope'                      => self::SCOPE_TRANSPORT,
+			'_tcbf_transport_parent_key'       => $rental_cart_key,
+			'_tcbf_transport_address'          => $address_data['address'] ?? '',
+			'_tcbf_transport_lat'              => $address_data['lat'] ?? 0,
+			'_tcbf_transport_lng'              => $address_data['lng'] ?? 0,
+			'_tcbf_transport_zone_id'          => $address_data['zone_id'] ?? '',
+			'_tcbf_transport_zone_name'        => $address_data['zone_name'] ?? '',
+			'_tcbf_transport_price'            => $quote['price_total'],
 		];
+
+		// Copy TCBF pack metadata from rental if available (event pack items)
+		if ( isset( $rental_booking[ \TC_BF\Plugin::BK_EVENT_ID ] ) ) {
+			$cart_item_meta['booking'][\TC_BF\Plugin::BK_EVENT_ID] = $rental_booking[\TC_BF\Plugin::BK_EVENT_ID];
+			$cart_item_meta['_tcbf_event_id'] = $rental_booking[\TC_BF\Plugin::BK_EVENT_ID];
+		}
+		if ( isset( $rental_booking[ \TC_BF\Plugin::BK_EVENT_TITLE ] ) ) {
+			$cart_item_meta['booking'][\TC_BF\Plugin::BK_EVENT_TITLE] = $rental_booking[\TC_BF\Plugin::BK_EVENT_TITLE];
+		}
+		if ( isset( $rental_booking[ \TC_BF\Plugin::BK_ENTRY_ID ] ) ) {
+			$group_id = (int) $rental_booking[\TC_BF\Plugin::BK_ENTRY_ID];
+			$cart_item_meta['booking'][\TC_BF\Plugin::BK_ENTRY_ID] = $group_id;
+			$cart_item_meta[ Pack_Grouping::META_GROUP_ID ]   = $group_id;
+			$cart_item_meta[ Pack_Grouping::META_GROUP_ROLE ] = Pack_Grouping::ROLE_CHILD;
+			$cart_item_meta['_tcbf_gf_entry_id'] = $group_id;
+		}
 
 		// Carry participant name from rental
 		if ( isset( $rental_item['_tcbf_participant_name'] ) ) {
@@ -350,7 +369,7 @@ final class Woo_Transport {
 		}
 
 		Logger::log( 'transport.cart.added', [
-			'group_id'   => $group_id,
+			'rental_key' => $rental_cart_key,
 			'cart_key'   => $added,
 			'price'      => $quote['price_total'],
 			'zone'       => $address_data['zone_name'] ?? '',
@@ -365,9 +384,11 @@ final class Woo_Transport {
 	}
 
 	/**
-	 * Remove transport child item from a pack
+	 * Remove transport child item for a rental
+	 *
+	 * @param string $rental_cart_key Cart item key of the parent rental
 	 */
-	private static function remove_transport_item( int $group_id ) : void {
+	private static function remove_transport_item( string $rental_cart_key ) : void {
 
 		if ( ! WC() || ! WC()->cart ) {
 			return;
@@ -376,12 +397,12 @@ final class Woo_Transport {
 		$cart = WC()->cart;
 
 		foreach ( $cart->get_cart() as $key => $item ) {
-			if ( self::is_transport_item( $item ) && self::get_item_group_id( $item ) === $group_id ) {
+			if ( self::is_transport_item( $item ) && self::is_transport_for_rental( $item, $rental_cart_key ) ) {
 				$cart->remove_cart_item( $key );
 
 				Logger::log( 'transport.cart.removed', [
-					'group_id' => $group_id,
-					'cart_key' => $key,
+					'rental_key' => $rental_cart_key,
+					'cart_key'   => $key,
 				] );
 				break;
 			}
@@ -389,7 +410,11 @@ final class Woo_Transport {
 	}
 
 	/**
-	 * Clean up transport items when their parent pack is being removed
+	 * Clean up transport items when their parent rental is removed
+	 *
+	 * Handles both standalone rentals and TCBF pack items.
+	 * For packs, Pack_Grouping atomic removal also handles siblings,
+	 * but this hook ensures standalone transport children are cleaned up.
 	 */
 	public static function cleanup_transport_on_removal( string $cart_item_key, $cart ) : void {
 
@@ -403,20 +428,30 @@ final class Woo_Transport {
 		}
 
 		$removed_item = $cart_contents[ $cart_item_key ];
-		$group_id = self::get_item_group_id( $removed_item );
 
-		if ( $group_id <= 0 ) {
+		// If the removed item is itself a transport item, just log
+		if ( self::is_transport_item( $removed_item ) ) {
+			Logger::log( 'transport.cart.cleanup.transport_removed', [
+				'cart_item_key' => $cart_item_key,
+			] );
 			return;
 		}
 
-		// If a non-transport item is being removed, the Pack_Grouping atomic removal
-		// will handle removing siblings (including transport). No extra action needed.
-		// This hook is just for logging.
-		if ( self::is_transport_item( $removed_item ) ) {
-			Logger::log( 'transport.cart.cleanup', [
-				'group_id'     => $group_id,
-				'cart_item_key' => $cart_item_key,
-			] );
+		// A rental is being removed — find and remove its transport child
+		foreach ( $cart_contents as $key => $item ) {
+			if ( $key === $cart_item_key ) {
+				continue;
+			}
+
+			if ( self::is_transport_item( $item ) && self::is_transport_for_rental( $item, $cart_item_key ) ) {
+				$cart->remove_cart_item( $key );
+
+				Logger::log( 'transport.cart.cleanup.child_removed', [
+					'rental_key'    => $cart_item_key,
+					'transport_key' => $key,
+				] );
+				break;
+			}
 		}
 	}
 
@@ -533,7 +568,7 @@ final class Woo_Transport {
 		}
 
 		$cart = WC()->cart;
-		$quote = self::calculate_pack_transport_quote( $address_data );
+		$quote = self::calculate_transport_quote( $address_data );
 
 		foreach ( $cart->get_cart() as $key => $item ) {
 			if ( ! self::is_transport_item( $item ) ) {
@@ -555,19 +590,22 @@ final class Woo_Transport {
 	}
 
 	/**
-	 * Update address data on an existing transport item
+	 * Update address data on an existing transport item for a rental
+	 *
+	 * @param string $rental_cart_key Cart item key of the parent rental
+	 * @param array  $address_data    New address data
 	 */
-	private static function update_transport_item_address( int $group_id, array $address_data ) : void {
+	private static function update_transport_item_address( string $rental_cart_key, array $address_data ) : void {
 
 		if ( ! WC() || ! WC()->cart ) {
 			return;
 		}
 
 		$cart = WC()->cart;
-		$quote = self::calculate_pack_transport_quote( $address_data );
+		$quote = self::calculate_transport_quote( $address_data );
 
 		foreach ( $cart->get_cart() as $key => $item ) {
-			if ( self::is_transport_item( $item ) && self::get_item_group_id( $item ) === $group_id ) {
+			if ( self::is_transport_item( $item ) && self::is_transport_for_rental( $item, $rental_cart_key ) ) {
 				$cart->cart_contents[ $key ]['_tcbf_transport_price']     = $quote['price_total'];
 				$cart->cart_contents[ $key ]['_tcbf_transport_address']   = $address_data['address'] ?? '';
 				$cart->cart_contents[ $key ]['_tcbf_transport_lat']       = $address_data['lat'] ?? 0;
@@ -586,7 +624,7 @@ final class Woo_Transport {
 	/**
 	 * Calculate transport quote for a single bike delivery
 	 */
-	private static function calculate_pack_transport_quote( array $address_data ) : array {
+	private static function calculate_transport_quote( array $address_data ) : array {
 
 		return TransportPricing::calculate_quote( [
 			'type'        => 'delivery',
@@ -634,43 +672,31 @@ final class Woo_Transport {
 	}
 
 	/**
-	 * Render transport toggle switch after rental item names in cart
+	 * Render transport toggle switch after cart item names
 	 *
-	 * Only shows on rental (child) items that belong to a pack.
+	 * Shows on any transport-eligible bookable product in the cart.
 	 */
 	public static function render_transport_toggle( array $cart_item, string $cart_item_key ) : void {
 
 		// DEBUG: comprehensive diagnostic (visible in View Source only) — remove after testing
 		$debug_is_cart       = is_cart() ? 'yes' : 'no';
-		$debug_scope         = Pack_Grouping::get_scope( $cart_item );
-		$debug_group_id      = Pack_Grouping::get_group_id( $cart_item );
+		$debug_eligible      = self::is_transport_eligible( $cart_item ) ? 'yes' : 'no';
 		$debug_product_id_t  = TransportPricing::get_transport_product_id();
 		$debug_product_id    = $cart_item['product_id'] ?? 0;
-		$debug_bk_scope      = $cart_item['booking'][\TC_BF\Plugin::BK_SCOPE] ?? '(unset)';
-		$debug_bk_entry      = $cart_item['booking'][\TC_BF\Plugin::BK_ENTRY_ID] ?? '(unset)';
-		$debug_tcbf_scope    = $cart_item['_tcbf_scope'] ?? '(unset)';
-		$debug_pg_scope      = $cart_item[ Pack_Grouping::META_SCOPE ] ?? '(unset)';
-		$debug_pg_role       = $cart_item[ Pack_Grouping::META_GROUP_ROLE ] ?? '(unset)';
 		$debug_has_booking   = isset( $cart_item['booking'] ) ? 'yes' : 'no';
-		$debug_booking_keys  = isset( $cart_item['booking'] ) && is_array( $cart_item['booking'] )
-			? implode( ',', array_keys( $cart_item['booking'] ) ) : '(none)';
+		$debug_is_transport  = self::is_transport_item( $cart_item ) ? 'yes' : 'no';
+		$debug_scope         = Pack_Grouping::get_scope( $cart_item );
 		printf(
-			'<!-- TCBF-transport-debug: is_cart=%s scope=%s group_id=%d transport_product=%d key=%s ' .
-			'product_id=%d bk_scope=%s bk_entry=%s tcbf_scope=%s pg_scope=%s pg_role=%s ' .
-			'has_booking=%s booking_keys=[%s] -->',
+			'<!-- TCBF-transport-debug: is_cart=%s eligible=%s product_id=%d transport_product=%d ' .
+			'has_booking=%s is_transport=%s scope=%s key=%s -->',
 			$debug_is_cart,
-			$debug_scope ?: '(empty)',
-			$debug_group_id,
-			$debug_product_id_t,
-			esc_attr( $cart_item_key ),
+			$debug_eligible,
 			$debug_product_id,
-			$debug_bk_scope,
-			$debug_bk_entry,
-			$debug_tcbf_scope,
-			$debug_pg_scope,
-			$debug_pg_role,
+			$debug_product_id_t,
 			$debug_has_booking,
-			$debug_booking_keys
+			$debug_is_transport,
+			$debug_scope ?: '(empty)',
+			esc_attr( $cart_item_key )
 		);
 
 		// Only show on cart page (not checkout/mini-cart)
@@ -678,14 +704,8 @@ final class Woo_Transport {
 			return;
 		}
 
-		// Only show on rental child items
-		$scope = Pack_Grouping::get_scope( $cart_item );
-		if ( $scope !== 'rental' ) {
-			return;
-		}
-
-		$group_id = Pack_Grouping::get_group_id( $cart_item );
-		if ( $group_id <= 0 ) {
+		// Only show on transport-eligible items
+		if ( ! self::is_transport_eligible( $cart_item ) ) {
 			return;
 		}
 
@@ -695,8 +715,8 @@ final class Woo_Transport {
 			return;
 		}
 
-		// Check if this pack already has transport
-		$has_transport = self::pack_has_transport( $group_id );
+		// Check if this rental already has transport
+		$has_transport = self::rental_has_transport( $cart_item_key );
 		$checked = $has_transport ? 'checked' : '';
 
 		// Get current address (for display if set)
@@ -709,7 +729,7 @@ final class Woo_Transport {
 
 			// Find the transport item to get price
 			foreach ( WC()->cart->get_cart() as $item ) {
-				if ( self::is_transport_item( $item ) && self::get_item_group_id( $item ) === $group_id ) {
+				if ( self::is_transport_item( $item ) && self::is_transport_for_rental( $item, $cart_item_key ) ) {
 					$price = (float) ( $item['_tcbf_transport_price'] ?? 0 );
 					if ( $price > 0 ) {
 						$price_display = wp_strip_all_tags( wc_price( $price ) );
@@ -722,17 +742,17 @@ final class Woo_Transport {
 		$label = Woo::translate( '[:en]Bike transport[:es]Transporte de bicicleta[:]' );
 
 		printf(
-			'<div class="tcbf-transport-toggle" data-group-id="%d">' .
+			'<div class="tcbf-transport-toggle" data-cart-key="%s">' .
 			'<label class="tcbf-transport-toggle__label">' .
-			'<input type="checkbox" class="tcbf-transport-toggle__input" data-group-id="%d" %s />' .
+			'<input type="checkbox" class="tcbf-transport-toggle__input" data-cart-key="%s" %s />' .
 			'<span class="tcbf-transport-toggle__slider"></span>' .
 			'<span class="tcbf-transport-toggle__text">%s</span>' .
 			'</label>' .
 			'<span class="tcbf-transport-toggle__price" %s>%s</span>' .
 			'<span class="tcbf-transport-toggle__address" %s>%s</span>' .
 			'</div>',
-			$group_id,
-			$group_id,
+			esc_attr( $cart_item_key ),
+			esc_attr( $cart_item_key ),
 			$checked,
 			esc_html( $label ),
 			$price_display ? '' : 'style="display:none"',
@@ -766,6 +786,7 @@ final class Woo_Transport {
 			'_tcbf_transport_zone_id',
 			'_tcbf_transport_zone_name',
 			'_tcbf_transport_price',
+			'_tcbf_transport_parent_key',
 		];
 
 		foreach ( $meta_keys as $key ) {
@@ -775,10 +796,10 @@ final class Woo_Transport {
 		}
 
 		Logger::log( 'transport.order_meta.persisted', [
-			'order_id'  => method_exists( $order, 'get_id' ) ? $order->get_id() : 0,
-			'group_id'  => $values[ Pack_Grouping::META_GROUP_ID ] ?? 0,
-			'address'   => $values['_tcbf_transport_address'] ?? '',
-			'price'     => $values['_tcbf_transport_price'] ?? 0,
+			'order_id'   => method_exists( $order, 'get_id' ) ? $order->get_id() : 0,
+			'rental_key' => $values['_tcbf_transport_parent_key'] ?? '',
+			'address'    => $values['_tcbf_transport_address'] ?? '',
+			'price'      => $values['_tcbf_transport_price'] ?? 0,
 		] );
 	}
 
@@ -918,28 +939,70 @@ final class Woo_Transport {
 	}
 
 	/**
-	 * Get group ID from a cart item
+	 * Check if a cart item is eligible for the transport toggle
+	 *
+	 * Eligible items:
+	 * - Have booking data (WC Bookings product)
+	 * - Are NOT the transport product itself
+	 * - Are NOT already a transport child item
+	 * - Are NOT a TCBF participation item (events use a different flow)
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return bool True if eligible for transport toggle
 	 */
-	private static function get_item_group_id( array $item ) : int {
+	public static function is_transport_eligible( array $cart_item ) : bool {
 
-		if ( isset( $item[ Pack_Grouping::META_GROUP_ID ] ) ) {
-			return (int) $item[ Pack_Grouping::META_GROUP_ID ];
+		// Must have booking data (is a WC Bookings product)
+		if ( empty( $cart_item['booking'] ) || ! is_array( $cart_item['booking'] ) ) {
+			return false;
 		}
 
-		return 0;
+		// Must not be the transport product itself
+		$transport_pid = TransportPricing::get_transport_product_id();
+		if ( $transport_pid > 0 && ( (int) ( $cart_item['product_id'] ?? 0 ) ) === $transport_pid ) {
+			return false;
+		}
+
+		// Must not already be a transport item
+		if ( self::is_transport_item( $cart_item ) ) {
+			return false;
+		}
+
+		// Must not be a participation item (TCBF events only)
+		$scope = Pack_Grouping::get_scope( $cart_item );
+		if ( $scope === 'participation' ) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
-	 * Check if a pack already has a transport child item
+	 * Check if a transport item belongs to a specific rental
+	 *
+	 * @param array  $transport_item  The transport cart item
+	 * @param string $rental_cart_key Cart item key of the rental
+	 * @return bool True if this transport item is for the given rental
 	 */
-	public static function pack_has_transport( int $group_id ) : bool {
+	private static function is_transport_for_rental( array $transport_item, string $rental_cart_key ) : bool {
+		return isset( $transport_item['_tcbf_transport_parent_key'] )
+			&& $transport_item['_tcbf_transport_parent_key'] === $rental_cart_key;
+	}
 
-		if ( $group_id <= 0 || ! WC() || ! WC()->cart ) {
+	/**
+	 * Check if a rental already has a transport child item
+	 *
+	 * @param string $rental_cart_key Cart item key of the rental
+	 * @return bool True if rental has transport
+	 */
+	public static function rental_has_transport( string $rental_cart_key ) : bool {
+
+		if ( $rental_cart_key === '' || ! WC() || ! WC()->cart ) {
 			return false;
 		}
 
 		foreach ( WC()->cart->get_cart() as $item ) {
-			if ( self::is_transport_item( $item ) && self::get_item_group_id( $item ) === $group_id ) {
+			if ( self::is_transport_item( $item ) && self::is_transport_for_rental( $item, $rental_cart_key ) ) {
 				return true;
 			}
 		}
@@ -963,30 +1026,6 @@ final class Woo_Transport {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Find the rental cart item in a pack
-	 */
-	private static function find_pack_rental( int $group_id ) : ?array {
-
-		if ( ! WC() || ! WC()->cart ) {
-			return null;
-		}
-
-		foreach ( WC()->cart->get_cart() as $item ) {
-			if ( self::get_item_group_id( $item ) === $group_id ) {
-				$scope = '';
-				if ( isset( $item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ) ) {
-					$scope = $item['booking'][ \TC_BF\Plugin::BK_SCOPE ];
-				}
-				if ( $scope === 'rental' ) {
-					return $item;
-				}
-			}
-		}
-
-		return null;
 	}
 
 	/**
