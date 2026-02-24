@@ -1946,7 +1946,7 @@ class Woo_OrderMeta {
 		}
 
 		$event_id = isset( $cart_item['_event_id'] ) ? (int) $cart_item['_event_id'] : 0;
-		if ( $event_id > 0 && $scope !== 'rental' ) {
+		if ( $event_id > 0 && $scope !== 'rental' && $scope !== 'transport' ) {
 			return true;
 		}
 

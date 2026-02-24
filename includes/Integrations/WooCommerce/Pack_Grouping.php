@@ -112,9 +112,9 @@ final class Pack_Grouping {
 		// Extract scope to determine role
 		$scope = isset( $booking[\TC_BF\Plugin::BK_SCOPE] ) ? (string) $booking[\TC_BF\Plugin::BK_SCOPE] : '';
 
-		// Determine role: participation = parent, rental = child
+		// Determine role: participation = parent, rental/transport = child
 		$role = self::ROLE_PARENT;
-		if ( $scope === 'rental' ) {
+		if ( $scope === 'rental' || $scope === 'transport' ) {
 			$role = self::ROLE_CHILD;
 		}
 
@@ -151,6 +151,21 @@ final class Pack_Grouping {
 		}
 		if ( isset( $values[ self::META_SCOPE ] ) ) {
 			$cart_item[ self::META_SCOPE ] = $values[ self::META_SCOPE ];
+		}
+
+		// Restore transport-specific keys (prefixed with _tcbf_transport_)
+		foreach ( $values as $key => $val ) {
+			if ( strpos( $key, '_tcbf_transport_' ) === 0 && ! isset( $cart_item[ $key ] ) ) {
+				$cart_item[ $key ] = $val;
+			}
+		}
+
+		// Restore common hidden meta keys needed for display
+		$hidden_keys = [ '_tcbf_scope', '_tcbf_event_id', '_tcbf_gf_entry_id', '_tcbf_participant_name' ];
+		foreach ( $hidden_keys as $key ) {
+			if ( isset( $values[ $key ] ) && ! isset( $cart_item[ $key ] ) ) {
+				$cart_item[ $key ] = $values[ $key ];
+			}
 		}
 
 		return $cart_item;

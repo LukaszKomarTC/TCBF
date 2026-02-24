@@ -28,6 +28,7 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_StatusPolicy.ph
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderStatus.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OfflineGateway.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Pack_Grouping.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Transport.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php';
 
 /**
@@ -247,6 +248,11 @@ final class Plugin {
 		// ---- Pack Grouping: atomic cart behavior for participation + rental
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping') ) {
 			\TC_BF\Integrations\WooCommerce\Pack_Grouping::init();
+		}
+
+		// ---- Transport: per-bike transport addon (toggle, address picker, cart items)
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_Transport') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_Transport::init();
 		}
 
 		// ---- Entry Expiry Job: scheduled cron to expire abandoned carts
@@ -1862,7 +1868,7 @@ final class Plugin {
 		}
 
 		// For participation items (parent or no pack), make title link to event
-		if ( $scope !== 'rental' && $event_id > 0 ) {
+		if ( $scope !== 'rental' && $scope !== 'transport' && $event_id > 0 ) {
 			$event_url = get_permalink( $event_id );
 			if ( $event_url ) {
 				$product_name = '<a href="' . esc_url( $event_url ) . '">' . $product_name . '</a>';

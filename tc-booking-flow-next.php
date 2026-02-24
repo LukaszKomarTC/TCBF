@@ -39,6 +39,10 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_BookingLedger.p
 require_once TC_BF_PATH . 'includes/Domain/ProductPartnerConfig.php';
 require_once TC_BF_PATH . 'includes/Admin/Admin_Product_Category_Partner.php';
 
+// Transport: zone-based transport pricing for bike rentals
+require_once TC_BF_PATH . 'includes/Domain/TransportZones.php';
+require_once TC_BF_PATH . 'includes/Domain/TransportPricing.php';
+
 // TCBF-14: GF Semantic Field Mapping (inputName-based field resolution)
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_FieldMap.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_SemanticFields.php';

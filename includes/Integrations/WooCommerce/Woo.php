@@ -116,6 +116,13 @@ final class Woo {
 		}
 
 		// ==================================================================
+		// TRANSPORT items — handled by Woo_Transport::display_transport_cart_item_data()
+		// ==================================================================
+		if ( $scope === 'transport' ) {
+			return $item_data;
+		}
+
+		// ==================================================================
 		// PARENT ITEM (Participation) - Show minimal, essential info
 		// ==================================================================
 		if ( $scope !== 'rental' ) {
