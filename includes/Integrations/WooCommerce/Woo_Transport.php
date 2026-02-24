@@ -640,6 +640,20 @@ final class Woo_Transport {
 	 */
 	public static function render_transport_toggle( array $cart_item, string $cart_item_key ) : void {
 
+		// DEBUG: diagnostic output (visible in View Source only) — remove after testing
+		$debug_is_cart    = is_cart() ? 'yes' : 'no';
+		$debug_scope      = Pack_Grouping::get_scope( $cart_item );
+		$debug_group_id   = Pack_Grouping::get_group_id( $cart_item );
+		$debug_product_id = TransportPricing::get_transport_product_id();
+		printf(
+			'<!-- TCBF-transport-debug: is_cart=%s scope=%s group_id=%d transport_product=%d key=%s -->',
+			$debug_is_cart,
+			$debug_scope ?: '(empty)',
+			$debug_group_id,
+			$debug_product_id,
+			esc_attr( $cart_item_key )
+		);
+
 		// Only show on cart page (not checkout/mini-cart)
 		if ( ! is_cart() ) {
 			return;
