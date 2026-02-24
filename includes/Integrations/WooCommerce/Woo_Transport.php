@@ -640,18 +640,37 @@ final class Woo_Transport {
 	 */
 	public static function render_transport_toggle( array $cart_item, string $cart_item_key ) : void {
 
-		// DEBUG: diagnostic output (visible in View Source only) — remove after testing
-		$debug_is_cart    = is_cart() ? 'yes' : 'no';
-		$debug_scope      = Pack_Grouping::get_scope( $cart_item );
-		$debug_group_id   = Pack_Grouping::get_group_id( $cart_item );
-		$debug_product_id = TransportPricing::get_transport_product_id();
+		// DEBUG: comprehensive diagnostic (visible in View Source only) — remove after testing
+		$debug_is_cart       = is_cart() ? 'yes' : 'no';
+		$debug_scope         = Pack_Grouping::get_scope( $cart_item );
+		$debug_group_id      = Pack_Grouping::get_group_id( $cart_item );
+		$debug_product_id_t  = TransportPricing::get_transport_product_id();
+		$debug_product_id    = $cart_item['product_id'] ?? 0;
+		$debug_bk_scope      = $cart_item['booking'][\TC_BF\Plugin::BK_SCOPE] ?? '(unset)';
+		$debug_bk_entry      = $cart_item['booking'][\TC_BF\Plugin::BK_ENTRY_ID] ?? '(unset)';
+		$debug_tcbf_scope    = $cart_item['_tcbf_scope'] ?? '(unset)';
+		$debug_pg_scope      = $cart_item[ Pack_Grouping::META_SCOPE ] ?? '(unset)';
+		$debug_pg_role       = $cart_item[ Pack_Grouping::META_GROUP_ROLE ] ?? '(unset)';
+		$debug_has_booking   = isset( $cart_item['booking'] ) ? 'yes' : 'no';
+		$debug_booking_keys  = isset( $cart_item['booking'] ) && is_array( $cart_item['booking'] )
+			? implode( ',', array_keys( $cart_item['booking'] ) ) : '(none)';
 		printf(
-			'<!-- TCBF-transport-debug: is_cart=%s scope=%s group_id=%d transport_product=%d key=%s -->',
+			'<!-- TCBF-transport-debug: is_cart=%s scope=%s group_id=%d transport_product=%d key=%s ' .
+			'product_id=%d bk_scope=%s bk_entry=%s tcbf_scope=%s pg_scope=%s pg_role=%s ' .
+			'has_booking=%s booking_keys=[%s] -->',
 			$debug_is_cart,
 			$debug_scope ?: '(empty)',
 			$debug_group_id,
+			$debug_product_id_t,
+			esc_attr( $cart_item_key ),
 			$debug_product_id,
-			esc_attr( $cart_item_key )
+			$debug_bk_scope,
+			$debug_bk_entry,
+			$debug_tcbf_scope,
+			$debug_pg_scope,
+			$debug_pg_role,
+			$debug_has_booking,
+			$debug_booking_keys
 		);
 
 		// Only show on cart page (not checkout/mini-cart)

@@ -599,8 +599,17 @@ final class Pack_Grouping {
 	 * @return string Scope ('participation', 'rental', or empty string)
 	 */
 	public static function get_scope( array $cart_item ) : string {
+		// Primary: booking meta (set during add-to-cart)
 		if ( isset( $cart_item['booking'][\TC_BF\Plugin::BK_SCOPE] ) ) {
 			return (string) $cart_item['booking'][\TC_BF\Plugin::BK_SCOPE];
+		}
+		// Fallback 1: Pack_Grouping top-level key (survives session restore)
+		if ( isset( $cart_item[ self::META_SCOPE ] ) && $cart_item[ self::META_SCOPE ] !== '' ) {
+			return (string) $cart_item[ self::META_SCOPE ];
+		}
+		// Fallback 2: hidden meta key (set by Plugin::gf_after_submission_add_to_cart)
+		if ( isset( $cart_item['_tcbf_scope'] ) && $cart_item['_tcbf_scope'] !== '' ) {
+			return (string) $cart_item['_tcbf_scope'];
 		}
 		return '';
 	}
