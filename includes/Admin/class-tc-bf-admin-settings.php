@@ -125,208 +125,245 @@ final class Settings {
 		);
 	}
 
+	/**
+	 * Get current admin tab
+	 */
+	public static function get_current_tab() : string {
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general';
+		$valid = [ 'general', 'transport' ];
+		return in_array( $tab, $valid, true ) ? $tab : 'general';
+	}
+
 	public static function render() : void {
 		if ( ! current_user_can('manage_options') ) return;
+
+		$current_tab = self::get_current_tab();
+		$page_url    = admin_url( 'options-general.php?page=tc-bf-settings' );
 		?>
 		<div class="wrap">
-			<h1><?php echo esc_html__('TC Booking Flow — Settings', 'tc-booking-flow-next'); ?></h1>
+			<h1><?php echo esc_html__('TC Booking Flow', 'tc-booking-flow-next'); ?></h1>
 
-			<form method="post" action="options.php">
-				<?php
-				settings_fields('tc_bf_settings');
-				do_settings_sections('tc_bf_settings');
-				?>
+			<nav class="nav-tab-wrapper">
+				<a href="<?php echo esc_url( $page_url ); ?>"
+				   class="nav-tab <?php echo $current_tab === 'general' ? 'nav-tab-active' : ''; ?>">
+					<?php echo esc_html__( 'General', 'tc-booking-flow-next' ); ?>
+				</a>
+				<a href="<?php echo esc_url( add_query_arg( 'tab', 'transport', $page_url ) ); ?>"
+				   class="nav-tab <?php echo $current_tab === 'transport' ? 'nav-tab-active' : ''; ?>">
+					<?php echo esc_html__( 'Transport', 'tc-booking-flow-next' ); ?>
+				</a>
+			</nav>
 
-				<table class="form-table" role="presentation">
-					<tbody>
+			<?php
+			if ( $current_tab === 'transport' ) {
+				Settings_Transport::render_tab();
+			} else {
+				self::render_general_tab();
+			}
+			?>
+		</div>
+		<?php
+	}
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_FORM_ID); ?>"><?php echo esc_html__('Event Form ID', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<input type="number" class="small-text" name="<?php echo esc_attr(self::OPT_FORM_ID); ?>" id="<?php echo esc_attr(self::OPT_FORM_ID); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_FORM_ID, 44) ); ?>" min="1" step="1" />
-								<p class="description"><?php echo esc_html__('The Gravity Form used for event registrations (Form 44).', 'tc-booking-flow-next'); ?></p>
-							</td>
-						</tr>
+	/**
+	 * Render the General settings tab
+	 */
+	private static function render_general_tab() : void {
+		?>
+		<form method="post" action="options.php">
+			<?php
+			settings_fields('tc_bf_settings');
+			do_settings_sections('tc_bf_settings');
+			?>
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_BOOKING_FORM_ID); ?>"><?php echo esc_html__('Booking Product Form ID', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<input type="number" class="small-text" name="<?php echo esc_attr(self::OPT_BOOKING_FORM_ID); ?>" id="<?php echo esc_attr(self::OPT_BOOKING_FORM_ID); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_BOOKING_FORM_ID, 55) ); ?>" min="1" step="1" />
-								<p class="description"><?php echo esc_html__('The Gravity Form used for booking products with GF Product Add-ons (rentals).', 'tc-booking-flow-next'); ?></p>
-							</td>
-						</tr>
+			<table class="form-table" role="presentation">
+				<tbody>
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID); ?>"><?php echo esc_html__('Fallback Participation Product', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<?php
-								$val = (int) get_option(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID, 0);
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_FORM_ID); ?>"><?php echo esc_html__('Event Form ID', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="<?php echo esc_attr(self::OPT_FORM_ID); ?>" id="<?php echo esc_attr(self::OPT_FORM_ID); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_FORM_ID, 44) ); ?>" min="1" step="1" />
+							<p class="description"><?php echo esc_html__('The Gravity Form used for event registrations (Form 44).', 'tc-booking-flow-next'); ?></p>
+						</td>
+					</tr>
 
-								$products = get_posts([
-									'post_type'      => 'product',
-									'post_status'    => 'publish',
-									'posts_per_page' => 500,
-									'orderby'        => 'title',
-									'order'          => 'ASC',
-									'tax_query'      => [[
-										'taxonomy' => 'product_type',
-										'field'    => 'slug',
-										'terms'    => ['booking'],
-									]],
-								]);
-								?>
-								<select name="<?php echo esc_attr(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID); ?>" id="<?php echo esc_attr(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID); ?>">
-									<option value="0"><?php echo esc_html__('— None —', 'tc-booking-flow-next'); ?></option>
-									<?php foreach ( $products as $p ) : ?>
-										<option value="<?php echo esc_attr((string) $p->ID); ?>" <?php selected($val, (int)$p->ID); ?>>
-											<?php echo esc_html($p->post_title . ' (#' . $p->ID . ')'); ?>
-										</option>
-									<?php endforeach; ?>
-								</select>
-								<p class="description">
-									<?php echo esc_html__('Used when an event does not have a custom participation product selected.', 'tc-booking-flow-next'); ?>
-								</p>
-							</td>
-						</tr>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_BOOKING_FORM_ID); ?>"><?php echo esc_html__('Booking Product Form ID', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="<?php echo esc_attr(self::OPT_BOOKING_FORM_ID); ?>" id="<?php echo esc_attr(self::OPT_BOOKING_FORM_ID); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_BOOKING_FORM_ID, 55) ); ?>" min="1" step="1" />
+							<p class="description"><?php echo esc_html__('The Gravity Form used for booking products with GF Product Add-ons (rentals).', 'tc-booking-flow-next'); ?></p>
+						</td>
+					</tr>
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_PARTNERS_ENABLED_DEFAULT); ?>"><?php echo esc_html__('Partner program enabled by default', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<?php $enabled = (int) get_option(self::OPT_PARTNERS_ENABLED_DEFAULT, 1) === 1; ?>
-								<label>
-									<input type="checkbox" name="<?php echo esc_attr(self::OPT_PARTNERS_ENABLED_DEFAULT); ?>" id="<?php echo esc_attr(self::OPT_PARTNERS_ENABLED_DEFAULT); ?>" value="1" <?php checked($enabled); ?> />
-									<?php echo esc_html__('Enable partner program for all events by default (unless disabled at event level).', 'tc-booking-flow-next'); ?>
-								</label>
-								<p class="description">
-									<?php echo esc_html__('When disabled for an event: partner coupons will not apply and no commission will be calculated. Direct booking remains unaffected.', 'tc-booking-flow-next'); ?>
-								</p>
-							</td>
-						</tr>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID); ?>"><?php echo esc_html__('Fallback Participation Product', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<?php
+							$val = (int) get_option(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID, 0);
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_DEBUG); ?>"><?php echo esc_html__('Debug Mode', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<?php $debug = (int) get_option(self::OPT_DEBUG, 0) === 1; ?>
-								<label>
-									<input type="checkbox" name="<?php echo esc_attr(self::OPT_DEBUG); ?>" id="<?php echo esc_attr(self::OPT_DEBUG); ?>" value="1" <?php checked($debug); ?> />
-									<?php echo esc_html__('Enable debug logging (server logs only).', 'tc-booking-flow-next'); ?>
-								</label>
-							</td>
-						</tr>
+							$products = get_posts([
+								'post_type'      => 'product',
+								'post_status'    => 'publish',
+								'posts_per_page' => 500,
+								'orderby'        => 'title',
+								'order'          => 'ASC',
+								'tax_query'      => [[
+									'taxonomy' => 'product_type',
+									'field'    => 'slug',
+									'terms'    => ['booking'],
+								]],
+							]);
+							?>
+							<select name="<?php echo esc_attr(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID); ?>" id="<?php echo esc_attr(self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID); ?>">
+								<option value="0"><?php echo esc_html__('— None —', 'tc-booking-flow-next'); ?></option>
+								<?php foreach ( $products as $p ) : ?>
+									<option value="<?php echo esc_attr((string) $p->ID); ?>" <?php selected($val, (int)$p->ID); ?>>
+										<?php echo esc_html($p->post_title . ' (#' . $p->ID . ')'); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description">
+								<?php echo esc_html__('Used when an event does not have a custom participation product selected.', 'tc-booking-flow-next'); ?>
+							</p>
+						</td>
+					</tr>
 
-					</tbody>
-				</table>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_PARTNERS_ENABLED_DEFAULT); ?>"><?php echo esc_html__('Partner program enabled by default', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<?php $enabled = (int) get_option(self::OPT_PARTNERS_ENABLED_DEFAULT, 1) === 1; ?>
+							<label>
+								<input type="checkbox" name="<?php echo esc_attr(self::OPT_PARTNERS_ENABLED_DEFAULT); ?>" id="<?php echo esc_attr(self::OPT_PARTNERS_ENABLED_DEFAULT); ?>" value="1" <?php checked($enabled); ?> />
+								<?php echo esc_html__('Enable partner program for all events by default (unless disabled at event level).', 'tc-booking-flow-next'); ?>
+							</label>
+							<p class="description">
+								<?php echo esc_html__('When disabled for an event: partner coupons will not apply and no commission will be calculated. Direct booking remains unaffected.', 'tc-booking-flow-next'); ?>
+							</p>
+						</td>
+					</tr>
 
-				<h2 style="margin-top: 2em;"><?php echo esc_html__('Participants List', 'tc-booking-flow-next'); ?></h2>
-				<table class="form-table" role="presentation">
-					<tbody>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_DEBUG); ?>"><?php echo esc_html__('Debug Mode', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<?php $debug = (int) get_option(self::OPT_DEBUG, 0) === 1; ?>
+							<label>
+								<input type="checkbox" name="<?php echo esc_attr(self::OPT_DEBUG); ?>" id="<?php echo esc_attr(self::OPT_DEBUG); ?>" value="1" <?php checked($debug); ?> />
+								<?php echo esc_html__('Enable debug logging (server logs only).', 'tc-booking-flow-next'); ?>
+							</label>
+						</td>
+					</tr>
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_PARTICIPANTS_PRIVACY_MODE); ?>"><?php echo esc_html__('Privacy Mode', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<?php $privacy_mode = get_option(self::OPT_PARTICIPANTS_PRIVACY_MODE, 'public_masked'); ?>
-								<select name="<?php echo esc_attr(self::OPT_PARTICIPANTS_PRIVACY_MODE); ?>" id="<?php echo esc_attr(self::OPT_PARTICIPANTS_PRIVACY_MODE); ?>">
-									<option value="public_masked" <?php selected($privacy_mode, 'public_masked'); ?>><?php echo esc_html__('Public (masked names/emails)', 'tc-booking-flow-next'); ?></option>
-									<option value="admin_only" <?php selected($privacy_mode, 'admin_only'); ?>><?php echo esc_html__('Admin only (hidden from public)', 'tc-booking-flow-next'); ?></option>
-									<option value="full" <?php selected($privacy_mode, 'full'); ?>><?php echo esc_html__('Full (show all data publicly)', 'tc-booking-flow-next'); ?></option>
-								</select>
-								<p class="description">
-									<?php echo esc_html__('Controls visibility of participant data. Admins (manage_options or manage_woocommerce) always see full data.', 'tc-booking-flow-next'); ?>
-								</p>
-							</td>
-						</tr>
+				</tbody>
+			</table>
 
-						<tr>
-							<th scope="row">
-								<label for="<?php echo esc_attr(self::OPT_PARTICIPANTS_EVENT_UID_FIELD); ?>"><?php echo esc_html__('Event UID Field ID', 'tc-booking-flow-next'); ?></label>
-							</th>
-							<td>
-								<input type="number" class="small-text" name="<?php echo esc_attr(self::OPT_PARTICIPANTS_EVENT_UID_FIELD); ?>" id="<?php echo esc_attr(self::OPT_PARTICIPANTS_EVENT_UID_FIELD); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_PARTICIPANTS_EVENT_UID_FIELD, 145) ); ?>" min="1" step="1" />
-								<p class="description">
-									<?php echo esc_html__('Gravity Forms field ID that stores the event unique identifier (default: 145).', 'tc-booking-flow-next'); ?>
-								</p>
-							</td>
-						</tr>
+			<h2 style="margin-top: 2em;"><?php echo esc_html__('Participants List', 'tc-booking-flow-next'); ?></h2>
+			<table class="form-table" role="presentation">
+				<tbody>
 
-					</tbody>
-				</table>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_PARTICIPANTS_PRIVACY_MODE); ?>"><?php echo esc_html__('Privacy Mode', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<?php $privacy_mode = get_option(self::OPT_PARTICIPANTS_PRIVACY_MODE, 'public_masked'); ?>
+							<select name="<?php echo esc_attr(self::OPT_PARTICIPANTS_PRIVACY_MODE); ?>" id="<?php echo esc_attr(self::OPT_PARTICIPANTS_PRIVACY_MODE); ?>">
+								<option value="public_masked" <?php selected($privacy_mode, 'public_masked'); ?>><?php echo esc_html__('Public (masked names/emails)', 'tc-booking-flow-next'); ?></option>
+								<option value="admin_only" <?php selected($privacy_mode, 'admin_only'); ?>><?php echo esc_html__('Admin only (hidden from public)', 'tc-booking-flow-next'); ?></option>
+								<option value="full" <?php selected($privacy_mode, 'full'); ?>><?php echo esc_html__('Full (show all data publicly)', 'tc-booking-flow-next'); ?></option>
+							</select>
+							<p class="description">
+								<?php echo esc_html__('Controls visibility of participant data. Admins (manage_options or manage_woocommerce) always see full data.', 'tc-booking-flow-next'); ?>
+							</p>
+						</td>
+					</tr>
 
-				<?php submit_button(); ?>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_PARTICIPANTS_EVENT_UID_FIELD); ?>"><?php echo esc_html__('Event UID Field ID', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="<?php echo esc_attr(self::OPT_PARTICIPANTS_EVENT_UID_FIELD); ?>" id="<?php echo esc_attr(self::OPT_PARTICIPANTS_EVENT_UID_FIELD); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_PARTICIPANTS_EVENT_UID_FIELD, 145) ); ?>" min="1" step="1" />
+							<p class="description">
+								<?php echo esc_html__('Gravity Forms field ID that stores the event unique identifier (default: 145).', 'tc-booking-flow-next'); ?>
+							</p>
+						</td>
+					</tr>
+
+				</tbody>
+			</table>
+
+			<?php submit_button(); ?>
+		</form>
+
+		<hr/>
+		<h2><?php echo esc_html__('Form Health', 'tc-booking-flow-next'); ?></h2>
+		<?php
+		if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_FormValidator' ) ) {
+			\TC_BF\Integrations\GravityForms\GF_FormValidator::render_health_section();
+		}
+		?>
+
+		<hr/>
+		<h2><?php echo esc_html__('Tools', 'tc-booking-flow-next'); ?></h2>
+
+		<?php self::render_notification_tools(); ?>
+
+		<hr/>
+		<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
+
+		<?php
+		$debug = self::is_debug();
+		if ( ! $debug ) {
+			echo '<p><em>' . esc_html__('Debug mode is currently off. Enable it above to collect logs.', 'tc-booking-flow-next') . '</em></p>';
+		} else {
+			// Clear logs handler
+			if ( isset($_POST['tc_bf_clear_logs']) && check_admin_referer('tc_bf_clear_logs') ) {
+				self::clear_logs();
+				echo '<div class="notice notice-success"><p>' . esc_html__('Logs cleared.', 'tc-booking-flow-next') . '</p></div>';
+			}
+
+			$logs = array_reverse( self::get_logs() );
+			?>
+			<form method="post" style="margin:0 0 12px 0;">
+				<?php wp_nonce_field('tc_bf_clear_logs'); ?>
+				<input type="hidden" name="tc_bf_clear_logs" value="1" />
+				<?php submit_button( esc_html__('Clear logs', 'tc-booking-flow-next'), 'secondary', 'submit', false ); ?>
 			</form>
 
-			<hr/>
-			<h2><?php echo esc_html__('Form Health', 'tc-booking-flow-next'); ?></h2>
 			<?php
-			if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_FormValidator' ) ) {
-				\TC_BF\Integrations\GravityForms\GF_FormValidator::render_health_section();
-			}
-			?>
-
-			<hr/>
-			<h2><?php echo esc_html__('Tools', 'tc-booking-flow-next'); ?></h2>
-
-			<?php self::render_notification_tools(); ?>
-
-			<hr/>
-			<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
-
-			<?php
-			$debug = self::is_debug();
-			if ( ! $debug ) {
-				echo '<p><em>' . esc_html__('Debug mode is currently off. Enable it above to collect logs.', 'tc-booking-flow-next') . '</em></p>';
+			if ( empty($logs) ) {
+				echo '<p><em>' . esc_html__('No logs yet.', 'tc-booking-flow-next') . '</em> ' . esc_html__('Submit the configured Gravity Form once, then return here.', 'tc-booking-flow-next') . '</p>';
 			} else {
-				// Clear logs handler
-				if ( isset($_POST['tc_bf_clear_logs']) && check_admin_referer('tc_bf_clear_logs') ) {
-					self::clear_logs();
-					echo '<div class="notice notice-success"><p>' . esc_html__('Logs cleared.', 'tc-booking-flow-next') . '</p></div>';
+				echo '<table class="widefat striped" style="max-width: 1200px;">';
+				echo '<thead><tr><th>' . esc_html__('Log Entry', 'tc-booking-flow-next') . '</th></tr></thead><tbody>';
+				foreach ( $logs as $line ) {
+					echo '<tr><td><pre style="white-space:pre-wrap; margin:0; font-family:monospace; font-size:12px;">' . esc_html($line) . '</pre></td></tr>';
 				}
+				echo '</tbody></table>';
 
-				$logs = array_reverse( self::get_logs() );
-				?>
-				<form method="post" style="margin:0 0 12px 0;">
-					<?php wp_nonce_field('tc_bf_clear_logs'); ?>
-					<input type="hidden" name="tc_bf_clear_logs" value="1" />
-					<?php submit_button( esc_html__('Clear logs', 'tc-booking-flow-next'), 'secondary', 'submit', false ); ?>
-				</form>
-
-				<?php
-				if ( empty($logs) ) {
-					echo '<p><em>' . esc_html__('No logs yet.', 'tc-booking-flow-next') . '</em> ' . esc_html__('Submit the configured Gravity Form once, then return here.', 'tc-booking-flow-next') . '</p>';
-				} else {
-					echo '<table class="widefat striped" style="max-width: 1200px;">';
-					echo '<thead><tr><th>' . esc_html__('Log Entry', 'tc-booking-flow-next') . '</th></tr></thead><tbody>';
-					foreach ( $logs as $line ) {
-						echo '<tr><td><pre style="white-space:pre-wrap; margin:0; font-family:monospace; font-size:12px;">' . esc_html($line) . '</pre></td></tr>';
-					}
-					echo '</tbody></table>';
-
-					$bundle = [
-						'site' => home_url(),
-						'time' => gmdate('c'),
-						'plugin' => 'tc-booking-flow-next',
-						'version' => defined('TC_BF_VERSION') ? TC_BF_VERSION : '',
-						'logs' => array_reverse($logs),
-					];
-					$json = wp_json_encode($bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-					echo '<h3 style="margin-top:16px;">' . esc_html__('Copy debug bundle', 'tc-booking-flow-next') . '</h3>';
-					echo '<textarea readonly style="width:100%; max-width:1200px; height:240px; font-family:monospace; font-size:12px;">' . esc_textarea($json) . '</textarea>';
-				}
+				$bundle = [
+					'site' => home_url(),
+					'time' => gmdate('c'),
+					'plugin' => 'tc-booking-flow-next',
+					'version' => defined('TC_BF_VERSION') ? TC_BF_VERSION : '',
+					'logs' => array_reverse($logs),
+				];
+				$json = wp_json_encode($bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+				echo '<h3 style="margin-top:16px;">' . esc_html__('Copy debug bundle', 'tc-booking-flow-next') . '</h3>';
+				echo '<textarea readonly style="width:100%; max-width:1200px; height:240px; font-family:monospace; font-size:12px;">' . esc_textarea($json) . '</textarea>';
 			}
-			?>
-
-		</div>
+		}
+		?>
 		<?php
 	}
 

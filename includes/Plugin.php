@@ -121,6 +121,7 @@ final class Plugin {
 		if ( is_admin() ) {
 			\TC_BF\Admin\Product_Meta::init();
 			\TC_BF\Admin\Settings::init();
+			\TC_BF\Admin\Settings_Transport::init();
 			\TC_BF\Admin\Partners::init();
 		}
 
