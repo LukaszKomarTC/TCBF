@@ -16,10 +16,10 @@ if ( ! defined('TC_BF_URL') ) define('TC_BF_URL', plugin_dir_url(__FILE__));
 // i18n
 if ( ! defined('TC_BF_TEXTDOMAIN') ) define('TC_BF_TEXTDOMAIN', 'tc-booking-flow-next');
 
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-product-meta.php';
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-settings.php';
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-partners.php';
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-event-eb.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-product-meta.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-settings.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-partners.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-event-eb.php';
 require_once TC_BF_PATH . 'includes/Plugin.php';
 require_once TC_BF_PATH . 'includes/class-tc-bf-sc-event-extras.php';
 require_once TC_BF_PATH . 'includes/sc-event-template-functions.php';
