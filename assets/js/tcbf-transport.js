@@ -57,6 +57,7 @@
 				var enabled  = $input.is(':checked') ? '1' : '0';
 				var $toggle  = $input.closest('.tcbf-transport-toggle');
 
+				console.log('[TCBF Transport] Toggle:', { cartKey: cartKey, enabled: enabled });
 				$toggle.addClass('tcbf-transport-toggle--loading');
 
 				$.post(config.ajaxUrl, {
@@ -66,8 +67,10 @@
 					nonce:    config.nonce
 				}, function (response) {
 					$toggle.removeClass('tcbf-transport-toggle--loading');
+					console.log('[TCBF Transport] Toggle response:', response);
 
 					if (!response.success) {
+						console.error('[TCBF Transport] Toggle error:', response.data);
 						showError(response.data ? response.data.message : i18n.errorGeneric);
 						$input.prop('checked', !$input.is(':checked'));
 						return;
@@ -77,6 +80,7 @@
 
 					if (data.action === 'needs_address') {
 						// First toggle — need address
+						console.log('[TCBF Transport] Needs address, opening modal');
 						pendingCartKey = cartKey;
 						openAddressModal();
 						return;
@@ -224,6 +228,13 @@
 		var $confirmBtn = $modal.find('.tcbf-transport-modal__confirm');
 		$confirmBtn.prop('disabled', true).text(i18n.loading);
 
+		console.log('[TCBF Transport] Confirming address:', {
+			address: selectedPlace.address,
+			lat: selectedPlace.lat,
+			lng: selectedPlace.lng,
+			pendingCartKey: pendingCartKey
+		});
+
 		$.post(config.ajaxUrl, {
 			action:   'tcbf_transport_set_address',
 			address:  selectedPlace.address,
@@ -232,7 +243,9 @@
 			cart_key: pendingCartKey || '',
 			nonce:    config.nonce
 		}, function (response) {
+			console.log('[TCBF Transport] Set address response:', response);
 			if (!response.success) {
+				console.error('[TCBF Transport] Set address error:', response.data);
 				showError(response.data ? response.data.message : i18n.errorGeneric);
 				$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
 				return;
@@ -265,46 +278,69 @@
 
 	function initAutocomplete() {
 		var $input = document.getElementById('tcbf-transport-address-input');
-		if (!$input) return;
+		if (!$input) {
+			console.error('[TCBF Transport] Address input element not found');
+			return;
+		}
+
+		console.log('[TCBF Transport] initAutocomplete:', {
+			hasMapsKey: config.hasMapsKey,
+			googleDefined: typeof google !== 'undefined',
+			googleMaps: typeof google !== 'undefined' && !!google.maps,
+			googlePlaces: typeof google !== 'undefined' && google.maps && !!google.maps.places
+		});
 
 		if (config.hasMapsKey && typeof google !== 'undefined' && google.maps && google.maps.places) {
-			autocomplete = new google.maps.places.Autocomplete($input, {
-				types: ['address'],
-				fields: ['formatted_address', 'geometry']
-			});
+			console.log('[TCBF Transport] Using Google Places Autocomplete');
+			try {
+				autocomplete = new google.maps.places.Autocomplete($input, {
+					types: ['address'],
+					fields: ['formatted_address', 'geometry']
+				});
 
-			autocomplete.addListener('place_changed', function () {
-				var place = autocomplete.getPlace();
-				if (!place.geometry || !place.geometry.location) {
-					selectedPlace = null;
-					$modal.find('.tcbf-transport-modal__confirm').prop('disabled', true);
-					return;
-				}
+				autocomplete.addListener('place_changed', function () {
+					var place = autocomplete.getPlace();
+					console.log('[TCBF Transport] place_changed:', place);
+					if (!place.geometry || !place.geometry.location) {
+						console.warn('[TCBF Transport] Place has no geometry');
+						selectedPlace = null;
+						$modal.find('.tcbf-transport-modal__confirm').prop('disabled', true);
+						return;
+					}
 
-				selectedPlace = {
-					address: place.formatted_address || $input.value,
-					lat: place.geometry.location.lat(),
-					lng: place.geometry.location.lng()
-				};
+					selectedPlace = {
+						address: place.formatted_address || $input.value,
+						lat: place.geometry.location.lat(),
+						lng: place.geometry.location.lng()
+					};
 
-				$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
-				fetchQuote(selectedPlace.lat, selectedPlace.lng);
-				initMap(selectedPlace.lat, selectedPlace.lng);
-			});
-		} else {
-			// Fallback: manual input (no autocomplete)
-			// User types address, we enable confirm (address will be geocoded server-side)
-			$($input).on('input', function () {
-				var val = $(this).val().trim();
-				if (val.length > 5) {
+					console.log('[TCBF Transport] selectedPlace:', selectedPlace);
 					$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
-					selectedPlace = { address: val, lat: 0, lng: 0 };
-				} else {
-					$modal.find('.tcbf-transport-modal__confirm').prop('disabled', true);
-					selectedPlace = null;
-				}
-			});
+					fetchQuote(selectedPlace.lat, selectedPlace.lng);
+					initMap(selectedPlace.lat, selectedPlace.lng);
+				});
+			} catch (e) {
+				console.error('[TCBF Transport] Autocomplete init failed:', e);
+				bindManualInput($input);
+			}
+		} else {
+			console.log('[TCBF Transport] Using manual input fallback');
+			bindManualInput($input);
 		}
+	}
+
+	function bindManualInput(inputEl) {
+		$(inputEl).on('input', function () {
+			var val = $(this).val().trim();
+			console.log('[TCBF Transport] Manual input:', val, 'length:', val.length);
+			if (val.length > 5) {
+				$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
+				selectedPlace = { address: val, lat: 0, lng: 0 };
+			} else {
+				$modal.find('.tcbf-transport-modal__confirm').prop('disabled', true);
+				selectedPlace = null;
+			}
+		});
 	}
 
 	function initMap(lat, lng) {
