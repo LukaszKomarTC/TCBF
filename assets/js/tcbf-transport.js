@@ -1,19 +1,16 @@
 /**
- * TCBF Transport — Cart toggle + Google Maps address picker
+ * TCBF Transport v2 — Dual-direction toggles + map-first address picker
  *
  * Architecture:
- * - Per-bike transport toggle on rental items in cart
- * - One delivery address per order (shared across all transported bikes)
- * - First toggle ON → opens address picker modal
- * - Subsequent toggles → inherit existing address, no prompt
- * - Changing address updates all transport items
- *
- * Identification:
- * - Each toggle uses the rental's cart_item_key as identifier (data-cart-key)
- * - Transport child items reference their parent rental via _tcbf_transport_parent_key
+ * - Two toggles per rental: Delivery + Return (pickup)
+ * - Each direction has its own modal with address, map, window selector
+ * - Map always visible with pin-drop + drag support
+ * - Google Places Autocomplete with server-side geocode fallback
+ * - Quote preview with availability info
+ * - "Use same address for return" checkbox in delivery modal
  *
  * Depends on: jQuery, tcbfTransport (wp_localize_script)
- * Optional: Google Maps Places API (for autocomplete)
+ * Optional: Google Maps Places API
  */
 (function ($) {
 	'use strict';
@@ -25,9 +22,13 @@
 	var config = tcbfTransport;
 	var i18n   = config.i18n || {};
 	var $modal = null;
+	var map = null;
+	var marker = null;
 	var autocomplete = null;
 	var pendingCartKey = null;
+	var pendingDirection = null;
 	var selectedPlace = null;
+	var quoteDebounce = null;
 
 	/* ================================================================
 	 * Initialization
@@ -35,13 +36,10 @@
 
 	$(document).ready(function () {
 		bindToggleEvents();
-		bindChangeAddressLink();
 	});
 
-	// Re-bind after WC cart updates (AJAX cart refresh)
 	$(document.body).on('updated_wc_div updated_cart_totals', function () {
 		bindToggleEvents();
-		bindChangeAddressLink();
 	});
 
 	/* ================================================================
@@ -52,25 +50,24 @@
 		$('.tcbf-transport-toggle__input')
 			.off('change.tcbfTransport')
 			.on('change.tcbfTransport', function () {
-				var $input   = $(this);
-				var cartKey  = $input.data('cart-key');
-				var enabled  = $input.is(':checked') ? '1' : '0';
-				var $toggle  = $input.closest('.tcbf-transport-toggle');
+				var $input    = $(this);
+				var cartKey   = $input.data('cart-key');
+				var direction = $input.data('direction');
+				var enabled   = $input.is(':checked') ? '1' : '0';
+				var $toggle   = $input.closest('.tcbf-transport-toggle');
 
-				console.log('[TCBF Transport] Toggle:', { cartKey: cartKey, enabled: enabled });
 				$toggle.addClass('tcbf-transport-toggle--loading');
 
 				$.post(config.ajaxUrl, {
-					action:   'tcbf_transport_toggle',
-					cart_key: cartKey,
-					enabled:  enabled,
-					nonce:    config.nonce
+					action:    'tcbf_transport_toggle',
+					cart_key:  cartKey,
+					direction: direction,
+					enabled:   enabled,
+					nonce:     config.nonce
 				}, function (response) {
 					$toggle.removeClass('tcbf-transport-toggle--loading');
-					console.log('[TCBF Transport] Toggle response:', response);
 
 					if (!response.success) {
-						console.error('[TCBF Transport] Toggle error:', response.data);
 						showError(response.data ? response.data.message : i18n.errorGeneric);
 						$input.prop('checked', !$input.is(':checked'));
 						return;
@@ -79,27 +76,23 @@
 					var data = response.data;
 
 					if (data.action === 'needs_address') {
-						// First toggle — need address
-						console.log('[TCBF Transport] Needs address, opening modal');
 						pendingCartKey = cartKey;
-						openAddressModal();
+						pendingDirection = direction;
+						openAddressModal(direction);
 						return;
 					}
 
 					if (data.action === 'added') {
-						updateToggleDisplay($toggle, true, data.price, data.zone);
+						updateToggleDisplay($toggle, true, data.price, data.zone, direction);
 					}
 
 					if (data.action === 'removed') {
-						updateToggleDisplay($toggle, false, null, null);
+						updateToggleDisplay($toggle, false, null, null, direction);
 					}
 
-					// Refresh cart fragments
 					if (data.fragments) {
 						applyFragments(data.fragments);
 					}
-
-					// Trigger WC cart update
 					$(document.body).trigger('wc_update_cart');
 
 				}).fail(function () {
@@ -110,35 +103,52 @@
 			});
 	}
 
-	function bindChangeAddressLink() {
-		$(document).off('click.tcbfChangeAddr', '.tcbf-transport-change-address');
-		$(document).on('click.tcbfChangeAddr', '.tcbf-transport-change-address', function (e) {
-			e.preventDefault();
-			pendingCartKey = null; // changing address, not adding new
-			openAddressModal();
-		});
-	}
-
 	/* ================================================================
 	 * Address picker modal
 	 * ================================================================ */
 
-	function openAddressModal() {
+	function openAddressModal(direction) {
 		if ($modal) {
 			$modal.remove();
+		}
+
+		var isDelivery = (direction === 'delivery');
+		var title = isDelivery ? i18n.deliveryTitle : i18n.returnTitle;
+		var existingAddr = isDelivery ? config.deliveryAddress : config.returnAddress;
+		var existingWindow = isDelivery ? config.deliveryWindow : config.returnWindow;
+
+		var linkReturnHtml = '';
+		if (isDelivery) {
+			var linkChecked = config.linkReturn ? 'checked' : '';
+			linkReturnHtml =
+				'<label class="tcbf-transport-modal__link-return">' +
+				'<input type="checkbox" id="tcbf-transport-link-return" ' + linkChecked + ' />' +
+				'<span>' + escHtml(i18n.linkReturnLabel) + '</span>' +
+				'</label>';
 		}
 
 		var modalHtml =
 			'<div class="tcbf-transport-modal-overlay">' +
 			'<div class="tcbf-transport-modal">' +
 			'<div class="tcbf-transport-modal__header">' +
-			'<h3>' + escHtml(i18n.modalTitle) + '</h3>' +
+			'<h3>' + escHtml(title) + '</h3>' +
 			'<button type="button" class="tcbf-transport-modal__close">&times;</button>' +
 			'</div>' +
 			'<div class="tcbf-transport-modal__body">' +
+			'<div class="tcbf-transport-modal__map-wrap">' +
+			'<div class="tcbf-transport-modal__map" id="tcbf-transport-map"></div>' +
+			'</div>' +
+			'<div class="tcbf-transport-modal__controls">' +
 			'<label class="tcbf-transport-modal__label" for="tcbf-transport-address-input">' + escHtml(i18n.addressLabel) + '</label>' +
 			'<input type="text" id="tcbf-transport-address-input" class="tcbf-transport-modal__input" placeholder="' + escAttr(i18n.addressLabel) + '" autocomplete="off" />' +
-			'<div class="tcbf-transport-modal__map" id="tcbf-transport-map"></div>' +
+			'<div class="tcbf-transport-modal__window-row">' +
+			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.windowLabel) + '</label>' +
+			'<div class="tcbf-transport-modal__window-buttons">' +
+			'<button type="button" class="tcbf-transport-modal__window-btn' + (existingWindow !== 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="morning">' + escHtml(i18n.windowMorning) + '</button>' +
+			'<button type="button" class="tcbf-transport-modal__window-btn' + (existingWindow === 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="afternoon">' + escHtml(i18n.windowAfternoon) + '</button>' +
+			'</div>' +
+			'</div>' +
+			linkReturnHtml +
 			'<div class="tcbf-transport-modal__quote" id="tcbf-transport-quote" style="display:none">' +
 			'<div class="tcbf-transport-modal__quote-row">' +
 			'<span class="tcbf-transport-modal__quote-label">' + escHtml(i18n.quoteLabel) + ':</span>' +
@@ -147,6 +157,11 @@
 			'<div class="tcbf-transport-modal__quote-row">' +
 			'<span class="tcbf-transport-modal__quote-label">' + escHtml(i18n.zoneLabel) + ':</span>' +
 			'<span class="tcbf-transport-modal__quote-value" id="tcbf-transport-quote-zone"></span>' +
+			'</div>' +
+			'<div class="tcbf-transport-modal__quote-row" id="tcbf-transport-availability-row" style="display:none">' +
+			'<span class="tcbf-transport-modal__quote-label">' + escHtml(i18n.availabilityLabel) + ':</span>' +
+			'<span class="tcbf-transport-modal__quote-value" id="tcbf-transport-availability"></span>' +
+			'</div>' +
 			'</div>' +
 			'</div>' +
 			'</div>' +
@@ -165,39 +180,36 @@
 		});
 
 		$modal.find('.tcbf-transport-modal__confirm').on('click', function () {
-			confirmAddress();
+			confirmAddress(direction);
 		});
 
 		// Close on overlay click
-		$modal.find('.tcbf-transport-modal-overlay').on('click', function (e) {
-			if (e.target === this) {
+		$modal.on('click', function (e) {
+			if ($(e.target).hasClass('tcbf-transport-modal-overlay')) {
 				closeAddressModal(true);
 			}
 		});
 
-		// Close on Escape key
 		$(document).on('keydown.tcbfModal', function (e) {
 			if (e.key === 'Escape') {
 				closeAddressModal(true);
 			}
 		});
 
-		// Initialize Google Maps autocomplete
-		initAutocomplete();
+		// Window selector buttons
+		$modal.on('click', '.tcbf-transport-modal__window-btn', function () {
+			$modal.find('.tcbf-transport-modal__window-btn').removeClass('tcbf-transport-modal__window-btn--active');
+			$(this).addClass('tcbf-transport-modal__window-btn--active');
+			// Re-fetch quote with new window
+			if (selectedPlace && selectedPlace.lat && selectedPlace.lng) {
+				var win = $(this).data('window');
+				fetchQuote(selectedPlace.lat, selectedPlace.lng, direction, win);
+			}
+		});
 
-		// Pre-fill if address exists
-		if (config.address && config.address.address) {
-			$('#tcbf-transport-address-input').val(config.address.address);
-			selectedPlace = {
-				address: config.address.address,
-				lat: config.address.lat,
-				lng: config.address.lng
-			};
-			$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
-			fetchQuote(config.address.lat, config.address.lng);
-		}
+		// Initialize map and autocomplete
+		initMapAndAutocomplete(existingAddr, direction);
 
-		// Prevent body scroll
 		$('body').addClass('tcbf-modal-open');
 	}
 
@@ -207,20 +219,80 @@
 			$modal = null;
 		}
 
+		map = null;
+		marker = null;
+		autocomplete = null;
+
 		$(document).off('keydown.tcbfModal');
 		$('body').removeClass('tcbf-modal-open');
 
-		// If closing without confirming and there was a pending toggle, revert it
-		if (revertToggle && pendingCartKey) {
-			var $input = $('.tcbf-transport-toggle__input[data-cart-key="' + pendingCartKey + '"]');
+		if (revertToggle && pendingCartKey && pendingDirection) {
+			var $input = $('.tcbf-transport-toggle__input[data-cart-key="' + pendingCartKey + '"][data-direction="' + pendingDirection + '"]');
 			$input.prop('checked', false);
 		}
 
 		pendingCartKey = null;
+		pendingDirection = null;
 		selectedPlace = null;
 	}
 
-	function confirmAddress() {
+	function confirmAddress(direction) {
+		if (!selectedPlace || (!selectedPlace.lat && !selectedPlace.lng)) {
+			// Try server-side geocoding for manual input
+			var typedAddress = $('#tcbf-transport-address-input').val().trim();
+			if (typedAddress.length > 5) {
+				geocodeAndConfirm(typedAddress, direction);
+				return;
+			}
+			return;
+		}
+
+		doConfirm(direction);
+	}
+
+	function geocodeAndConfirm(address, direction) {
+		var $confirmBtn = $modal.find('.tcbf-transport-modal__confirm');
+		$confirmBtn.prop('disabled', true).text(i18n.geocoding || i18n.loading);
+
+		$.post(config.ajaxUrl, {
+			action:  'tcbf_transport_geocode',
+			address: address,
+			nonce:   config.nonce
+		}, function (response) {
+			if (!response.success || !response.data) {
+				showError(i18n.geocodeFailed || i18n.errorGeneric);
+				$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
+				return;
+			}
+
+			var data = response.data;
+			selectedPlace = {
+				address: data.formatted_address || address,
+				lat: data.lat,
+				lng: data.lng,
+				place_id: data.place_id || ''
+			};
+
+			$('#tcbf-transport-address-input').val(selectedPlace.address);
+
+			// Update map
+			if (map && selectedPlace.lat && selectedPlace.lng) {
+				var pos = { lat: selectedPlace.lat, lng: selectedPlace.lng };
+				map.setCenter(pos);
+				map.setZoom(14);
+				if (marker) {
+					marker.setPosition(pos);
+				}
+			}
+
+			doConfirm(direction);
+		}).fail(function () {
+			showError(i18n.geocodeFailed || i18n.errorGeneric);
+			$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
+		});
+	}
+
+	function doConfirm(direction) {
 		if (!selectedPlace || !selectedPlace.lat || !selectedPlace.lng) {
 			return;
 		}
@@ -228,24 +300,26 @@
 		var $confirmBtn = $modal.find('.tcbf-transport-modal__confirm');
 		$confirmBtn.prop('disabled', true).text(i18n.loading);
 
-		console.log('[TCBF Transport] Confirming address:', {
-			address: selectedPlace.address,
-			lat: selectedPlace.lat,
-			lng: selectedPlace.lng,
-			pendingCartKey: pendingCartKey
-		});
+		var selectedWindow = getSelectedWindow();
+		var linkReturn = 0;
+		var $linkCheck = $('#tcbf-transport-link-return');
+		if ($linkCheck.length && $linkCheck.is(':checked')) {
+			linkReturn = 1;
+		}
 
 		$.post(config.ajaxUrl, {
-			action:   'tcbf_transport_set_address',
-			address:  selectedPlace.address,
-			lat:      selectedPlace.lat,
-			lng:      selectedPlace.lng,
-			cart_key: pendingCartKey || '',
-			nonce:    config.nonce
+			action:      'tcbf_transport_set_address',
+			address:     selectedPlace.address,
+			lat:         selectedPlace.lat,
+			lng:         selectedPlace.lng,
+			place_id:    selectedPlace.place_id || '',
+			direction:   direction,
+			window:      selectedWindow,
+			cart_key:    pendingCartKey || '',
+			link_return: linkReturn,
+			nonce:       config.nonce
 		}, function (response) {
-			console.log('[TCBF Transport] Set address response:', response);
 			if (!response.success) {
-				console.error('[TCBF Transport] Set address error:', response.data);
 				showError(response.data ? response.data.message : i18n.errorGeneric);
 				$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
 				return;
@@ -253,14 +327,22 @@
 
 			var data = response.data;
 
-			// Update global config
-			config.hasAddress = true;
-			config.address = data.address;
+			// Update config
+			if (direction === 'delivery') {
+				config.deliveryAddress = data.address;
+				config.deliveryWindow = selectedWindow;
+				if (linkReturn) {
+					config.returnAddress = data.address;
+					config.returnWindow = selectedWindow;
+					config.linkReturn = 1;
+				}
+			} else {
+				config.returnAddress = data.address;
+				config.returnWindow = selectedWindow;
+			}
 
-			// Close modal
 			closeAddressModal(false);
 
-			// Refresh cart
 			if (data.fragments) {
 				applyFragments(data.fragments);
 			}
@@ -273,36 +355,152 @@
 	}
 
 	/* ================================================================
-	 * Google Maps Autocomplete
+	 * Google Maps + Autocomplete (wrapped in adapter for future migration)
 	 * ================================================================ */
 
-	function initAutocomplete() {
+	function initMapAndAutocomplete(existingAddr, direction) {
+		var $mapContainer = document.getElementById('tcbf-transport-map');
 		var $input = document.getElementById('tcbf-transport-address-input');
-		if (!$input) {
-			console.error('[TCBF Transport] Address input element not found');
-			return;
+
+		// Default center (Girona area)
+		var defaultLat = 41.98;
+		var defaultLng = 2.82;
+		var defaultZoom = 9;
+
+		if (existingAddr && existingAddr.lat && existingAddr.lng) {
+			defaultLat = existingAddr.lat;
+			defaultLng = existingAddr.lng;
+			defaultZoom = 14;
 		}
 
-		console.log('[TCBF Transport] initAutocomplete:', {
-			hasMapsKey: config.hasMapsKey,
-			googleDefined: typeof google !== 'undefined',
-			googleMaps: typeof google !== 'undefined' && !!google.maps,
-			googlePlaces: typeof google !== 'undefined' && google.maps && !!google.maps.places
-		});
+		// Pre-fill
+		if (existingAddr && existingAddr.address) {
+			$('#tcbf-transport-address-input').val(existingAddr.address);
+			selectedPlace = {
+				address: existingAddr.address,
+				lat: existingAddr.lat,
+				lng: existingAddr.lng,
+				place_id: existingAddr.place_id || ''
+			};
+			$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
+		}
+
+		// Initialize map (with retry for Google Maps load)
+		initGoogleMap($mapContainer, defaultLat, defaultLng, defaultZoom, direction);
+
+		// Initialize autocomplete
+		initAutocompleteProvider($input, direction);
+
+		// Fetch initial quote if address exists
+		if (selectedPlace && selectedPlace.lat && selectedPlace.lng) {
+			var win = getSelectedWindow();
+			fetchQuote(selectedPlace.lat, selectedPlace.lng, direction, win);
+		}
+	}
+
+	function initGoogleMap(container, lat, lng, zoom, direction) {
+		if (!container) return;
+
+		// Retry up to 4 times (~2 seconds) waiting for google.maps
+		var attempts = 0;
+		function tryInit() {
+			if (typeof google !== 'undefined' && google.maps) {
+				container.style.display = 'block';
+
+				map = new google.maps.Map(container, {
+					center: { lat: lat, lng: lng },
+					zoom: zoom,
+					disableDefaultUI: true,
+					zoomControl: true,
+					mapTypeControl: false,
+					streetViewControl: false
+				});
+
+				// Place marker
+				marker = new google.maps.Marker({
+					position: { lat: lat, lng: lng },
+					map: map,
+					draggable: true
+				});
+
+				// Click to move marker
+				map.addListener('click', function (e) {
+					var pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+					marker.setPosition(pos);
+					onMapPinMoved(pos, direction);
+				});
+
+				// Drag marker
+				marker.addListener('dragend', function () {
+					var pos = { lat: marker.getPosition().lat(), lng: marker.getPosition().lng() };
+					onMapPinMoved(pos, direction);
+				});
+
+			} else if (attempts < 4) {
+				attempts++;
+				setTimeout(tryInit, 500);
+			} else {
+				container.style.display = 'none';
+			}
+		}
+		tryInit();
+	}
+
+	function onMapPinMoved(pos, direction) {
+		// Reverse geocode to get address
+		if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
+			var geocoder = new google.maps.Geocoder();
+			geocoder.geocode({ location: pos }, function (results, status) {
+				if (status === 'OK' && results[0]) {
+					selectedPlace = {
+						address: results[0].formatted_address,
+						lat: pos.lat,
+						lng: pos.lng,
+						place_id: results[0].place_id || ''
+					};
+					$('#tcbf-transport-address-input').val(selectedPlace.address);
+				} else {
+					selectedPlace = {
+						address: pos.lat.toFixed(6) + ', ' + pos.lng.toFixed(6),
+						lat: pos.lat,
+						lng: pos.lng,
+						place_id: ''
+					};
+					$('#tcbf-transport-address-input').val(selectedPlace.address);
+				}
+				$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
+				var win = getSelectedWindow();
+				fetchQuote(pos.lat, pos.lng, direction, win);
+			});
+		} else {
+			// No geocoder, just use coordinates
+			selectedPlace = {
+				address: pos.lat.toFixed(6) + ', ' + pos.lng.toFixed(6),
+				lat: pos.lat,
+				lng: pos.lng,
+				place_id: ''
+			};
+			$('#tcbf-transport-address-input').val(selectedPlace.address);
+			$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
+			var win = getSelectedWindow();
+			fetchQuote(pos.lat, pos.lng, direction, win);
+		}
+	}
+
+	// TODO: Migrate to PlaceAutocompleteElement when Places API v2 is required
+	function initAutocompleteProvider($input, direction) {
+		if (!$input) return;
 
 		if (config.hasMapsKey && typeof google !== 'undefined' && google.maps && google.maps.places) {
-			console.log('[TCBF Transport] Using Google Places Autocomplete');
 			try {
 				autocomplete = new google.maps.places.Autocomplete($input, {
 					types: ['address'],
-					fields: ['formatted_address', 'geometry']
+					fields: ['formatted_address', 'geometry', 'place_id']
 				});
 
 				autocomplete.addListener('place_changed', function () {
 					var place = autocomplete.getPlace();
-					console.log('[TCBF Transport] place_changed:', place);
 					if (!place.geometry || !place.geometry.location) {
-						console.warn('[TCBF Transport] Place has no geometry');
 						selectedPlace = null;
 						$modal.find('.tcbf-transport-modal__confirm').prop('disabled', true);
 						return;
@@ -311,31 +509,37 @@
 					selectedPlace = {
 						address: place.formatted_address || $input.value,
 						lat: place.geometry.location.lat(),
-						lng: place.geometry.location.lng()
+						lng: place.geometry.location.lng(),
+						place_id: place.place_id || ''
 					};
 
-					console.log('[TCBF Transport] selectedPlace:', selectedPlace);
 					$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
-					fetchQuote(selectedPlace.lat, selectedPlace.lng);
-					initMap(selectedPlace.lat, selectedPlace.lng);
+
+					// Update map
+					if (map && marker) {
+						var pos = { lat: selectedPlace.lat, lng: selectedPlace.lng };
+						map.setCenter(pos);
+						map.setZoom(14);
+						marker.setPosition(pos);
+					}
+
+					var win = getSelectedWindow();
+					fetchQuote(selectedPlace.lat, selectedPlace.lng, direction, win);
 				});
 			} catch (e) {
-				console.error('[TCBF Transport] Autocomplete init failed:', e);
-				bindManualInput($input);
+				bindManualInput($input, direction);
 			}
 		} else {
-			console.log('[TCBF Transport] Using manual input fallback');
-			bindManualInput($input);
+			bindManualInput($input, direction);
 		}
 	}
 
-	function bindManualInput(inputEl) {
+	function bindManualInput(inputEl, direction) {
 		$(inputEl).on('input', function () {
 			var val = $(this).val().trim();
-			console.log('[TCBF Transport] Manual input:', val, 'length:', val.length);
 			if (val.length > 5) {
 				$modal.find('.tcbf-transport-modal__confirm').prop('disabled', false);
-				selectedPlace = { address: val, lat: 0, lng: 0 };
+				selectedPlace = { address: val, lat: 0, lng: 0, place_id: '' };
 			} else {
 				$modal.find('.tcbf-transport-modal__confirm').prop('disabled', true);
 				selectedPlace = null;
@@ -343,75 +547,80 @@
 		});
 	}
 
-	function initMap(lat, lng) {
-		var $mapContainer = document.getElementById('tcbf-transport-map');
-		if (!$mapContainer) return;
-
-		if (typeof google === 'undefined' || !google.maps) {
-			$mapContainer.style.display = 'none';
-			return;
-		}
-
-		$mapContainer.style.display = 'block';
-
-		var map = new google.maps.Map($mapContainer, {
-			center: { lat: lat, lng: lng },
-			zoom: 14,
-			disableDefaultUI: true,
-			zoomControl: true
-		});
-
-		new google.maps.Marker({
-			position: { lat: lat, lng: lng },
-			map: map
-		});
-	}
-
 	/* ================================================================
 	 * Quote preview
 	 * ================================================================ */
 
-	function fetchQuote(lat, lng) {
-		var $quoteContainer = $('#tcbf-transport-quote');
-		var $priceEl = $('#tcbf-transport-quote-price');
-		var $zoneEl = $('#tcbf-transport-quote-zone');
+	function fetchQuote(lat, lng, direction, window) {
+		if (quoteDebounce) {
+			clearTimeout(quoteDebounce);
+		}
 
-		$quoteContainer.show();
-		$priceEl.text(i18n.loading);
-		$zoneEl.text('');
+		quoteDebounce = setTimeout(function () {
+			var $quoteContainer = $('#tcbf-transport-quote');
+			var $priceEl = $('#tcbf-transport-quote-price');
+			var $zoneEl = $('#tcbf-transport-quote-zone');
+			var $availRow = $('#tcbf-transport-availability-row');
+			var $availEl = $('#tcbf-transport-availability');
 
-		$.post(config.ajaxUrl, {
-			action: 'tcbf_transport_quote',
-			lat:    lat,
-			lng:    lng,
-			nonce:  config.nonce
-		}, function (response) {
-			if (!response.success || !response.data) {
+			$quoteContainer.show();
+			$priceEl.text(i18n.loading);
+			$zoneEl.text('');
+
+			$.post(config.ajaxUrl, {
+				action:    'tcbf_transport_quote',
+				lat:       lat,
+				lng:       lng,
+				direction: direction || 'delivery',
+				window:    window || 'morning',
+				nonce:     config.nonce
+			}, function (response) {
+				if (!response.success || !response.data) {
+					$priceEl.text('--');
+					return;
+				}
+
+				var data = response.data;
+				var quote = data.quote || {};
+				var total = quote.price_total || 0;
+				var perBike = quote.per_bike_price || total;
+				var bikeQty = quote.bike_qty || 1;
+
+				if (bikeQty > 1) {
+					$priceEl.text(formatPrice(total) + ' (' + formatPrice(perBike) + ' ' + i18n.perBikeLabel + ')');
+				} else {
+					$priceEl.text(formatPrice(total));
+				}
+
+				if (data.zone_name) {
+					$zoneEl.text(data.zone_name);
+				} else {
+					$zoneEl.text(i18n.outsideZones);
+				}
+
+				if (data.remaining !== null && data.remaining !== undefined) {
+					$availRow.show();
+					$availEl.text(data.remaining);
+				} else {
+					$availRow.hide();
+				}
+			}).fail(function () {
 				$priceEl.text('--');
-				return;
-			}
-
-			var data = response.data;
-			var quote = data.quote || {};
-			var price = quote.price_total || 0;
-
-			$priceEl.text(formatPrice(price));
-
-			if (data.zone_name) {
-				$zoneEl.text(data.zone_name);
-			} else {
-				$zoneEl.text(i18n.outsideZones);
-			}
-		}).fail(function () {
-			$priceEl.text('--');
-		});
+			});
+		}, 300);
 	}
 
 	/* ================================================================
 	 * UI helpers
 	 * ================================================================ */
 
-	function updateToggleDisplay($toggle, enabled, price, zone) {
+	function getSelectedWindow() {
+		if (!$modal) return 'morning';
+		var $active = $modal.find('.tcbf-transport-modal__window-btn--active');
+		return $active.length ? $active.data('window') : 'morning';
+	}
+
+	function updateToggleDisplay($toggle, enabled, price, zone, direction) {
 		var $price   = $toggle.find('.tcbf-transport-toggle__price');
 		var $address = $toggle.find('.tcbf-transport-toggle__address');
 
@@ -421,8 +630,9 @@
 			$price.hide().text('');
 		}
 
-		if (enabled && config.address && config.address.address) {
-			var addr = config.address.address;
+		var addrData = (direction === 'delivery') ? config.deliveryAddress : config.returnAddress;
+		if (enabled && addrData && addrData.address) {
+			var addr = addrData.address;
 			if (addr.length > 50) addr = addr.substring(0, 47) + '...';
 			$address.text(addr).show();
 		} else {
@@ -441,20 +651,14 @@
 		if (typeof amount !== 'number') {
 			amount = parseFloat(amount) || 0;
 		}
-		return amount.toFixed(2) + ' \u20AC'; // EUR symbol
+		return amount.toFixed(2) + ' \u20AC';
 	}
 
 	function showError(message) {
 		if (!message) message = i18n.errorGeneric || 'Error';
-		// Use WC notice if available, otherwise simple alert
-		if (typeof wc_add_notice === 'function') {
-			wc_add_notice(message, 'error');
-		} else {
-			// Inject error notice at top of cart
-			var $notice = $('<div class="woocommerce-error tcbf-transport-error" role="alert">' + escHtml(message) + '</div>');
-			$('.woocommerce-cart-form').before($notice);
-			setTimeout(function () { $notice.fadeOut(400, function () { $(this).remove(); }); }, 5000);
-		}
+		var $notice = $('<div class="woocommerce-error tcbf-transport-error" role="alert">' + escHtml(message) + '</div>');
+		$('.woocommerce-cart-form').before($notice);
+		setTimeout(function () { $notice.fadeOut(400, function () { $(this).remove(); }); }, 5000);
 	}
 
 	function escHtml(str) {

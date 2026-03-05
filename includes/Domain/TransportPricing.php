@@ -50,6 +50,13 @@ final class TransportPricing {
 		// Empty = use base price + surcharges
 		'zone_pair_prices'      => [],
 
+		// Bulk bike pricing: additional bikes are cheaper
+		'price_additional_bike_multiplier' => 0.7,  // 70% of base for 2nd+ bike
+
+		// Capacity per window (bikes per slot)
+		'capacity_morning_bikes'   => 5,
+		'capacity_afternoon_bikes' => 5,
+
 		// Transport product ID (virtual WC product for cart line item)
 		'transport_product_id'  => 0,
 	];
@@ -115,9 +122,10 @@ final class TransportPricing {
 	 *   - pickup_time_window: Time window string (for night surcharge)
 	 *   - dropoff_time_window: Time window string
 	 *   - bike_boxes: Number of bike boxes (int)
+	 *   - bike_qty: Number of bikes for this direction (int, default 1)
 	 *   - rental_start_ts: Rental start timestamp
 	 *   - rental_end_ts: Rental end timestamp
-	 * @return array Quote result with price_total, breakdown, zone info
+	 * @return array Quote result with price_total, per_bike_price, breakdown, zone info
 	 */
 	public static function calculate_quote( array $params ) : array {
 
@@ -131,6 +139,7 @@ final class TransportPricing {
 		$pickup_time   = sanitize_text_field( $params['pickup_time_window'] ?? '' );
 		$dropoff_time  = sanitize_text_field( $params['dropoff_time_window'] ?? '' );
 		$bike_boxes    = max( 0, (int) ( $params['bike_boxes'] ?? 0 ) );
+		$bike_qty      = max( 1, (int) ( $params['bike_qty'] ?? 1 ) );
 
 		// Validate type
 		if ( ! in_array( $type, [ 'pickup', 'delivery', 'both' ], true ) ) {
@@ -239,13 +248,60 @@ final class TransportPricing {
 			];
 		}
 
-		// --- Total ---
-		$price_total = Money::money_round(
-			$base_price + $distance_charge + $night_charge + $bike_box_charge + $remote_charge
+		// --- Difficulty factor (zone-level multiplier) ---
+		$difficulty_factor = 1.0;
+		$active_zone = $zone_dropoff ?? $zone_pickup;
+		if ( $active_zone !== null && isset( $active_zone['difficulty_factor'] ) ) {
+			$difficulty_factor = (float) $active_zone['difficulty_factor'];
+			if ( $difficulty_factor <= 0 ) {
+				$difficulty_factor = 1.0;
+			}
+		}
+
+		// Core subtotal = base + distance (before surcharges), apply difficulty
+		$core_subtotal = $base_price + $distance_charge;
+		if ( $difficulty_factor !== 1.0 ) {
+			$adjusted = Money::money_round( $core_subtotal * $difficulty_factor );
+			$diff = $adjusted - $core_subtotal;
+			if ( abs( $diff ) > 0.005 ) {
+				$breakdown[] = [
+					'label'  => sprintf( 'Difficulty factor (×%.2f)', $difficulty_factor ),
+					'amount' => $diff,
+				];
+			}
+			$core_subtotal = $adjusted;
+		}
+
+		// --- Per-bike total (single bike) ---
+		$single_bike_total = Money::money_round(
+			$core_subtotal + $night_charge + $bike_box_charge + $remote_charge
 		);
+
+		// --- Bulk pricing for multiple bikes ---
+		$additional_multiplier = (float) ( $config['price_additional_bike_multiplier'] ?? 0.7 );
+		if ( $additional_multiplier <= 0 || $additional_multiplier > 1.0 ) {
+			$additional_multiplier = 1.0;
+		}
+
+		if ( $bike_qty > 1 ) {
+			// First bike at full price, additional bikes at multiplier
+			$total_for_qty = $single_bike_total + Money::money_round( $single_bike_total * $additional_multiplier * ( $bike_qty - 1 ) );
+			$per_bike_price = Money::money_round( $total_for_qty / $bike_qty );
+			$price_total = Money::money_round( $total_for_qty );
+
+			$breakdown[] = [
+				'label'  => sprintf( '%d bikes (1st full + %d×%.0f%%)', $bike_qty, $bike_qty - 1, $additional_multiplier * 100 ),
+				'amount' => $price_total,
+			];
+		} else {
+			$price_total = $single_bike_total;
+			$per_bike_price = $single_bike_total;
+		}
 
 		$result = [
 			'price_total'    => $price_total,
+			'per_bike_price' => $per_bike_price,
+			'bike_qty'       => $bike_qty,
 			'breakdown'      => $breakdown,
 			'zone_pickup'    => $zone_pickup ? ( $zone_pickup['id'] ?? $zone_pickup['name'] ?? '' ) : null,
 			'zone_dropoff'   => $zone_dropoff ? ( $zone_dropoff['id'] ?? $zone_dropoff['name'] ?? '' ) : null,

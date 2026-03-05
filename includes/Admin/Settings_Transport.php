@@ -62,6 +62,13 @@ final class Settings_Transport {
 		$config['surcharge_bike_box'] = self::sanitize_price( $_POST['tcbf_surcharge_bike_box'] ?? '' );
 		$config['surcharge_remote']   = self::sanitize_price( $_POST['tcbf_surcharge_remote'] ?? '' );
 
+		// Bulk pricing
+		$config['price_additional_bike_multiplier'] = min( 1.0, max( 0.0, (float) ( $_POST['tcbf_additional_bike_multiplier'] ?? 0.7 ) ) );
+
+		// Capacity
+		$config['capacity_morning_bikes']   = max( 1, absint( $_POST['tcbf_capacity_morning_bikes'] ?? 5 ) );
+		$config['capacity_afternoon_bikes'] = max( 1, absint( $_POST['tcbf_capacity_afternoon_bikes'] ?? 5 ) );
+
 		TransportPricing::save_config( $config );
 
 		// Zones
@@ -74,12 +81,13 @@ final class Settings_Transport {
 					continue;
 				}
 				$zones[] = [
-					'id'        => $id,
-					'name'      => $name,
-					'lat'       => (float) ( $zone_data['lat'] ?? 0 ),
-					'lng'       => (float) ( $zone_data['lng'] ?? 0 ),
-					'radius_km' => max( 0.1, (float) ( $zone_data['radius_km'] ?? 5 ) ),
-					'remote'    => ! empty( $zone_data['remote'] ),
+					'id'                => $id,
+					'name'              => $name,
+					'lat'               => (float) ( $zone_data['lat'] ?? 0 ),
+					'lng'               => (float) ( $zone_data['lng'] ?? 0 ),
+					'radius_km'         => max( 0.1, (float) ( $zone_data['radius_km'] ?? 5 ) ),
+					'remote'            => ! empty( $zone_data['remote'] ),
+					'difficulty_factor' => max( 0.1, (float) ( $zone_data['difficulty_factor'] ?? 1.0 ) ),
 				];
 			}
 		}
@@ -286,6 +294,55 @@ final class Settings_Transport {
 				</tbody>
 			</table>
 
+			<!-- Bulk Pricing -->
+			<h2><?php echo esc_html__( 'Bulk Bike Pricing', 'tc-booking-flow-next' ); ?></h2>
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row">
+							<label for="tcbf_additional_bike_multiplier"><?php echo esc_html__( 'Additional bike multiplier', 'tc-booking-flow-next' ); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="tcbf_additional_bike_multiplier" id="tcbf_additional_bike_multiplier"
+								value="<?php echo esc_attr( (string) ( $config['price_additional_bike_multiplier'] ?? 0.7 ) ); ?>" min="0" max="1" step="0.01" />
+							<p class="description">
+								<?php echo esc_html__( 'Price multiplier for 2nd+ bike (e.g., 0.7 = 70% of base). First bike is always full price.', 'tc-booking-flow-next' ); ?>
+							</p>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+
+			<!-- Capacity -->
+			<h2><?php echo esc_html__( 'Transport Capacity', 'tc-booking-flow-next' ); ?></h2>
+			<p class="description" style="margin-bottom: 12px;">
+				<?php echo esc_html__( 'Maximum number of bikes per time window (shared across all directions).', 'tc-booking-flow-next' ); ?>
+			</p>
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row">
+							<label for="tcbf_capacity_morning_bikes"><?php echo esc_html__( 'Morning capacity', 'tc-booking-flow-next' ); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="tcbf_capacity_morning_bikes" id="tcbf_capacity_morning_bikes"
+								value="<?php echo esc_attr( (string) ( $config['capacity_morning_bikes'] ?? 5 ) ); ?>" min="1" step="1" />
+							<span><?php echo esc_html__( 'bikes', 'tc-booking-flow-next' ); ?></span>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="tcbf_capacity_afternoon_bikes"><?php echo esc_html__( 'Afternoon capacity', 'tc-booking-flow-next' ); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="tcbf_capacity_afternoon_bikes" id="tcbf_capacity_afternoon_bikes"
+								value="<?php echo esc_attr( (string) ( $config['capacity_afternoon_bikes'] ?? 5 ) ); ?>" min="1" step="1" />
+							<span><?php echo esc_html__( 'bikes', 'tc-booking-flow-next' ); ?></span>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+
 			<!-- Zones -->
 			<h2><?php echo esc_html__( 'Zones', 'tc-booking-flow-next' ); ?></h2>
 			<p class="description" style="margin-bottom: 12px;">
@@ -301,6 +358,7 @@ final class Settings_Transport {
 						<th><?php echo esc_html__( 'Lng', 'tc-booking-flow-next' ); ?></th>
 						<th><?php echo esc_html__( 'Radius (km)', 'tc-booking-flow-next' ); ?></th>
 						<th><?php echo esc_html__( 'Remote', 'tc-booking-flow-next' ); ?></th>
+						<th><?php echo esc_html__( 'Difficulty', 'tc-booking-flow-next' ); ?></th>
 						<th></th>
 					</tr>
 				</thead>
@@ -333,6 +391,7 @@ final class Settings_Transport {
 					'<td><input type="number" name="tcbf_zones[' + idx + '][lng]" value="" step="0.0001" style="width:100px" /></td>' +
 					'<td><input type="number" name="tcbf_zones[' + idx + '][radius_km]" value="5" step="0.1" min="0.1" style="width:80px" /></td>' +
 					'<td><input type="checkbox" name="tcbf_zones[' + idx + '][remote]" value="1" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][difficulty_factor]" value="1.0" step="0.01" min="0.1" style="width:70px" /></td>' +
 					'<td><button type="button" class="button-link tcbf-remove-zone" style="color:#b32d2e">&times;</button></td>';
 				tbody.appendChild(row);
 				idx++;
@@ -379,6 +438,10 @@ final class Settings_Transport {
 			<td>
 				<input type="checkbox" name="<?php echo esc_attr( $prefix . '[remote]' ); ?>"
 					value="1" <?php checked( ! empty( $zone['remote'] ) ); ?> />
+			</td>
+			<td>
+				<input type="number" name="<?php echo esc_attr( $prefix . '[difficulty_factor]' ); ?>"
+					value="<?php echo esc_attr( (string) ( $zone['difficulty_factor'] ?? 1.0 ) ); ?>" step="0.01" min="0.1" style="width:70px" />
 			</td>
 			<td>
 				<button type="button" class="button-link tcbf-remove-zone" style="color:#b32d2e">&times;</button>
