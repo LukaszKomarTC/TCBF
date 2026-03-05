@@ -42,6 +42,7 @@ require_once TC_BF_PATH . 'includes/Admin/Admin_Product_Category_Partner.php';
 // Transport: zone-based transport pricing for bike rentals
 require_once TC_BF_PATH . 'includes/Domain/TransportZones.php';
 require_once TC_BF_PATH . 'includes/Domain/TransportPricing.php';
+require_once TC_BF_PATH . 'includes/Domain/TransportAvailability.php';
 require_once TC_BF_PATH . 'includes/Admin/Settings_Transport.php';
 
 // TCBF-14: GF Semantic Field Mapping (inputName-based field resolution)

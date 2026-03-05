@@ -289,10 +289,15 @@ final class TransportPricing {
 			$per_bike_price = Money::money_round( $total_for_qty / $bike_qty );
 			$price_total = Money::money_round( $total_for_qty );
 
-			$breakdown[] = [
-				'label'  => sprintf( '%d bikes (1st full + %d×%.0f%%)', $bike_qty, $bike_qty - 1, $additional_multiplier * 100 ),
-				'amount' => $price_total,
-			];
+			// Show the multi-bike discount as a negative delta
+			$full_price_all = Money::money_round( $single_bike_total * $bike_qty );
+			$discount = Money::money_round( $full_price_all - $price_total );
+			if ( $discount > 0 ) {
+				$breakdown[] = [
+					'label'  => sprintf( 'Multi-bike discount (%d bikes, %d×%.0f%%)', $bike_qty, $bike_qty - 1, $additional_multiplier * 100 ),
+					'amount' => -$discount,
+				];
+			}
 		} else {
 			$price_total = $single_bike_total;
 			$per_bike_price = $single_bike_total;

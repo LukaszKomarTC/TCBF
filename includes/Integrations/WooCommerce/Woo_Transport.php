@@ -123,14 +123,14 @@ final class Woo_Transport {
 			$window = self::get_direction_window( $direction );
 			$service_date = self::derive_service_date( $rental_item, $direction );
 
-			// Check availability
+			// Check availability: can we add 1 more bike to this (date, window)?
 			if ( $service_date && $window ) {
-				$dir_qty = self::count_direction_bikes( $direction ) + 1;
-				if ( ! TransportAvailability::is_available( $service_date, $window, $dir_qty ) ) {
+				if ( ! TransportAvailability::can_add( $service_date, $window, 1 ) ) {
 					$remaining = TransportAvailability::remaining_capacity( $service_date, $window );
+					$in_cart   = TransportAvailability::count_in_cart( $service_date, $window );
 					wp_send_json_error( [
-						'message'   => sprintf( 'No capacity available for %s %s. %d slots remaining.', $service_date, $window, $remaining ),
-						'remaining' => $remaining,
+						'message'   => sprintf( 'No capacity available for %s %s. %d slots remaining (%d in your cart).', $service_date, $window, $remaining, $in_cart ),
+						'remaining' => max( 0, $remaining - $in_cart ),
 					] );
 				}
 			}
@@ -309,15 +309,21 @@ final class Woo_Transport {
 				}
 			}
 		}
+		$is_available = null;
 		if ( $service_date && $window ) {
-			$remaining = TransportAvailability::remaining_capacity( $service_date, $window );
+			$remaining    = TransportAvailability::remaining_capacity( $service_date, $window );
+			$in_cart      = TransportAvailability::count_in_cart( $service_date, $window );
+			$remaining    = max( 0, $remaining - $in_cart );
+			$is_available = TransportAvailability::can_add( $service_date, $window, 1 );
 		}
 
 		wp_send_json_success( [
-			'quote'     => $quote,
-			'zone'      => $zone,
-			'zone_name' => $zone ? ( $zone['name'] ?? '' ) : null,
-			'remaining' => $remaining,
+			'quote'        => $quote,
+			'zone'         => $zone,
+			'zone_name'    => $zone ? ( $zone['name'] ?? '' ) : null,
+			'remaining'    => $remaining,
+			'in_cart'      => $in_cart ?? 0,
+			'is_available' => $is_available,
 		] );
 	}
 
@@ -959,14 +965,15 @@ final class Woo_Transport {
 		}
 
 		foreach ( $slots as $slot ) {
-			if ( ! TransportAvailability::is_available( $slot['date'], $slot['window'], $slot['count'] ) ) {
+			if ( ! TransportAvailability::checkout_check( $slot['date'], $slot['window'], $slot['count'] ) ) {
 				$remaining = TransportAvailability::remaining_capacity( $slot['date'], $slot['window'] );
 				wc_add_notice(
 					sprintf(
-						'Transport capacity exceeded for %s %s. Only %d bike slots remaining.',
+						'Transport capacity exceeded for %s %s. Only %d bike slots remaining (you have %d in cart).',
 						$slot['date'],
 						$slot['window'],
-						$remaining
+						$remaining,
+						$slot['count']
 					),
 					'error'
 				);
@@ -1199,9 +1206,10 @@ final class Woo_Transport {
 				return sprintf( '%04d-%02d-%02d', (int) $end_year, (int) $end_month, (int) $end_day );
 			}
 
-			// Fallback: start date + duration (if set) or +1 day
-			$duration = isset( $booking['wc_bookings_field_duration'] ) ? (int) $booking['wc_bookings_field_duration'] : 1;
-			$end_ts = strtotime( $start_date ) + ( $duration * DAY_IN_SECONDS );
+			// Fallback: last day of rental = start + (duration - 1) days
+			// Duration=1 means single-day rental → return on same day as start
+			$duration = isset( $booking['wc_bookings_field_duration'] ) ? max( 1, (int) $booking['wc_bookings_field_duration'] ) : 1;
+			$end_ts = strtotime( $start_date ) + ( ( $duration - 1 ) * DAY_IN_SECONDS );
 			return date( 'Y-m-d', $end_ts );
 		}
 
