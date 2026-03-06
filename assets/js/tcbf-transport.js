@@ -632,6 +632,7 @@
 						lng: gPlace.geometry.location.lng(),
 						place_id: gPlace.place_id || ''
 					};
+					if (typeof console !== 'undefined') console.log('[TCBF Transport] Autocomplete place_changed', direction, place);
 					setPlaceForDirection(direction, place);
 					updateMapForDirection(direction, place);
 					updateConfirmState();
@@ -792,28 +793,37 @@
 				var totalPrice = 0;
 				var zoneNames = [];
 
+				var errorMsg = null;
 				for (var i = 0; i < responses.length; i++) {
 					var data = responses[i][0];
+					if (typeof console !== 'undefined') console.log('[TCBF Transport] Quote response', i, data);
 					if (data && data.success && data.data) {
 						var q = data.data.quote || {};
 						totalPrice += parseFloat(q.price_total || 0);
 						if (data.data.zone_name && zoneNames.indexOf(data.data.zone_name) === -1) {
 							zoneNames.push(data.data.zone_name);
 						}
+					} else if (data && !data.success && data.data && data.data.message) {
+						errorMsg = data.data.message;
 					}
 				}
 
-				if (totalPrice > 0) {
+				if (errorMsg) {
+					$price.text(errorMsg);
+					$zone.text('');
+				} else if (totalPrice > 0) {
 					var text = formatPrice(totalPrice);
 					if (bikeCount > 1) {
 						text += ' (' + formatPrice(totalPrice / bikeCount) + ' ' + i18n.perBikeLabel + ')';
 					}
 					$price.text(text);
+					$zone.text(zoneNames.length > 0 ? zoneNames.join(', ') : (i18n.outsideZones || ''));
 				} else {
 					$price.text('--');
+					$zone.text(zoneNames.length > 0 ? zoneNames.join(', ') : (i18n.outsideZones || ''));
 				}
-				$zone.text(zoneNames.length > 0 ? zoneNames.join(', ') : (i18n.outsideZones || ''));
-			}).fail(function () {
+			}).fail(function (jqXHR) {
+				if (typeof console !== 'undefined') console.error('[TCBF Transport] Quote AJAX failed', jqXHR && jqXHR.status, jqXHR && jqXHR.responseText);
 				$price.text('--');
 			});
 		}, 300);
@@ -830,6 +840,8 @@
 		var sameAddr = isSameAddressMode();
 		var wantDelivery = modeIncludesDelivery(mode);
 		var wantPickup = modeIncludesPickup(mode);
+
+		if (typeof console !== 'undefined') console.log('[TCBF Transport] doBulkConfigure', {mode: mode, sameAddr: sameAddr, deliveryPlace: deliveryPlace, pickupPlace: pickupPlace, bikeKeys: getSelectedBikeKeys()});
 
 		// For pickup-only mode, the unified address input is for pickup
 		var effectiveDeliveryPlace = (mode === 'pickup') ? null : deliveryPlace;
@@ -960,8 +972,11 @@
 			// When same_address=1, backend uses delivery address for pickup
 		}
 
+		if (typeof console !== 'undefined') console.log('[TCBF Transport] sendBulkConfigure POST', postData);
+
 		$.ajax({ url: config.ajaxUrl, method: 'POST', dataType: 'json', data: postData })
 		.done(function (response) {
+			if (typeof console !== 'undefined') console.log('[TCBF Transport] sendBulkConfigure response', response);
 			if (!response || !response.success) {
 				var msg = (response && response.data && response.data.message)
 					? response.data.message

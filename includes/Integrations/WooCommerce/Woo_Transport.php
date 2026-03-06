@@ -113,6 +113,20 @@ final class Woo_Transport {
 			wp_send_json_error( [
 				'message' => Woo::translate( '[:en]Transport is only available when all bikes in the cart have the same rental dates. Please place separate orders for bikes with different dates.[:es]El transporte solo está disponible cuando todas las bicicletas del carrito tienen las mismas fechas de alquiler. Haz pedidos separados para bicicletas con fechas distintas.[:]' ),
 				'code'    => 'mixed_dates',
+				'debug'   => [
+					'count'      => $dates['count'],
+					'start_date' => $dates['start_date'],
+					'end_date'   => $dates['end_date'],
+				],
+			] );
+		}
+
+		// Also add transport product check early for clear error messaging
+		$transport_product_id = TransportPricing::get_transport_product_id();
+		if ( ( $enable_delivery || $enable_pickup ) && $transport_product_id <= 0 ) {
+			wp_send_json_error( [
+				'message' => Woo::translate( '[:en]Transport is not yet configured. Please contact support.[:es]El transporte aún no está configurado. Contacta con soporte.[:]' ),
+				'code'    => 'no_transport_product',
 			] );
 		}
 
@@ -315,7 +329,15 @@ final class Woo_Transport {
 		// Date uniformity gate
 		$dates = self::get_rental_dates_uniformity();
 		if ( ! $dates['is_uniform'] ) {
-			wp_send_json_error( [ 'message' => 'Transport unavailable for mixed-date carts', 'code' => 'mixed_dates' ] );
+			wp_send_json_error( [
+				'message' => 'Transport unavailable for mixed-date carts',
+				'code'    => 'mixed_dates',
+				'debug'   => [
+					'count'      => $dates['count'],
+					'start_date' => $dates['start_date'],
+					'end_date'   => $dates['end_date'],
+				],
+			] );
 		}
 
 		$lat       = isset( $_POST['lat'] ) ? (float) $_POST['lat'] : 0.0;
