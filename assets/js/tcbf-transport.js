@@ -494,8 +494,8 @@
 		if (config.hasMapsKey && typeof google !== 'undefined' && google.maps && google.maps.places) {
 			try {
 				autocomplete = new google.maps.places.Autocomplete($input, {
-					types: ['address'],
-					fields: ['formatted_address', 'geometry', 'place_id']
+					fields: ['formatted_address', 'geometry', 'place_id', 'name'],
+					componentRestrictions: { country: 'es' }
 				});
 
 				autocomplete.addListener('place_changed', function () {
