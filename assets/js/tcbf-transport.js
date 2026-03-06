@@ -97,20 +97,6 @@
 	 * ================================================================ */
 
 	function openConfigureModal() {
-		// Diagnostic: test if AJAX works at all
-		$.ajax({
-			url: config.ajaxUrl,
-			type: 'POST',
-			dataType: 'json',
-			data: { action: 'tcbf_transport_ping', nonce: config.nonce },
-			success: function (r) {
-				console.log('[TCBF Transport] PING OK:', r);
-			},
-			error: function (xhr, status, err) {
-				console.log('[TCBF Transport] PING FAILED:', xhr.status, xhr.responseText);
-			}
-		});
-
 		if ($modal) {
 			$modal.remove();
 		}
@@ -646,7 +632,7 @@
 						lng: gPlace.geometry.location.lng(),
 						place_id: gPlace.place_id || ''
 					};
-					if (typeof console !== 'undefined') console.log('[TCBF Transport] Autocomplete place_changed', direction, place);
+	
 					setPlaceForDirection(direction, place);
 					updateMapForDirection(direction, place);
 					updateConfirmState();
@@ -810,7 +796,7 @@
 				var errorMsg = null;
 				for (var i = 0; i < responses.length; i++) {
 					var data = responses[i][0];
-					if (typeof console !== 'undefined') console.log('[TCBF Transport] Quote response', i, data);
+
 					if (data && data.success && data.data) {
 						var q = data.data.quote || {};
 						totalPrice += parseFloat(q.price_total || 0);
@@ -854,8 +840,6 @@
 		var sameAddr = isSameAddressMode();
 		var wantDelivery = modeIncludesDelivery(mode);
 		var wantPickup = modeIncludesPickup(mode);
-
-		if (typeof console !== 'undefined') console.log('[TCBF Transport] doBulkConfigure', {mode: mode, sameAddr: sameAddr, deliveryPlace: deliveryPlace, pickupPlace: pickupPlace, bikeKeys: getSelectedBikeKeys()});
 
 		// For pickup-only mode, the unified address input is for pickup
 		var effectiveDeliveryPlace = (mode === 'pickup') ? null : deliveryPlace;
@@ -986,11 +970,8 @@
 			// When same_address=1, backend uses delivery address for pickup
 		}
 
-		if (typeof console !== 'undefined') console.log('[TCBF Transport] sendBulkConfigure POST', postData);
-
 		$.ajax({ url: config.ajaxUrl, method: 'POST', dataType: 'json', data: postData })
 		.done(function (response) {
-			if (typeof console !== 'undefined') console.log('[TCBF Transport] sendBulkConfigure response', response);
 			if (!response || !response.success) {
 				var msg = (response && response.data && response.data.message)
 					? response.data.message

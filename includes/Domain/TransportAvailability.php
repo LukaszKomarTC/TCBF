@@ -17,8 +17,15 @@ if ( ! defined('ABSPATH') ) exit;
  */
 final class TransportAvailability {
 
+	/** Per-request cache for count_booked_in_orders results */
+	private static $booked_cache = [];
+
 	/**
 	 * Count booked bikes from completed/processing WC orders ONLY (not cart)
+	 *
+	 * Uses a direct SQL COUNT query to avoid loading full WC_Order objects
+	 * into memory (the old wc_get_orders approach caused OOM on stores with
+	 * many orders).
 	 *
 	 * @param string $service_date YYYY-MM-DD
 	 * @param string $window       morning|afternoon
@@ -30,39 +37,50 @@ final class TransportAvailability {
 			return 0;
 		}
 
-		$count = 0;
-
-		if ( ! function_exists( 'wc_get_orders' ) ) {
-			return 0;
+		$cache_key = $service_date . '|' . $window;
+		if ( isset( self::$booked_cache[ $cache_key ] ) ) {
+			return self::$booked_cache[ $cache_key ];
 		}
 
-		$orders = wc_get_orders( [
-			'status'     => [ 'processing', 'completed', 'on-hold' ],
-			'limit'      => -1,
-			'meta_query' => [
-				[
-					'key'   => '_tcbf_has_transport',
-					'value' => '1',
-				],
-			],
-		] );
+		global $wpdb;
 
-		foreach ( $orders as $order ) {
-			foreach ( $order->get_items() as $item ) {
-				$item_scope = $item->get_meta( 'tcbf_scope' );
-				if ( $item_scope !== 'transport' ) {
-					continue;
-				}
+		// Use HPOS-compatible tables if available, fall back to posts
+		$orders_table = $wpdb->prefix . 'wc_orders';
+		$orders_meta  = $wpdb->prefix . 'wc_orders_meta';
+		$use_hpos     = $wpdb->get_var( "SHOW TABLES LIKE '{$orders_table}'" ) === $orders_table;
 
-				$item_date   = $item->get_meta( '_tcbf_transport_service_date' );
-				$item_window = $item->get_meta( '_tcbf_transport_window' );
-
-				if ( $item_date === $service_date && $item_window === $window ) {
-					$count++;
-				}
-			}
+		if ( $use_hpos ) {
+			// HPOS (High-Performance Order Storage) path
+			$count = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*)
+				 FROM {$orders_table} AS o
+				 INNER JOIN {$orders_meta} AS om ON o.id = om.order_id AND om.meta_key = '_tcbf_has_transport' AND om.meta_value = '1'
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_items AS oi ON o.id = oi.order_id AND oi.order_item_type = 'line_item'
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS im_scope ON oi.order_item_id = im_scope.order_item_id AND im_scope.meta_key = 'tcbf_scope' AND im_scope.meta_value = 'transport'
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS im_date ON oi.order_item_id = im_date.order_item_id AND im_date.meta_key = '_tcbf_transport_service_date' AND im_date.meta_value = %s
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS im_win ON oi.order_item_id = im_win.order_item_id AND im_win.meta_key = '_tcbf_transport_window' AND im_win.meta_value = %s
+				 WHERE o.status IN ('wc-processing', 'wc-completed', 'wc-on-hold')",
+				$service_date,
+				$window
+			) );
+		} else {
+			// Legacy posts-based order storage
+			$count = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*)
+				 FROM {$wpdb->posts} AS p
+				 INNER JOIN {$wpdb->postmeta} AS pm ON p.ID = pm.post_id AND pm.meta_key = '_tcbf_has_transport' AND pm.meta_value = '1'
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_items AS oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS im_scope ON oi.order_item_id = im_scope.order_item_id AND im_scope.meta_key = 'tcbf_scope' AND im_scope.meta_value = 'transport'
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS im_date ON oi.order_item_id = im_date.order_item_id AND im_date.meta_key = '_tcbf_transport_service_date' AND im_date.meta_value = %s
+				 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS im_win ON oi.order_item_id = im_win.order_item_id AND im_win.meta_key = '_tcbf_transport_window' AND im_win.meta_value = %s
+				 WHERE p.post_type = 'shop_order'
+				   AND p.post_status IN ('wc-processing', 'wc-completed', 'wc-on-hold')",
+				$service_date,
+				$window
+			) );
 		}
 
+		self::$booked_cache[ $cache_key ] = $count;
 		return $count;
 	}
 
