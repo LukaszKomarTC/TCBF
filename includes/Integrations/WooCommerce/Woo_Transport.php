@@ -92,6 +92,11 @@ final class Woo_Transport {
 
 	public static function ajax_bulk_configure() : void {
 
+		// Clean any prior output (PHP notices/warnings) to ensure valid JSON response
+		if ( ob_get_level() ) {
+			ob_clean();
+		}
+
 		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
 
 		if ( ! WC() || ! WC()->cart ) {
@@ -301,6 +306,10 @@ final class Woo_Transport {
 
 	public static function ajax_get_quote() : void {
 
+		if ( ob_get_level() ) {
+			ob_clean();
+		}
+
 		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
 
 		// Date uniformity gate
@@ -368,6 +377,10 @@ final class Woo_Transport {
 	 * ================================================================ */
 
 	public static function ajax_geocode() : void {
+
+		if ( ob_get_level() ) {
+			ob_clean();
+		}
 
 		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
 

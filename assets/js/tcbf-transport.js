@@ -31,6 +31,7 @@
 	var pickupPlace = null;
 	var quoteDebounce = null;
 	var splitMapsInitialized = false;
+	var unifiedMapInitialized = false;
 
 	/* ================================================================
 	 * Initialization — delegated events survive DOM replacement
@@ -52,13 +53,16 @@
 		var $card = $('#tcbf-service-card');
 		$card.addClass('tcbf-service-card--loading');
 
-		$.post(config.ajaxUrl, {
-			action: 'tcbf_transport_bulk_configure',
-			enable_delivery: 0,
-			enable_pickup: 0,
-			bike_keys: JSON.stringify([]),
-			nonce: config.nonce
-		}, function () {
+		$.ajax({
+			url: config.ajaxUrl, method: 'POST', dataType: 'json',
+			data: {
+				action: 'tcbf_transport_bulk_configure',
+				enable_delivery: 0,
+				enable_pickup: 0,
+				bike_keys: JSON.stringify([]),
+				nonce: config.nonce
+			}
+		}).done(function () {
 			$(document.body).trigger('wc_update_cart');
 		}).fail(function () {
 			$card.removeClass('tcbf-service-card--loading');
@@ -470,6 +474,7 @@
 		pickupMap = null;
 		pickupMarker = null;
 		splitMapsInitialized = false;
+		unifiedMapInitialized = false;
 		$(document).off('keydown.tcbfModal');
 		$('body').removeClass('tcbf-modal-open');
 	}
@@ -479,6 +484,9 @@
 	 * ================================================================ */
 
 	function initUnifiedMap() {
+		if (unifiedMapInitialized) return;
+		unifiedMapInitialized = true;
+
 		var container = document.getElementById('tcbf-delivery-map');
 		if (!container) return;
 		// Unified input always stores into deliveryPlace regardless of mode.
@@ -646,6 +654,7 @@
 				setPlaceForDirection(direction, null);
 			}
 			updateConfirmState();
+			updateQuotePreview();
 		});
 	}
 
@@ -747,11 +756,14 @@
 
 			if (hasDelivery && deliveryPlace && deliveryPlace.lat) {
 				var dWin = getWindowForDirection('delivery');
-				requests.push($.post(config.ajaxUrl, {
-					action: 'tcbf_transport_quote',
-					lat: deliveryPlace.lat, lng: deliveryPlace.lng,
-					direction: 'delivery', window: dWin,
-					nonce: config.nonce
+				requests.push($.ajax({
+					url: config.ajaxUrl, method: 'POST', dataType: 'json',
+					data: {
+						action: 'tcbf_transport_quote',
+						lat: deliveryPlace.lat, lng: deliveryPlace.lng,
+						direction: 'delivery', window: dWin,
+						nonce: config.nonce
+					}
 				}));
 			}
 
@@ -761,11 +773,14 @@
 				var pPlace = (mode === 'both' && !sameAddr) ? pickupPlace : deliveryPlace;
 				if (pPlace && pPlace.lat) {
 					var pWin = getWindowForDirection('pickup');
-					requests.push($.post(config.ajaxUrl, {
-						action: 'tcbf_transport_quote',
-						lat: pPlace.lat, lng: pPlace.lng,
-						direction: 'pickup', window: pWin,
-						nonce: config.nonce
+					requests.push($.ajax({
+						url: config.ajaxUrl, method: 'POST', dataType: 'json',
+						data: {
+							action: 'tcbf_transport_quote',
+							lat: pPlace.lat, lng: pPlace.lng,
+							direction: 'pickup', window: pWin,
+							nonce: config.nonce
+						}
 					}));
 				}
 			}
@@ -868,11 +883,14 @@
 		var $confirmBtn = $modal.find('.tcbf-transport-modal__confirm');
 		$confirmBtn.prop('disabled', true).text(i18n.geocoding || i18n.loading);
 
-		$.post(config.ajaxUrl, {
-			action: 'tcbf_transport_geocode',
-			address: address,
-			nonce: config.nonce
-		}, function (response) {
+		$.ajax({
+			url: config.ajaxUrl, method: 'POST', dataType: 'json',
+			data: {
+				action: 'tcbf_transport_geocode',
+				address: address,
+				nonce: config.nonce
+			}
+		}).done(function (response) {
 			if (!response.success || !response.data) {
 				showError(i18n.geocodeFailed || i18n.errorGeneric);
 				$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
@@ -942,9 +960,13 @@
 			// When same_address=1, backend uses delivery address for pickup
 		}
 
-		$.post(config.ajaxUrl, postData, function (response) {
-			if (!response.success) {
-				showError(response.data ? response.data.message : i18n.errorGeneric);
+		$.ajax({ url: config.ajaxUrl, method: 'POST', dataType: 'json', data: postData })
+		.done(function (response) {
+			if (!response || !response.success) {
+				var msg = (response && response.data && response.data.message)
+					? response.data.message
+					: i18n.errorGeneric;
+				showError(msg);
 				$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
 				return;
 			}
@@ -959,8 +981,17 @@
 				applyFragments(response.data.fragments);
 			}
 			$(document.body).trigger('wc_update_cart');
-		}).fail(function () {
-			showError(i18n.errorGeneric);
+		})
+		.fail(function (jqXHR) {
+			var msg = i18n.errorGeneric;
+			// Try to extract error from response body
+			try {
+				var resp = JSON.parse(jqXHR.responseText);
+				if (resp && resp.data && resp.data.message) {
+					msg = resp.data.message;
+				}
+			} catch (e) {}
+			showError(msg + ' (HTTP ' + jqXHR.status + ')');
 			$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
 		});
 	}
