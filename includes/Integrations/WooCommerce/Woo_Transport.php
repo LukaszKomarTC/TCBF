@@ -1426,20 +1426,41 @@ final class Woo_Transport {
 		// Size from WC Bookings resource
 		$size = '';
 		$booking = isset( $cart_item['booking'] ) ? (array) $cart_item['booking'] : [];
+
+		// Try multiple keys for resource ID (WC Bookings stores it inconsistently)
 		$resource_id = 0;
-		if ( isset( $booking['wc_bookings_field_resource'] ) ) {
-			$resource_id = (int) $booking['wc_bookings_field_resource'];
-		} elseif ( isset( $booking['resource_id'] ) ) {
-			$resource_id = (int) $booking['resource_id'];
+		foreach ( [ 'wc_bookings_field_resource', 'resource_id', '_resource_id' ] as $key ) {
+			if ( ! empty( $booking[ $key ] ) ) {
+				$resource_id = (int) $booking[ $key ];
+				break;
+			}
 		}
+
 		if ( $resource_id > 0 ) {
 			$resource = get_post( $resource_id );
-			if ( $resource && isset( $resource->post_title ) ) {
-				if ( preg_match( '/\b(XXL|XL|[SMLX])\b/i', $resource->post_title, $matches ) ) {
+			if ( $resource && ! empty( $resource->post_title ) ) {
+				$title = trim( $resource->post_title );
+				// Try standard letter sizes first
+				if ( preg_match( '/\b(XXS|XXL|XS|XL|[SMLX])\b/i', $title, $matches ) ) {
 					$size = strtoupper( $matches[1] );
+				// Then try numeric sizes (e.g. "54", "54cm", "Size 54")
+				} elseif ( preg_match( '/(\d{2,3})\s*(?:cm)?\b/i', $title, $matches ) ) {
+					$size = $matches[1];
 				} else {
-					$size = $resource->post_title;
+					// Use the full resource title as size label
+					$size = $title;
 				}
+			}
+		}
+
+		// Fallback: try to get size from product attributes (variation)
+		if ( $size === '' && $product && method_exists( $product, 'get_attribute' ) ) {
+			$attr_size = $product->get_attribute( 'pa_size' );
+			if ( ! $attr_size ) {
+				$attr_size = $product->get_attribute( 'pa_talla' );
+			}
+			if ( $attr_size ) {
+				$size = $attr_size;
 			}
 		}
 

@@ -399,22 +399,18 @@
 
 	function handleSameAddressChange(same) {
 		if (same) {
-			$('#tcbf-unified-mode').show();
-			$('#tcbf-split-mode').hide();
 			var splitAddr = $('#tcbf-split-delivery-address').val();
 			if (splitAddr && !$('#tcbf-delivery-address-input').val()) {
 				$('#tcbf-delivery-address-input').val(splitAddr);
 			}
-			initUnifiedMap();
 		} else {
-			$('#tcbf-unified-mode').hide();
-			$('#tcbf-split-mode').show();
 			var unifiedAddr = $('#tcbf-delivery-address-input').val();
 			if (unifiedAddr && !$('#tcbf-split-delivery-address').val()) {
 				$('#tcbf-split-delivery-address').val(unifiedAddr);
 			}
-			initSplitMaps();
 		}
+		// Re-run full visibility logic (shows/hides unified vs split, mirror checkbox, etc.)
+		applyModeVisibility();
 		updateConfirmState();
 		updateQuotePreview();
 	}
@@ -450,8 +446,8 @@
 
 		// Window visibility in unified mode
 		$modal.find('.tcbf-modal__delivery-window').toggle(modeIncludesDelivery(mode));
-		// Pickup window in unified: only when mode=both (and same address)
-		$modal.find('.tcbf-modal__pickup-window').toggle(isBoth && sameAddr);
+		// Pickup window in unified: visible for pickup-only or both+same-address
+		$modal.find('.tcbf-modal__pickup-window').toggle(modeIncludesPickup(mode) && (!isBoth || sameAddr));
 	}
 
 	function initVisibleMaps() {
@@ -485,19 +481,18 @@
 	function initUnifiedMap() {
 		var container = document.getElementById('tcbf-delivery-map');
 		if (!container) return;
-		// Use the appropriate place depending on mode
-		var mode = getSelectedMode();
-		var place = (mode === 'pickup') ? pickupPlace : deliveryPlace;
-		var lat = (place && place.lat) ? place.lat : 41.98;
-		var lng = (place && place.lng) ? place.lng : 2.82;
-		var zoom = (place && place.lat) ? 14 : 9;
+		// Unified input always stores into deliveryPlace regardless of mode.
+		// sendBulkConfigure() routes it to the correct backend field.
+		var lat = (deliveryPlace && deliveryPlace.lat) ? deliveryPlace.lat : 41.98;
+		var lng = (deliveryPlace && deliveryPlace.lng) ? deliveryPlace.lng : 2.82;
+		var zoom = (deliveryPlace && deliveryPlace.lat) ? 14 : 9;
 
-		initGoogleMap(container, lat, lng, zoom, (mode === 'pickup') ? 'pickup' : 'delivery', function (m, mk) {
+		initGoogleMap(container, lat, lng, zoom, 'delivery', function (m, mk) {
 			deliveryMap = m;
 			deliveryMarker = mk;
 		});
 		var input = document.getElementById('tcbf-delivery-address-input');
-		initAutocompleteProvider(input, (mode === 'pickup') ? 'pickup' : 'delivery');
+		initAutocompleteProvider(input, 'delivery');
 	}
 
 	function initSplitMaps() {
@@ -720,7 +715,9 @@
 			hasDAddr = dp && dp.lat && dp.lng;
 		}
 		if (wantPickup) {
-			var pp = (mode === 'both' && sameAddr) ? deliveryPlace : (mode === 'pickup' ? deliveryPlace : pickupPlace);
+			// In unified mode (pickup-only or both+same), address is always in deliveryPlace.
+			// In split mode (both+different), pickup address is in pickupPlace.
+			var pp = (mode === 'both' && !sameAddr) ? pickupPlace : deliveryPlace;
 			hasPAddr = pp && pp.lat && pp.lng;
 		}
 
@@ -759,13 +756,9 @@
 			}
 
 			if (hasPickup) {
-				// For pickup-only mode, the address is in deliveryPlace (unified input)
-				var pPlace;
-				if (mode === 'pickup') {
-					pPlace = deliveryPlace;
-				} else {
-					pPlace = sameAddr ? deliveryPlace : pickupPlace;
-				}
+				// In unified mode (pickup-only or both+same), address is in deliveryPlace.
+				// In split mode (both+different), pickup address is in pickupPlace.
+				var pPlace = (mode === 'both' && !sameAddr) ? pickupPlace : deliveryPlace;
 				if (pPlace && pPlace.lat) {
 					var pWin = getWindowForDirection('pickup');
 					requests.push($.post(config.ajaxUrl, {
@@ -978,13 +971,6 @@
 
 	function getWindowForDirection(direction) {
 		if (!$modal) return 'morning';
-		// In unified mode for pickup-only, the pickup window is in the delivery window position
-		var mode = getSelectedMode();
-		if (mode === 'pickup' && direction === 'pickup') {
-			// The unified delivery window buttons actually serve as pickup window
-			var $active = $modal.find('#tcbf-unified-mode [data-direction="delivery"] .tcbf-transport-modal__window-btn--active');
-			if ($active.length) return $active.data('window') || 'morning';
-		}
 		var $active = $modal.find('[data-direction="' + direction + '"] .tcbf-transport-modal__window-btn--active');
 		return $active.length ? $active.data('window') : 'morning';
 	}
@@ -1020,16 +1006,10 @@
 			var pVal = $('#tcbf-split-pickup-address').val().trim();
 			if (pVal.length < 3 && (!pickupPlace || !pickupPlace.lat)) valid = false;
 		} else {
-			// Unified mode: need the single address
+			// Unified mode: address always stored in deliveryPlace
 			var uVal = $('#tcbf-delivery-address-input').val().trim();
-			var activePlace = (mode === 'pickup') ? pickupPlace : deliveryPlace;
-			if (uVal.length < 3 && (!activePlace || !activePlace.lat)) {
-				// Also check deliveryPlace for pickup mode since unified input stores in deliveryPlace
-				if (mode === 'pickup' && deliveryPlace && deliveryPlace.lat) {
-					// OK — deliveryPlace has coords
-				} else {
-					valid = false;
-				}
+			if (uVal.length < 3 && (!deliveryPlace || !deliveryPlace.lat)) {
+				valid = false;
 			}
 		}
 
