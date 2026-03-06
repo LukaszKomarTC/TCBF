@@ -92,6 +92,21 @@ final class Woo_Transport {
 
 	public static function ajax_bulk_configure() : void {
 
+		try {
+			self::_ajax_bulk_configure_inner();
+		} catch ( \Throwable $e ) {
+			if ( ob_get_level() ) { ob_clean(); }
+			wp_send_json_error( [
+				'message' => 'PHP Error: ' . $e->getMessage(),
+				'file'    => $e->getFile(),
+				'line'    => $e->getLine(),
+				'trace'   => $e->getTraceAsString(),
+			] );
+		}
+	}
+
+	private static function _ajax_bulk_configure_inner() : void {
+
 		// Clean any prior output (PHP notices/warnings) to ensure valid JSON response
 		if ( ob_get_level() ) {
 			ob_clean();
@@ -320,6 +335,21 @@ final class Woo_Transport {
 
 	public static function ajax_get_quote() : void {
 
+		try {
+			self::_ajax_get_quote_inner();
+		} catch ( \Throwable $e ) {
+			if ( ob_get_level() ) { ob_clean(); }
+			wp_send_json_error( [
+				'message' => 'PHP Error: ' . $e->getMessage(),
+				'file'    => $e->getFile(),
+				'line'    => $e->getLine(),
+				'trace'   => $e->getTraceAsString(),
+			] );
+		}
+	}
+
+	private static function _ajax_get_quote_inner() : void {
+
 		if ( ob_get_level() ) {
 			ob_clean();
 		}
@@ -399,6 +429,21 @@ final class Woo_Transport {
 	 * ================================================================ */
 
 	public static function ajax_geocode() : void {
+
+		try {
+			self::_ajax_geocode_inner();
+		} catch ( \Throwable $e ) {
+			if ( ob_get_level() ) { ob_clean(); }
+			wp_send_json_error( [
+				'message' => 'PHP Error: ' . $e->getMessage(),
+				'file'    => $e->getFile(),
+				'line'    => $e->getLine(),
+				'trace'   => $e->getTraceAsString(),
+			] );
+		}
+	}
+
+	private static function _ajax_geocode_inner() : void {
 
 		if ( ob_get_level() ) {
 			ob_clean();
