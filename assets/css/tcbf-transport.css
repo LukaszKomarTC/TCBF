@@ -1,5 +1,5 @@
 /**
- * TCBF Transport v3 — Service card + combined modal styles
+ * TCBF Transport v3.1 — Service card + unified/split modal styles
  */
 
 /* ================================================================
@@ -71,6 +71,14 @@
 	color: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
 }
 
+.tcbf-service-card__help {
+	margin: 8px 0 0;
+	padding: 0 0 0 52px;
+	font-size: 12px;
+	color: #888;
+	font-style: italic;
+}
+
 .tcbf-service-card__actions {
 	display: flex;
 	gap: 8px;
@@ -136,6 +144,28 @@
 	background: #fef2f2;
 }
 
+.tcbf-service-card--mixed_dates,
+.tcbf-service-card--invalid_dates {
+	border-color: #c4b5fd;
+	background: #f5f3ff;
+}
+
+.tcbf-service-card--mixed_dates .tcbf-service-card__icon,
+.tcbf-service-card--invalid_dates .tcbf-service-card__icon {
+	background: #ede9fe;
+	color: #7c3aed;
+}
+
+.tcbf-service-card--invalid_dates {
+	border-color: #fca5a5;
+	background: #fef2f2;
+}
+
+.tcbf-service-card--invalid_dates .tcbf-service-card__icon {
+	background: #fee2e2;
+	color: #dc2626;
+}
+
 /* ================================================================
  * Per-bike compact indicator
  * ================================================================ */
@@ -192,14 +222,8 @@ body.tcbf-modal-open {
 }
 
 @keyframes tcbf-modal-in {
-	from {
-		opacity: 0;
-		transform: translateY(20px) scale(0.95);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0) scale(1);
-	}
+	from { opacity: 0; transform: translateY(20px) scale(0.95); }
+	to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .tcbf-transport-modal__header {
@@ -230,44 +254,141 @@ body.tcbf-modal-open {
 	color: #333;
 }
 
-/* Body: map + controls side by side */
 .tcbf-transport-modal__body {
-	display: flex;
-	gap: 24px;
 	padding: 20px 24px;
 }
 
-.tcbf-transport-modal__map-wrap {
+/* ================================================================
+ * UNIFIED MODE: map left, controls right
+ * ================================================================ */
+
+.tcbf-modal__unified-layout {
+	display: flex;
+	gap: 24px;
+}
+
+.tcbf-modal__unified-map {
 	flex: 1 1 50%;
 	min-width: 0;
+}
+
+.tcbf-modal__unified-controls {
+	flex: 1 1 50%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
 }
 
 .tcbf-transport-modal__map {
 	display: block;
 	width: 100%;
-	height: 460px;
+	height: 420px;
 	border-radius: 8px;
 	overflow: hidden;
 	border: 1px solid #e2e5ea;
 	background: #f0f0f0;
 }
 
-.tcbf-transport-modal__map--pickup {
-	margin-top: 12px;
-	height: 220px;
+/* ================================================================
+ * SPLIT MODE: vertically stacked direction sections
+ * ================================================================ */
+
+.tcbf-modal__split {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
 }
 
-.tcbf-transport-modal__controls {
-	flex: 1 1 50%;
+.tcbf-modal__direction-section {
+	padding: 0;
+}
+
+.tcbf-modal__direction-title {
+	margin: 0 0 10px;
+	font-size: 15px;
+	font-weight: 600;
+	color: #333;
+}
+
+.tcbf-modal__direction-layout {
+	display: flex;
+	gap: 20px;
+}
+
+.tcbf-modal__direction-map {
+	flex: 1 1 45%;
+	min-width: 0;
+}
+
+.tcbf-modal__direction-map .tcbf-transport-modal__map {
+	height: 280px;
+}
+
+.tcbf-modal__direction-controls {
+	flex: 1 1 55%;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 14px;
-	overflow-y: auto;
-	max-height: 520px;
+	gap: 10px;
 }
 
-/* Form elements */
+/* Separator between delivery and pickup in split mode */
+.tcbf-modal__separator {
+	text-align: center;
+	margin: 20px 0;
+	position: relative;
+}
+
+.tcbf-modal__separator::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	height: 1px;
+	background: #e2e5ea;
+}
+
+.tcbf-modal__separator span {
+	position: relative;
+	background: #fff;
+	padding: 0 16px;
+	font-size: 13px;
+	font-weight: 500;
+	color: #888;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+/* ================================================================
+ * Same address toggle
+ * ================================================================ */
+
+.tcbf-modal__same-address {
+	padding: 12px 0;
+	border-top: 1px solid #f0f0f0;
+	margin-top: 16px;
+}
+
+.tcbf-modal__same-address-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: #555;
+	cursor: pointer;
+	margin: 0;
+}
+
+.tcbf-modal__same-address-label input[type="checkbox"] {
+	margin: 0;
+}
+
+/* ================================================================
+ * Form elements
+ * ================================================================ */
+
 .tcbf-transport-modal__label {
 	display: block;
 	font-size: 13px;
@@ -292,64 +413,9 @@ body.tcbf-modal-open {
 	box-shadow: 0 0 0 3px rgba(67, 76, 0, 0.1);
 }
 
-/* Section toggle (delivery / pickup) */
-.tcbf-modal__section {
-	border: 1px solid #e2e5ea;
-	border-radius: 8px;
-	overflow: hidden;
-}
-
-.tcbf-modal__section-header {
-	padding: 10px 14px;
-	background: #f8f9fa;
-}
-
-.tcbf-modal__section-toggle {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	font-size: 14px;
-	font-weight: 600;
-	color: #333;
-	cursor: pointer;
-	margin: 0;
-}
-
-.tcbf-modal__section-toggle input[type="checkbox"] {
-	margin: 0;
-}
-
-.tcbf-modal__section-body {
-	padding: 12px 14px;
-}
-
-/* Same address toggle */
-.tcbf-modal__same-address {
-	padding: 2px 0;
-}
-
-.tcbf-modal__same-address-label {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	font-size: 13px;
-	color: #555;
-	cursor: pointer;
-	margin: 0;
-}
-
-.tcbf-modal__same-address-label input[type="checkbox"] {
-	margin: 0;
-}
-
-/* Pickup window (when same address) */
-.tcbf-modal__pickup-window-only {
-	padding: 4px 0;
-}
-
 /* Window selector */
 .tcbf-modal__window-row {
-	margin-top: 8px;
+	margin-top: 4px;
 }
 
 .tcbf-transport-modal__window-buttons {
@@ -385,12 +451,16 @@ body.tcbf-modal-open {
 	background: #f3f4f6;
 }
 
-/* Quote preview */
+/* ================================================================
+ * Quote preview (global, at bottom of modal body)
+ * ================================================================ */
+
 .tcbf-transport-modal__quote {
 	padding: 10px 14px;
 	background: #f0fdf4;
 	border: 1px solid #bbf7d0;
 	border-radius: 8px;
+	margin-top: 16px;
 }
 
 .tcbf-transport-modal__quote-row {
@@ -411,10 +481,14 @@ body.tcbf-modal-open {
 	color: #166534;
 }
 
-/* Bike checklist */
+/* ================================================================
+ * Bike checklist (always below transport sections)
+ * ================================================================ */
+
 .tcbf-modal__bikes {
 	border-top: 1px solid #f0f0f0;
-	padding-top: 10px;
+	padding-top: 12px;
+	margin-top: 16px;
 }
 
 .tcbf-modal__bike-list {
@@ -425,9 +499,9 @@ body.tcbf-modal-open {
 
 .tcbf-modal__bike-item {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 8px;
-	padding: 6px 10px;
+	padding: 8px 10px;
 	background: #f8f9fa;
 	border-radius: 6px;
 	font-size: 13px;
@@ -437,10 +511,30 @@ body.tcbf-modal-open {
 }
 
 .tcbf-modal__bike-item input[type="checkbox"] {
-	margin: 0;
+	margin: 3px 0 0;
+	flex-shrink: 0;
 }
 
-/* Footer */
+.tcbf-modal__bike-info {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.tcbf-modal__bike-model {
+	font-weight: 500;
+	color: #1a1a1a;
+}
+
+.tcbf-modal__bike-dates {
+	font-size: 12px;
+	color: #888;
+}
+
+/* ================================================================
+ * Footer
+ * ================================================================ */
+
 .tcbf-transport-modal__footer {
 	display: flex;
 	justify-content: flex-end;
@@ -506,21 +600,27 @@ body.tcbf-modal-open {
 	}
 
 	.tcbf-transport-modal__body {
-		flex-direction: column;
-		gap: 16px;
 		padding: 16px;
 	}
 
+	/* Unified mode: stack vertically on mobile */
+	.tcbf-modal__unified-layout {
+		flex-direction: column;
+		gap: 16px;
+	}
+
 	.tcbf-transport-modal__map {
-		height: 260px;
+		height: 240px;
 	}
 
-	.tcbf-transport-modal__map--pickup {
-		height: 180px;
+	/* Split mode: stack each direction's layout */
+	.tcbf-modal__direction-layout {
+		flex-direction: column;
+		gap: 12px;
 	}
 
-	.tcbf-transport-modal__controls {
-		max-height: none;
+	.tcbf-modal__direction-map .tcbf-transport-modal__map {
+		height: 200px;
 	}
 
 	.tcbf-transport-modal__header {
@@ -544,11 +644,19 @@ body.tcbf-modal-open {
 		margin-top: 4px;
 		padding-left: 52px;
 	}
+
+	.tcbf-service-card__help {
+		padding-left: 0;
+	}
 }
 
 @media (max-width: 480px) {
 	.tcbf-transport-modal__map {
-		height: 200px;
+		height: 180px;
+	}
+
+	.tcbf-modal__direction-map .tcbf-transport-modal__map {
+		height: 160px;
 	}
 
 	.tcbf-transport-modal {

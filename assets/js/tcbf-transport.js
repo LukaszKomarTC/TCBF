@@ -1,16 +1,15 @@
 /**
- * TCBF Transport v3 — Order-level service card + combined modal
+ * TCBF Transport v3.1 — Order-level service card + unified/split modal
  *
  * Architecture:
- * - Single service card below cart table (not per-bike)
- * - Combined modal: delivery + pickup on one page
- * - "Same address for pickup" toggle (default on)
- * - Bike checklist (all selected by default)
+ * - Single service card below cart table
+ * - Combined modal with two layout modes:
+ *   A) Unified (same address): one map, one address, two window selectors
+ *   B) Split (different address): stacked delivery + pickup sections, each with own map/address/window
+ * - Bike checklist with model, size, dates (always below transport sections)
+ * - Global quote/availability block at bottom
  * - Bulk configure AJAX: one request creates/removes all transport items
- * - Google Places Autocomplete with server-side geocode fallback
- *
- * Depends on: jQuery, tcbfTransport (wp_localize_script)
- * Optional: Google Maps Places API
+ * - Date uniformity gate: modal blocked when bikes have mixed dates
  */
 (function ($) {
 	'use strict';
@@ -74,8 +73,7 @@
 			enable_pickup: 0,
 			bike_keys: JSON.stringify([]),
 			nonce: config.nonce
-		}, function (response) {
-			// Force full cart refresh
+		}, function () {
 			$(document.body).trigger('wc_update_cart');
 		}).fail(function () {
 			$card.removeClass('tcbf-service-card--loading');
@@ -84,12 +82,17 @@
 	}
 
 	/* ================================================================
-	 * Combined configure modal
+	 * Configure modal
 	 * ================================================================ */
 
 	function openConfigureModal() {
 		if ($modal) {
 			$modal.remove();
+		}
+
+		// Date gate (defensive — card should already hide the button)
+		if (!config.datesUniform) {
+			return;
 		}
 
 		var summary = config.summary || {};
@@ -102,7 +105,6 @@
 		var deliveryWindow = summary.delivery_window || 'morning';
 		var pickupWindow = summary.pickup_window || 'morning';
 
-		// Restore places from summary
 		deliveryPlace = null;
 		pickupPlace = null;
 		if (summary.delivery_address) {
@@ -122,21 +124,36 @@
 			};
 		}
 
-		// Build bike checklist HTML
+		// Build bike checklist HTML (enriched)
 		var bikeChecklistHtml = '';
 		for (var i = 0; i < bikes.length; i++) {
 			var bike = bikes[i];
-			var label = bike.participant ? (bike.participant + ' — ' + bike.name) : bike.name;
+			var primaryLine = bike.model || '';
+			if (bike.size) {
+				primaryLine += ' — ' + (i18n.sizeLabel || 'size') + ' ' + bike.size;
+			}
+			var secondaryLine = '';
+			if (bike.start_date && bike.end_date) {
+				secondaryLine = formatDateDisplay(bike.start_date) + ' → ' + formatDateDisplay(bike.end_date);
+			}
+			if (bike.rider) {
+				secondaryLine = secondaryLine ? (bike.rider + ' · ' + secondaryLine) : bike.rider;
+			}
+
 			bikeChecklistHtml +=
 				'<label class="tcbf-modal__bike-item">' +
 				'<input type="checkbox" class="tcbf-modal__bike-check" data-bike-key="' + escAttr(bike.key) + '" checked />' +
-				'<span>' + escHtml(label) + '</span>' +
+				'<div class="tcbf-modal__bike-info">' +
+				'<span class="tcbf-modal__bike-model">' + escHtml(primaryLine) + '</span>' +
+				(secondaryLine ? '<span class="tcbf-modal__bike-dates">' + escHtml(secondaryLine) + '</span>' : '') +
+				'</div>' +
 				'</label>';
 		}
 
+		// Build modal HTML
 		var modalHtml =
 			'<div class="tcbf-transport-modal-overlay">' +
-			'<div class="tcbf-transport-modal">' +
+			'<div class="tcbf-transport-modal" id="tcbf-modal">' +
 
 			// Header
 			'<div class="tcbf-transport-modal__header">' +
@@ -146,26 +163,53 @@
 
 			'<div class="tcbf-transport-modal__body">' +
 
-			// Left: Map
-			'<div class="tcbf-transport-modal__map-wrap">' +
+			// === UNIFIED MODE (same address) ===
+			'<div class="tcbf-modal__unified" id="tcbf-unified-mode"' + (!sameAddr ? ' style="display:none"' : '') + '>' +
+			'<div class="tcbf-modal__unified-layout">' +
+			// Map
+			'<div class="tcbf-modal__unified-map">' +
 			'<div class="tcbf-transport-modal__map" id="tcbf-delivery-map"></div>' +
-			'<div class="tcbf-transport-modal__map tcbf-transport-modal__map--pickup" id="tcbf-pickup-map" style="display:none"></div>' +
 			'</div>' +
-
-			// Right: Controls
-			'<div class="tcbf-transport-modal__controls">' +
-
-			// === Delivery section ===
-			'<div class="tcbf-modal__section" id="tcbf-delivery-section">' +
-			'<div class="tcbf-modal__section-header">' +
-			'<label class="tcbf-modal__section-toggle">' +
-			'<input type="checkbox" id="tcbf-enable-delivery" ' + (hasDelivery || !hasPickup ? 'checked' : '') + ' />' +
-			'<span>' + escHtml(i18n.deliverySection) + '</span>' +
-			'</label>' +
-			'</div>' +
-			'<div class="tcbf-modal__section-body" id="tcbf-delivery-body">' +
+			// Controls
+			'<div class="tcbf-modal__unified-controls">' +
 			'<label class="tcbf-transport-modal__label" for="tcbf-delivery-address-input">' + escHtml(i18n.addressLabel) + '</label>' +
 			'<input type="text" id="tcbf-delivery-address-input" class="tcbf-transport-modal__input" placeholder="Hotel, address..." autocomplete="off" />' +
+
+			// Delivery window
+			'<div class="tcbf-modal__window-row">' +
+			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.deliverySection) + ' — ' + escHtml(i18n.windowLabel) + '</label>' +
+			'<div class="tcbf-transport-modal__window-buttons" data-direction="delivery">' +
+			'<button type="button" class="tcbf-transport-modal__window-btn' + (deliveryWindow !== 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="morning">' + escHtml(i18n.windowMorning) + '</button>' +
+			'<button type="button" class="tcbf-transport-modal__window-btn' + (deliveryWindow === 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="afternoon">' + escHtml(i18n.windowAfternoon) + '</button>' +
+			'</div>' +
+			'</div>' +
+
+			// Pickup window
+			'<div class="tcbf-modal__window-row">' +
+			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.pickupSection) + ' — ' + escHtml(i18n.windowLabel) + '</label>' +
+			'<div class="tcbf-transport-modal__window-buttons" data-direction="pickup">' +
+			'<button type="button" class="tcbf-transport-modal__window-btn' + (pickupWindow !== 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="morning">' + escHtml(i18n.windowMorning) + '</button>' +
+			'<button type="button" class="tcbf-transport-modal__window-btn' + (pickupWindow === 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="afternoon">' + escHtml(i18n.windowAfternoon) + '</button>' +
+			'</div>' +
+			'</div>' +
+
+			'</div>' + // unified-controls
+			'</div>' + // unified-layout
+			'</div>' + // unified mode
+
+			// === SPLIT MODE (different address) ===
+			'<div class="tcbf-modal__split" id="tcbf-split-mode"' + (sameAddr ? ' style="display:none"' : '') + '>' +
+
+			// Delivery section
+			'<div class="tcbf-modal__direction-section">' +
+			'<h4 class="tcbf-modal__direction-title">' + escHtml(i18n.deliverySectionFull || i18n.deliverySection) + '</h4>' +
+			'<div class="tcbf-modal__direction-layout">' +
+			'<div class="tcbf-modal__direction-map">' +
+			'<div class="tcbf-transport-modal__map" id="tcbf-split-delivery-map"></div>' +
+			'</div>' +
+			'<div class="tcbf-modal__direction-controls">' +
+			'<label class="tcbf-transport-modal__label" for="tcbf-split-delivery-address">' + escHtml(i18n.addressLabel) + '</label>' +
+			'<input type="text" id="tcbf-split-delivery-address" class="tcbf-transport-modal__input" placeholder="Hotel, address..." autocomplete="off" />' +
 			'<div class="tcbf-modal__window-row">' +
 			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.windowLabel) + '</label>' +
 			'<div class="tcbf-transport-modal__window-buttons" data-direction="delivery">' +
@@ -173,28 +217,25 @@
 			'<button type="button" class="tcbf-transport-modal__window-btn' + (deliveryWindow === 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="afternoon">' + escHtml(i18n.windowAfternoon) + '</button>' +
 			'</div>' +
 			'</div>' +
-			'</div>' +
+			'</div>' + // direction-controls
+			'</div>' + // direction-layout
+			'</div>' + // delivery section
+
+			// Separator
+			'<div class="tcbf-modal__separator">' +
+			'<span>' + escHtml(i18n.differentPickupSeparator || i18n.pickupSection) + '</span>' +
 			'</div>' +
 
-			// === Same address toggle ===
-			'<div class="tcbf-modal__same-address">' +
-			'<label class="tcbf-modal__same-address-label">' +
-			'<input type="checkbox" id="tcbf-same-address" ' + (sameAddr ? 'checked' : '') + ' />' +
-			'<span>' + escHtml(i18n.sameAddressLabel) + '</span>' +
-			'</label>' +
+			// Pickup section
+			'<div class="tcbf-modal__direction-section">' +
+			'<h4 class="tcbf-modal__direction-title">' + escHtml(i18n.pickupSectionFull || i18n.pickupSection) + '</h4>' +
+			'<div class="tcbf-modal__direction-layout">' +
+			'<div class="tcbf-modal__direction-map">' +
+			'<div class="tcbf-transport-modal__map" id="tcbf-split-pickup-map"></div>' +
 			'</div>' +
-
-			// === Pickup section ===
-			'<div class="tcbf-modal__section" id="tcbf-pickup-section">' +
-			'<div class="tcbf-modal__section-header">' +
-			'<label class="tcbf-modal__section-toggle">' +
-			'<input type="checkbox" id="tcbf-enable-pickup" ' + (hasPickup || !hasDelivery ? 'checked' : '') + ' />' +
-			'<span>' + escHtml(i18n.pickupSection) + '</span>' +
-			'</label>' +
-			'</div>' +
-			'<div class="tcbf-modal__section-body" id="tcbf-pickup-body"' + (sameAddr ? ' style="display:none"' : '') + '>' +
-			'<label class="tcbf-transport-modal__label" for="tcbf-pickup-address-input">' + escHtml(i18n.pickupAddressLabel) + '</label>' +
-			'<input type="text" id="tcbf-pickup-address-input" class="tcbf-transport-modal__input" placeholder="Hotel, address..." autocomplete="off" />' +
+			'<div class="tcbf-modal__direction-controls">' +
+			'<label class="tcbf-transport-modal__label" for="tcbf-split-pickup-address">' + escHtml(i18n.pickupAddressLabel) + '</label>' +
+			'<input type="text" id="tcbf-split-pickup-address" class="tcbf-transport-modal__input" placeholder="Hotel, address..." autocomplete="off" />' +
 			'<div class="tcbf-modal__window-row">' +
 			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.windowLabel) + '</label>' +
 			'<div class="tcbf-transport-modal__window-buttons" data-direction="pickup">' +
@@ -202,19 +243,29 @@
 			'<button type="button" class="tcbf-transport-modal__window-btn' + (pickupWindow === 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="afternoon">' + escHtml(i18n.windowAfternoon) + '</button>' +
 			'</div>' +
 			'</div>' +
+			'</div>' + // direction-controls
+			'</div>' + // direction-layout
+			'</div>' + // pickup section
+
+			'</div>' + // split mode
+
+			// === Same address toggle (between modes) ===
+			'<div class="tcbf-modal__same-address">' +
+			'<label class="tcbf-modal__same-address-label">' +
+			'<input type="checkbox" id="tcbf-same-address" ' + (sameAddr ? 'checked' : '') + ' />' +
+			'<span>' + escHtml(i18n.sameAddressLabel) + '</span>' +
+			'</label>' +
+			'</div>' +
+
+			// === Bike checklist (always below transport sections) ===
+			'<div class="tcbf-modal__bikes">' +
+			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.bikesIncludedLabel || i18n.bikesLabel) + '</label>' +
+			'<div class="tcbf-modal__bike-list">' +
+			bikeChecklistHtml +
 			'</div>' +
 			'</div>' +
 
-			// Pickup window when same address
-			'<div class="tcbf-modal__pickup-window-only" id="tcbf-pickup-window-only"' + (!sameAddr ? ' style="display:none"' : '') + '>' +
-			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.pickupSection) + ' — ' + escHtml(i18n.windowLabel) + '</label>' +
-			'<div class="tcbf-transport-modal__window-buttons" data-direction="pickup-only">' +
-			'<button type="button" class="tcbf-transport-modal__window-btn' + (pickupWindow !== 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="morning">' + escHtml(i18n.windowMorning) + '</button>' +
-			'<button type="button" class="tcbf-transport-modal__window-btn' + (pickupWindow === 'afternoon' ? ' tcbf-transport-modal__window-btn--active' : '') + '" data-window="afternoon">' + escHtml(i18n.windowAfternoon) + '</button>' +
-			'</div>' +
-			'</div>' +
-
-			// === Quote preview ===
+			// === Quote preview (global, at bottom) ===
 			'<div class="tcbf-transport-modal__quote" id="tcbf-quote" style="display:none">' +
 			'<div class="tcbf-transport-modal__quote-row">' +
 			'<span class="tcbf-transport-modal__quote-label">' + escHtml(i18n.quoteLabel) + ':</span>' +
@@ -226,15 +277,6 @@
 			'</div>' +
 			'</div>' +
 
-			// === Bike checklist ===
-			'<div class="tcbf-modal__bikes">' +
-			'<label class="tcbf-transport-modal__label">' + escHtml(i18n.bikesLabel) + '</label>' +
-			'<div class="tcbf-modal__bike-list">' +
-			bikeChecklistHtml +
-			'</div>' +
-			'</div>' +
-
-			'</div>' + // controls
 			'</div>' + // body
 
 			// Footer
@@ -248,29 +290,19 @@
 
 		$modal = $(modalHtml).appendTo('body');
 
-		// Bind modal events
-		$modal.find('.tcbf-transport-modal__close, .tcbf-transport-modal__cancel').on('click', function () {
-			closeModal();
-		});
-
+		// Bind events
+		$modal.find('.tcbf-transport-modal__close, .tcbf-transport-modal__cancel').on('click', closeModal);
 		$modal.on('click', function (e) {
-			if ($(e.target).hasClass('tcbf-transport-modal-overlay')) {
-				closeModal();
-			}
+			if ($(e.target).hasClass('tcbf-transport-modal-overlay')) closeModal();
 		});
-
 		$(document).on('keydown.tcbfModal', function (e) {
-			if (e.key === 'Escape') {
-				closeModal();
-			}
+			if (e.key === 'Escape') closeModal();
 		});
 
-		// Confirm button
-		$modal.find('.tcbf-transport-modal__confirm').on('click', function () {
-			doBulkConfigure();
-		});
+		// Confirm
+		$modal.find('.tcbf-transport-modal__confirm').on('click', doBulkConfigure);
 
-		// Window selector buttons
+		// Window buttons
 		$modal.on('click', '.tcbf-transport-modal__window-btn', function () {
 			var $group = $(this).closest('.tcbf-transport-modal__window-buttons');
 			$group.find('.tcbf-transport-modal__window-btn').removeClass('tcbf-transport-modal__window-btn--active');
@@ -278,66 +310,50 @@
 			updateQuotePreview();
 		});
 
-		// Same address toggle
+		// Same address toggle → switch between unified and split
 		$('#tcbf-same-address').on('change', function () {
 			var same = $(this).is(':checked');
 			if (same) {
-				$('#tcbf-pickup-body').slideUp(200);
-				$('#tcbf-pickup-map').hide();
-				$('#tcbf-delivery-map').show();
-				$('#tcbf-pickup-window-only').slideDown(200);
-			} else {
-				$('#tcbf-pickup-body').slideDown(200);
-				$('#tcbf-pickup-window-only').slideUp(200);
-				// Show pickup map if pickup is enabled
-				if ($('#tcbf-enable-pickup').is(':checked')) {
-					initPickupMap();
+				$('#tcbf-unified-mode').show();
+				$('#tcbf-split-mode').hide();
+				// Sync address from split delivery if it was entered there
+				var splitAddr = $('#tcbf-split-delivery-address').val();
+				if (splitAddr && !$('#tcbf-delivery-address-input').val()) {
+					$('#tcbf-delivery-address-input').val(splitAddr);
 				}
-			}
-			updateQuotePreview();
-		});
-
-		// Enable/disable delivery
-		$('#tcbf-enable-delivery').on('change', function () {
-			var enabled = $(this).is(':checked');
-			$('#tcbf-delivery-body').toggle(enabled);
-			if (enabled) {
-				$('#tcbf-delivery-map').show();
-			}
-			updateConfirmState();
-			updateQuotePreview();
-		});
-
-		// Enable/disable pickup
-		$('#tcbf-enable-pickup').on('change', function () {
-			var enabled = $(this).is(':checked');
-			var sameAddr = $('#tcbf-same-address').is(':checked');
-			if (sameAddr) {
-				$('#tcbf-pickup-window-only').toggle(enabled);
 			} else {
-				$('#tcbf-pickup-body').toggle(enabled);
+				$('#tcbf-unified-mode').hide();
+				$('#tcbf-split-mode').show();
+				// Sync address to split fields
+				var unifiedAddr = $('#tcbf-delivery-address-input').val();
+				if (unifiedAddr && !$('#tcbf-split-delivery-address').val()) {
+					$('#tcbf-split-delivery-address').val(unifiedAddr);
+				}
+				// Init split maps if needed
+				initSplitMaps();
 			}
 			updateConfirmState();
 			updateQuotePreview();
 		});
 
-		// Pre-fill existing addresses
+		// Pre-fill addresses
 		if (deliveryPlace && deliveryPlace.address) {
 			$('#tcbf-delivery-address-input').val(deliveryPlace.address);
+			$('#tcbf-split-delivery-address').val(deliveryPlace.address);
 		}
 		if (pickupPlace && pickupPlace.address) {
-			$('#tcbf-pickup-address-input').val(pickupPlace.address);
+			$('#tcbf-split-pickup-address').val(pickupPlace.address);
 		}
 
-		// Initialize maps and autocomplete
-		initDeliveryMap();
-		if (!sameAddr && (hasPickup || pickupPlace)) {
-			initPickupMap();
+		// Init maps
+		if (sameAddr) {
+			initUnifiedMap();
+		} else {
+			initSplitMaps();
 		}
 
 		updateConfirmState();
 		updateQuotePreview();
-
 		$('body').addClass('tcbf-modal-open');
 	}
 
@@ -357,13 +373,12 @@
 	}
 
 	/* ================================================================
-	 * Map & Autocomplete initialization
+	 * Map initialization
 	 * ================================================================ */
 
-	function initDeliveryMap() {
+	function initUnifiedMap() {
 		var container = document.getElementById('tcbf-delivery-map');
 		var input = document.getElementById('tcbf-delivery-address-input');
-
 		var lat = (deliveryPlace && deliveryPlace.lat) ? deliveryPlace.lat : 41.98;
 		var lng = (deliveryPlace && deliveryPlace.lng) ? deliveryPlace.lng : 2.82;
 		var zoom = (deliveryPlace && deliveryPlace.lat) ? 14 : 9;
@@ -372,27 +387,39 @@
 			deliveryMap = m;
 			deliveryMarker = mk;
 		});
-
 		initAutocompleteProvider(input, 'delivery');
 	}
 
-	function initPickupMap() {
-		var container = document.getElementById('tcbf-pickup-map');
-		var input = document.getElementById('tcbf-pickup-address-input');
+	var splitMapsInitialized = false;
+	function initSplitMaps() {
+		if (splitMapsInitialized) return;
+		splitMapsInitialized = true;
 
-		if (!container) return;
-		container.style.display = 'block';
+		// Delivery map in split mode
+		var dContainer = document.getElementById('tcbf-split-delivery-map');
+		var dInput = document.getElementById('tcbf-split-delivery-address');
+		var dLat = (deliveryPlace && deliveryPlace.lat) ? deliveryPlace.lat : 41.98;
+		var dLng = (deliveryPlace && deliveryPlace.lng) ? deliveryPlace.lng : 2.82;
+		var dZoom = (deliveryPlace && deliveryPlace.lat) ? 14 : 9;
 
-		var lat = (pickupPlace && pickupPlace.lat) ? pickupPlace.lat : 41.98;
-		var lng = (pickupPlace && pickupPlace.lng) ? pickupPlace.lng : 2.82;
-		var zoom = (pickupPlace && pickupPlace.lat) ? 14 : 9;
+		initGoogleMap(dContainer, dLat, dLng, dZoom, 'delivery', function (m, mk) {
+			// In split mode, delivery map uses separate elements but same deliveryPlace
+			// We don't override deliveryMap/deliveryMarker since unified mode owns those
+		});
+		initAutocompleteProvider(dInput, 'delivery');
 
-		initGoogleMap(container, lat, lng, zoom, 'pickup', function (m, mk) {
+		// Pickup map
+		var pContainer = document.getElementById('tcbf-split-pickup-map');
+		var pInput = document.getElementById('tcbf-split-pickup-address');
+		var pLat = (pickupPlace && pickupPlace.lat) ? pickupPlace.lat : 41.98;
+		var pLng = (pickupPlace && pickupPlace.lng) ? pickupPlace.lng : 2.82;
+		var pZoom = (pickupPlace && pickupPlace.lat) ? 14 : 9;
+
+		initGoogleMap(pContainer, pLat, pLng, pZoom, 'pickup', function (m, mk) {
 			pickupMap = m;
 			pickupMarker = mk;
 		});
-
-		initAutocompleteProvider(input, 'pickup');
+		initAutocompleteProvider(pInput, 'pickup');
 	}
 
 	function initGoogleMap(container, lat, lng, zoom, direction, callback) {
@@ -448,35 +475,27 @@
 				if (status === 'OK' && results[0]) {
 					place = {
 						address: results[0].formatted_address,
-						lat: pos.lat,
-						lng: pos.lng,
+						lat: pos.lat, lng: pos.lng,
 						place_id: results[0].place_id || ''
 					};
 				} else {
 					place = {
 						address: pos.lat.toFixed(6) + ', ' + pos.lng.toFixed(6),
-						lat: pos.lat,
-						lng: pos.lng,
-						place_id: ''
+						lat: pos.lat, lng: pos.lng, place_id: ''
 					};
 				}
-
 				setPlaceForDirection(direction, place);
-				var inputId = (direction === 'pickup') ? 'tcbf-pickup-address-input' : 'tcbf-delivery-address-input';
-				$('#' + inputId).val(place.address);
+				getActiveInputForDirection(direction).val(place.address);
 				updateConfirmState();
 				updateQuotePreview();
 			});
 		} else {
 			var place = {
 				address: pos.lat.toFixed(6) + ', ' + pos.lng.toFixed(6),
-				lat: pos.lat,
-				lng: pos.lng,
-				place_id: ''
+				lat: pos.lat, lng: pos.lng, place_id: ''
 			};
 			setPlaceForDirection(direction, place);
-			var inputId = (direction === 'pickup') ? 'tcbf-pickup-address-input' : 'tcbf-delivery-address-input';
-			$('#' + inputId).val(place.address);
+			getActiveInputForDirection(direction).val(place.address);
 			updateConfirmState();
 			updateQuotePreview();
 		}
@@ -506,28 +525,13 @@
 						lng: gPlace.geometry.location.lng(),
 						place_id: gPlace.place_id || ''
 					};
-
 					setPlaceForDirection(direction, place);
 
-					// Update map
-					var m = (direction === 'pickup') ? pickupMap : deliveryMap;
-					var mk = (direction === 'pickup') ? pickupMarker : deliveryMarker;
-					if (m && mk) {
-						var pos = { lat: place.lat, lng: place.lng };
-						m.setCenter(pos);
-						m.setZoom(14);
-						mk.setPosition(pos);
-					}
-
+					// Update associated map
+					updateMapForDirection(direction, place);
 					updateConfirmState();
 					updateQuotePreview();
 				});
-
-				if (direction === 'delivery') {
-					deliveryAutocomplete = ac;
-				} else {
-					pickupAutocomplete = ac;
-				}
 			} catch (e) {
 				bindManualInput(input, direction);
 			}
@@ -556,6 +560,35 @@
 		}
 	}
 
+	function getActiveInputForDirection(direction) {
+		var isSame = isSameAddressMode();
+		if (direction === 'delivery') {
+			return isSame ? $('#tcbf-delivery-address-input') : $('#tcbf-split-delivery-address');
+		}
+		return $('#tcbf-split-pickup-address');
+	}
+
+	function updateMapForDirection(direction, place) {
+		var m, mk;
+		if (direction === 'delivery') {
+			m = deliveryMap;
+			mk = deliveryMarker;
+		} else {
+			m = pickupMap;
+			mk = pickupMarker;
+		}
+		if (m && mk && place && place.lat && place.lng) {
+			var pos = { lat: place.lat, lng: place.lng };
+			m.setCenter(pos);
+			m.setZoom(14);
+			mk.setPosition(pos);
+		}
+	}
+
+	function isSameAddressMode() {
+		return $modal && $('#tcbf-same-address').is(':checked');
+	}
+
 	/* ================================================================
 	 * Quote preview
 	 * ================================================================ */
@@ -563,43 +596,28 @@
 	function updateQuotePreview() {
 		if (!$modal) return;
 
-		var enableDelivery = $('#tcbf-enable-delivery').is(':checked');
-		var enablePickup = $('#tcbf-enable-pickup').is(':checked');
-
-		if (!enableDelivery && !enablePickup) {
-			$('#tcbf-quote').hide();
-			return;
-		}
-
-		// Get the number of selected bikes
 		var bikeCount = getSelectedBikeCount();
 		if (bikeCount <= 0) {
 			$('#tcbf-quote').hide();
 			return;
 		}
 
-		// Fetch delivery quote
-		if (enableDelivery && deliveryPlace && deliveryPlace.lat && deliveryPlace.lng) {
-			var deliveryWindow = getWindowForDirection('delivery');
-			fetchCombinedQuote(enableDelivery, enablePickup, bikeCount, deliveryWindow);
-		} else if (enablePickup && !enableDelivery) {
-			var sameAddr = $('#tcbf-same-address').is(':checked');
-			var pPlace = sameAddr ? deliveryPlace : pickupPlace;
-			if (pPlace && pPlace.lat && pPlace.lng) {
-				var pickupWindow = getWindowForDirection('pickup');
-				fetchCombinedQuote(false, true, bikeCount, pickupWindow);
-			} else {
-				$('#tcbf-quote').hide();
-			}
-		} else {
+		var sameAddr = isSameAddressMode();
+		var dPlace = deliveryPlace;
+		var pPlace = sameAddr ? deliveryPlace : pickupPlace;
+		var hasDAddr = dPlace && dPlace.lat && dPlace.lng;
+		var hasPAddr = pPlace && pPlace.lat && pPlace.lng;
+
+		if (!hasDAddr && !hasPAddr) {
 			$('#tcbf-quote').hide();
+			return;
 		}
+
+		fetchCombinedQuote(hasDAddr, hasPAddr, bikeCount);
 	}
 
-	function fetchCombinedQuote(enableDelivery, enablePickup, bikeCount, window) {
-		if (quoteDebounce) {
-			clearTimeout(quoteDebounce);
-		}
+	function fetchCombinedQuote(hasDelivery, hasPickup, bikeCount) {
+		if (quoteDebounce) clearTimeout(quoteDebounce);
 
 		quoteDebounce = setTimeout(function () {
 			var $quote = $('#tcbf-quote');
@@ -610,54 +628,41 @@
 			$price.text(i18n.loading);
 			$zone.text('');
 
-			var totalPrice = 0;
-			var zoneNames = [];
+			var sameAddr = isSameAddressMode();
 			var requests = [];
 
-			if (enableDelivery && deliveryPlace && deliveryPlace.lat) {
+			if (hasDelivery && deliveryPlace && deliveryPlace.lat) {
 				var dWin = getWindowForDirection('delivery');
-				requests.push(
-					$.post(config.ajaxUrl, {
-						action: 'tcbf_transport_quote',
-						lat: deliveryPlace.lat,
-						lng: deliveryPlace.lng,
-						direction: 'delivery',
-						window: dWin,
-						nonce: config.nonce
-					})
-				);
+				requests.push($.post(config.ajaxUrl, {
+					action: 'tcbf_transport_quote',
+					lat: deliveryPlace.lat, lng: deliveryPlace.lng,
+					direction: 'delivery', window: dWin,
+					nonce: config.nonce
+				}));
 			}
 
-			if (enablePickup) {
-				var sameAddr = $('#tcbf-same-address').is(':checked');
+			if (hasPickup) {
 				var pPlace = sameAddr ? deliveryPlace : pickupPlace;
 				if (pPlace && pPlace.lat) {
 					var pWin = getWindowForDirection('pickup');
-					requests.push(
-						$.post(config.ajaxUrl, {
-							action: 'tcbf_transport_quote',
-							lat: pPlace.lat,
-							lng: pPlace.lng,
-							direction: 'pickup',
-							window: pWin,
-							nonce: config.nonce
-						})
-					);
+					requests.push($.post(config.ajaxUrl, {
+						action: 'tcbf_transport_quote',
+						lat: pPlace.lat, lng: pPlace.lng,
+						direction: 'pickup', window: pWin,
+						nonce: config.nonce
+					}));
 				}
 			}
 
-			if (requests.length === 0) {
-				$quote.hide();
-				return;
-			}
+			if (requests.length === 0) { $quote.hide(); return; }
 
 			$.when.apply($, requests).then(function () {
-				// Handle single vs multiple responses
 				var responses = requests.length === 1 ? [arguments] : Array.prototype.slice.call(arguments);
+				var totalPrice = 0;
+				var zoneNames = [];
 
 				for (var i = 0; i < responses.length; i++) {
-					var resp = responses[i];
-					var data = resp[0]; // response data
+					var data = responses[i][0];
 					if (data && data.success && data.data) {
 						var q = data.data.quote || {};
 						totalPrice += parseFloat(q.price_total || 0);
@@ -668,18 +673,15 @@
 				}
 
 				if (totalPrice > 0) {
-					var priceText = formatPrice(totalPrice);
-					var perBike = totalPrice / bikeCount;
+					var text = formatPrice(totalPrice);
 					if (bikeCount > 1) {
-						priceText += ' (' + formatPrice(perBike) + ' ' + i18n.perBikeLabel + ')';
+						text += ' (' + formatPrice(totalPrice / bikeCount) + ' ' + i18n.perBikeLabel + ')';
 					}
-					$price.text(priceText);
+					$price.text(text);
 				} else {
 					$price.text('--');
 				}
-
 				$zone.text(zoneNames.length > 0 ? zoneNames.join(', ') : (i18n.outsideZones || ''));
-
 			}).fail(function () {
 				$price.text('--');
 			});
@@ -693,19 +695,11 @@
 	function doBulkConfigure() {
 		if (!$modal) return;
 
-		var enableDelivery = $('#tcbf-enable-delivery').is(':checked');
-		var enablePickup = $('#tcbf-enable-pickup').is(':checked');
-		var sameAddress = $('#tcbf-same-address').is(':checked');
-
-		// Validate: at least one direction
-		if (!enableDelivery && !enablePickup) {
-			closeModal();
-			return;
-		}
+		var sameAddress = isSameAddressMode();
 
 		// Validate delivery address
-		if (enableDelivery && (!deliveryPlace || (!deliveryPlace.lat && !deliveryPlace.lng))) {
-			var typedDelivery = $('#tcbf-delivery-address-input').val().trim();
+		if (!deliveryPlace || (!deliveryPlace.lat && !deliveryPlace.lng)) {
+			var typedDelivery = getActiveInputForDirection('delivery').val().trim();
 			if (typedDelivery.length > 5) {
 				geocodeAndConfigure(typedDelivery, 'delivery');
 				return;
@@ -715,8 +709,8 @@
 		}
 
 		// Validate pickup address (if different)
-		if (enablePickup && !sameAddress && (!pickupPlace || (!pickupPlace.lat && !pickupPlace.lng))) {
-			var typedPickup = $('#tcbf-pickup-address-input').val().trim();
+		if (!sameAddress && (!pickupPlace || (!pickupPlace.lat && !pickupPlace.lng))) {
+			var typedPickup = $('#tcbf-split-pickup-address').val().trim();
 			if (typedPickup.length > 5) {
 				geocodeAndConfigure(typedPickup, 'pickup');
 				return;
@@ -742,20 +736,14 @@
 				$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
 				return;
 			}
-
 			var data = response.data;
 			var place = {
 				address: data.formatted_address || address,
-				lat: data.lat,
-				lng: data.lng,
+				lat: data.lat, lng: data.lng,
 				place_id: data.place_id || ''
 			};
-
 			setPlaceForDirection(forDirection, place);
-			var inputId = (forDirection === 'pickup') ? 'tcbf-pickup-address-input' : 'tcbf-delivery-address-input';
-			$('#' + inputId).val(place.address);
-
-			// Try again
+			getActiveInputForDirection(forDirection).val(place.address);
 			sendBulkConfigure();
 		}).fail(function () {
 			showError(i18n.geocodeFailed || i18n.errorGeneric);
@@ -767,22 +755,20 @@
 		var $confirmBtn = $modal.find('.tcbf-transport-modal__confirm');
 		$confirmBtn.prop('disabled', true).text(i18n.saving || i18n.loading);
 
-		var enableDelivery = $('#tcbf-enable-delivery').is(':checked');
-		var enablePickup = $('#tcbf-enable-pickup').is(':checked');
-		var sameAddress = $('#tcbf-same-address').is(':checked');
-
+		var sameAddress = isSameAddressMode();
 		var bikeKeys = getSelectedBikeKeys();
 
 		var postData = {
 			action: 'tcbf_transport_bulk_configure',
-			enable_delivery: enableDelivery ? 1 : 0,
-			enable_pickup: enablePickup ? 1 : 0,
+			enable_delivery: 1,
+			enable_pickup: 1,
 			same_address: sameAddress ? 1 : 0,
 			bike_keys: JSON.stringify(bikeKeys),
 			nonce: config.nonce
 		};
 
-		if (enableDelivery && deliveryPlace) {
+		// Delivery address
+		if (deliveryPlace) {
 			postData.delivery_address = deliveryPlace.address;
 			postData.delivery_lat = deliveryPlace.lat;
 			postData.delivery_lng = deliveryPlace.lng;
@@ -790,17 +776,13 @@
 			postData.delivery_window = getWindowForDirection('delivery');
 		}
 
-		if (enablePickup) {
-			if (sameAddress && deliveryPlace) {
-				// Pickup uses delivery address; just send window
-				postData.pickup_window = getWindowForDirection('pickup');
-			} else if (pickupPlace) {
-				postData.pickup_address = pickupPlace.address;
-				postData.pickup_lat = pickupPlace.lat;
-				postData.pickup_lng = pickupPlace.lng;
-				postData.pickup_place_id = pickupPlace.place_id || '';
-				postData.pickup_window = getWindowForDirection('pickup');
-			}
+		// Pickup
+		postData.pickup_window = getWindowForDirection('pickup');
+		if (!sameAddress && pickupPlace) {
+			postData.pickup_address = pickupPlace.address;
+			postData.pickup_lat = pickupPlace.lat;
+			postData.pickup_lng = pickupPlace.lng;
+			postData.pickup_place_id = pickupPlace.place_id || '';
 		}
 
 		$.post(config.ajaxUrl, postData, function (response) {
@@ -810,7 +792,6 @@
 				return;
 			}
 
-			// Update config summary
 			if (response.data && response.data.summary) {
 				config.summary = response.data.summary;
 			}
@@ -821,7 +802,6 @@
 				applyFragments(response.data.fragments);
 			}
 			$(document.body).trigger('wc_update_cart');
-
 		}).fail(function () {
 			showError(i18n.errorGeneric);
 			$confirmBtn.prop('disabled', false).text(i18n.confirmBtn);
@@ -834,15 +814,7 @@
 
 	function getWindowForDirection(direction) {
 		if (!$modal) return 'morning';
-
-		if (direction === 'pickup') {
-			var sameAddr = $('#tcbf-same-address').is(':checked');
-			var selector = sameAddr ? '[data-direction="pickup-only"]' : '[data-direction="pickup"]';
-			var $active = $modal.find(selector + ' .tcbf-transport-modal__window-btn--active');
-			return $active.length ? $active.data('window') : 'morning';
-		}
-
-		var $active = $modal.find('[data-direction="delivery"] .tcbf-transport-modal__window-btn--active');
+		var $active = $modal.find('[data-direction="' + direction + '"] .tcbf-transport-modal__window-btn--active');
 		return $active.length ? $active.data('window') : 'morning';
 	}
 
@@ -863,31 +835,27 @@
 	function updateConfirmState() {
 		if (!$modal) return;
 
-		var enableDelivery = $('#tcbf-enable-delivery').is(':checked');
-		var enablePickup = $('#tcbf-enable-pickup').is(':checked');
-		var sameAddress = $('#tcbf-same-address').is(':checked');
-
 		var valid = true;
+		var sameAddress = isSameAddressMode();
 
-		if (!enableDelivery && !enablePickup) {
-			valid = true; // Will just remove transport
-		} else {
-			if (enableDelivery) {
-				var dVal = $('#tcbf-delivery-address-input').val().trim();
-				if (dVal.length < 3 && (!deliveryPlace || !deliveryPlace.lat)) {
-					valid = false;
-				}
+		// Need at least delivery address
+		if (sameAddress) {
+			var dVal = $('#tcbf-delivery-address-input').val().trim();
+			if (dVal.length < 3 && (!deliveryPlace || !deliveryPlace.lat)) {
+				valid = false;
 			}
-			if (enablePickup && !sameAddress) {
-				var pVal = $('#tcbf-pickup-address-input').val().trim();
-				if (pVal.length < 3 && (!pickupPlace || !pickupPlace.lat)) {
-					valid = false;
-				}
+		} else {
+			var dVal2 = $('#tcbf-split-delivery-address').val().trim();
+			if (dVal2.length < 3 && (!deliveryPlace || !deliveryPlace.lat)) {
+				valid = false;
+			}
+			var pVal = $('#tcbf-split-pickup-address').val().trim();
+			if (pVal.length < 3 && (!pickupPlace || !pickupPlace.lat)) {
+				valid = false;
 			}
 		}
 
-		var bikeCount = getSelectedBikeCount();
-		if (bikeCount <= 0 && (enableDelivery || enablePickup)) {
+		if (getSelectedBikeCount() <= 0) {
 			valid = false;
 		}
 
@@ -902,10 +870,15 @@
 	}
 
 	function formatPrice(amount) {
-		if (typeof amount !== 'number') {
-			amount = parseFloat(amount) || 0;
-		}
+		if (typeof amount !== 'number') amount = parseFloat(amount) || 0;
 		return amount.toFixed(2) + ' \u20AC';
+	}
+
+	function formatDateDisplay(dateStr) {
+		// Convert YYYY-MM-DD to DD/MM/YYYY
+		if (!dateStr || dateStr.length < 10) return dateStr || '';
+		var parts = dateStr.split('-');
+		return parts[2] + '/' + parts[1] + '/' + parts[0];
 	}
 
 	function showError(message) {

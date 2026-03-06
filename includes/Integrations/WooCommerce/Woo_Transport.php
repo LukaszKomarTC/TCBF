@@ -100,6 +100,17 @@ final class Woo_Transport {
 
 		$cart = WC()->cart;
 
+		// Date uniformity gate
+		$dates = self::get_rental_dates_uniformity();
+		$enable_delivery = ! empty( $_POST['enable_delivery'] );
+		$enable_pickup   = ! empty( $_POST['enable_pickup'] );
+		if ( ( $enable_delivery || $enable_pickup ) && ! $dates['is_uniform'] ) {
+			wp_send_json_error( [
+				'message' => Woo::translate( '[:en]Transport is only available when all bikes in the cart have the same rental dates. Please place separate orders for bikes with different dates.[:es]El transporte solo está disponible cuando todas las bicicletas del carrito tienen las mismas fechas de alquiler. Haz pedidos separados para bicicletas con fechas distintas.[:]' ),
+				'code'    => 'mixed_dates',
+			] );
+		}
+
 		// Parse input
 		$enable_delivery = ! empty( $_POST['enable_delivery'] );
 		$enable_pickup   = ! empty( $_POST['enable_pickup'] );
@@ -291,6 +302,12 @@ final class Woo_Transport {
 	public static function ajax_get_quote() : void {
 
 		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
+
+		// Date uniformity gate
+		$dates = self::get_rental_dates_uniformity();
+		if ( ! $dates['is_uniform'] ) {
+			wp_send_json_error( [ 'message' => 'Transport unavailable for mixed-date carts', 'code' => 'mixed_dates' ] );
+		}
 
 		$lat       = isset( $_POST['lat'] ) ? (float) $_POST['lat'] : 0.0;
 		$lng       = isset( $_POST['lng'] ) ? (float) $_POST['lng'] : 0.0;
@@ -850,6 +867,12 @@ final class Woo_Transport {
 			case 'mismatch':
 				echo esc_html( Woo::translate( '[:en]Configuration needs updating[:es]La configuración necesita actualización[:]' ) );
 				break;
+			case 'mixed_dates':
+				echo esc_html( Woo::translate( '[:en]Transport is only available when all bikes in the cart have the same rental dates.[:es]El transporte solo está disponible cuando todas las bicicletas del carrito tienen las mismas fechas de alquiler.[:]' ) );
+				break;
+			case 'invalid_dates':
+				echo esc_html( Woo::translate( '[:en]The current transport configuration is no longer valid because the cart contains bikes with different rental dates.[:es]La configuración de transporte ya no es válida porque el carrito contiene bicicletas con fechas distintas.[:]' ) );
+				break;
 		}
 
 		echo '</span>';
@@ -865,9 +888,23 @@ final class Woo_Transport {
 
 		echo '</div>'; // header
 
-		// Action button
+		// Help text for date-related states
+		if ( $state === 'mixed_dates' || $state === 'invalid_dates' ) {
+			echo '<p class="tcbf-service-card__help">';
+			echo esc_html( Woo::translate( '[:en]If you want to add delivery or pickup for bikes with different dates, please place separate orders.[:es]Si quieres añadir entrega o recogida para bicicletas con fechas distintas, haz pedidos separados.[:]' ) );
+			echo '</p>';
+		}
+
+		// Action buttons
 		echo '<div class="tcbf-service-card__actions">';
-		if ( $state === 'not_configured' ) {
+		if ( $state === 'mixed_dates' ) {
+			// No action buttons — just informational
+		} elseif ( $state === 'invalid_dates' ) {
+			// Only allow removing transport
+			echo '<button type="button" class="tcbf-service-card__btn tcbf-service-card__btn--remove" id="tcbf-remove-transport">';
+			echo esc_html( Woo::translate( '[:en]Remove transport[:es]Eliminar transporte[:]' ) );
+			echo '</button>';
+		} elseif ( $state === 'not_configured' ) {
 			echo '<button type="button" class="tcbf-service-card__btn tcbf-service-card__btn--primary" id="tcbf-configure-transport">';
 			echo esc_html( Woo::translate( '[:en]Add transport[:es]Añadir transporte[:]' ) );
 			echo '</button>';
@@ -1010,6 +1047,18 @@ final class Woo_Transport {
 			return;
 		}
 
+		// Block checkout if transport items exist but dates are mixed
+		if ( self::cart_has_any_transport() ) {
+			$dates = self::get_rental_dates_uniformity();
+			if ( ! $dates['is_uniform'] ) {
+				wc_add_notice(
+					Woo::translate( '[:en]The current transport configuration is no longer valid because the cart contains bikes with different rental dates. Please remove transport or adjust your cart.[:es]La configuración de transporte ya no es válida porque el carrito contiene bicicletas con fechas de alquiler distintas. Elimina el transporte o ajusta tu carrito.[:]' ),
+					'error'
+				);
+				return;
+			}
+		}
+
 		// Group transport items by (service_date, window) and count
 		$slots = [];
 		foreach ( WC()->cart->get_cart() as $item ) {
@@ -1085,22 +1134,24 @@ final class Woo_Transport {
 			true
 		);
 
-		$summary = self::get_transport_service_summary();
+		$summary       = self::get_transport_service_summary();
+		$dates_info    = self::get_rental_dates_uniformity();
 
-		// Build bike list for JS checklist
+		// Build bike list for JS checklist with enriched labels
 		$bike_list = [];
 		if ( WC() && WC()->cart ) {
 			foreach ( WC()->cart->get_cart() as $key => $item ) {
 				if ( self::is_transport_eligible( $item ) ) {
-					$product = $item['data'] ?? null;
-					$name = $product ? $product->get_name() : Woo::translate( '[:en]Bike[:es]Bicicleta[:]' );
-					$participant = $item['_tcbf_participant_name'] ?? '';
+					$label       = self::format_transport_bike_label( $item );
 					$has_delivery = self::rental_has_transport( $key, self::DIR_DELIVERY );
 					$has_pickup   = self::rental_has_transport( $key, self::DIR_PICKUP );
 					$bike_list[] = [
 						'key'          => $key,
-						'name'         => $name,
-						'participant'  => $participant,
+						'model'        => $label['model'],
+						'size'         => $label['size'],
+						'start_date'   => $label['start_date'],
+						'end_date'     => $label['end_date'],
+						'rider'        => $label['rider'],
 						'has_delivery' => $has_delivery,
 						'has_pickup'   => $has_pickup,
 					];
@@ -1114,10 +1165,16 @@ final class Woo_Transport {
 			'hasMapsKey'      => $google_maps_key !== '',
 			'summary'         => $summary,
 			'bikes'           => $bike_list,
+			'datesUniform'    => $dates_info['is_uniform'],
 			'i18n'            => [
 				'modalTitle'       => Woo::translate( '[:en]Configure Bike Transport[:es]Configurar transporte de bicicletas[:]' ),
 				'deliverySection'  => Woo::translate( '[:en]Delivery[:es]Entrega[:]' ),
+				'deliverySectionFull' => Woo::translate( '[:en]Bike Delivery[:es]Entrega de bicicletas[:]' ),
 				'pickupSection'    => Woo::translate( '[:en]Return Pickup[:es]Recogida de devolución[:]' ),
+				'pickupSectionFull'=> Woo::translate( '[:en]Bike Pickup[:es]Recogida de bicicletas[:]' ),
+				'differentPickupSeparator' => Woo::translate( '[:en]Pickup at a different address[:es]Recogida en una dirección diferente[:]' ),
+				'bikesIncludedLabel' => Woo::translate( '[:en]Included bikes[:es]Bicicletas incluidas[:]' ),
+				'sizeLabel'        => Woo::translate( '[:en]size[:es]talla[:]' ),
 				'addressLabel'     => Woo::translate( '[:en]Delivery address (hotel, accommodation, or any location)[:es]Dirección de entrega (hotel, alojamiento o cualquier ubicación)[:]' ),
 				'pickupAddressLabel' => Woo::translate( '[:en]Pickup address[:es]Dirección de recogida[:]' ),
 				'sameAddressLabel' => Woo::translate( '[:en]Same address for pickup[:es]Misma dirección para recogida[:]' ),
@@ -1162,6 +1219,14 @@ final class Woo_Transport {
 			return 'not_configured';
 		}
 
+		// Check date uniformity first
+		$dates = self::get_rental_dates_uniformity();
+		$has_transport = self::cart_has_any_transport();
+
+		if ( ! $dates['is_uniform'] ) {
+			return $has_transport ? 'invalid_dates' : 'mixed_dates';
+		}
+
 		$delivery_count = self::count_direction_bikes( self::DIR_DELIVERY );
 		$pickup_count   = self::count_direction_bikes( self::DIR_PICKUP );
 		$total_transport = $delivery_count + $pickup_count;
@@ -1187,6 +1252,143 @@ final class Woo_Transport {
 		}
 
 		return 'configured';
+	}
+
+	/**
+	 * Check if all eligible rental bikes share the same start+end dates.
+	 */
+	public static function get_rental_dates_uniformity() : array {
+
+		$result = [
+			'is_uniform' => true,
+			'start_date' => null,
+			'end_date'   => null,
+			'count'      => 0,
+		];
+
+		if ( ! WC() || ! WC()->cart ) {
+			return $result;
+		}
+
+		$first_start = null;
+		$first_end   = null;
+
+		foreach ( WC()->cart->get_cart() as $item ) {
+			if ( ! self::is_transport_eligible( $item ) ) {
+				continue;
+			}
+
+			$dates = self::extract_rental_dates( $item );
+			$result['count']++;
+
+			if ( ! $dates['start'] ) {
+				// Can't determine dates → treat as non-uniform
+				$result['is_uniform'] = false;
+				continue;
+			}
+
+			if ( $first_start === null ) {
+				$first_start = $dates['start'];
+				$first_end   = $dates['end'];
+				$result['start_date'] = $first_start;
+				$result['end_date']   = $first_end;
+			} else {
+				if ( $dates['start'] !== $first_start || $dates['end'] !== $first_end ) {
+					$result['is_uniform'] = false;
+				}
+			}
+		}
+
+		// If only 0 or 1 bike, trivially uniform
+		if ( $result['count'] <= 1 ) {
+			$result['is_uniform'] = true;
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Extract start and end rental dates from a cart item.
+	 */
+	public static function extract_rental_dates( array $cart_item ) : array {
+
+		$booking = isset( $cart_item['booking'] ) ? (array) $cart_item['booking'] : [];
+
+		$start_year  = $booking['wc_bookings_field_start_date_year'] ?? '';
+		$start_month = $booking['wc_bookings_field_start_date_month'] ?? '';
+		$start_day   = $booking['wc_bookings_field_start_date_day'] ?? '';
+
+		if ( $start_year && $start_month && $start_day ) {
+			$start_date = sprintf( '%04d-%02d-%02d', (int) $start_year, (int) $start_month, (int) $start_day );
+
+			$end_year  = $booking['wc_bookings_field_end_date_year'] ?? '';
+			$end_month = $booking['wc_bookings_field_end_date_month'] ?? '';
+			$end_day   = $booking['wc_bookings_field_end_date_day'] ?? '';
+
+			if ( $end_year && $end_month && $end_day ) {
+				$end_date = sprintf( '%04d-%02d-%02d', (int) $end_year, (int) $end_month, (int) $end_day );
+			} else {
+				$duration = isset( $booking['wc_bookings_field_duration'] ) ? max( 1, (int) $booking['wc_bookings_field_duration'] ) : 1;
+				$end_ts = strtotime( $start_date ) + ( ( $duration - 1 ) * DAY_IN_SECONDS );
+				$end_date = date( 'Y-m-d', $end_ts );
+			}
+
+			return [ 'start' => $start_date, 'end' => $end_date ];
+		}
+
+		// Fallback: event timestamp
+		$event_ts = isset( $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] ) ? (int) $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] : 0;
+		if ( $event_ts > 0 ) {
+			return [
+				'start' => date( 'Y-m-d', $event_ts ),
+				'end'   => date( 'Y-m-d', $event_ts + DAY_IN_SECONDS ),
+			];
+		}
+
+		return [ 'start' => null, 'end' => null ];
+	}
+
+	/**
+	 * Build structured bike label for transport checklist display.
+	 */
+	public static function format_transport_bike_label( array $cart_item ) : array {
+
+		$product = $cart_item['data'] ?? null;
+		$model   = $product ? $product->get_name() : Woo::translate( '[:en]Bike[:es]Bicicleta[:]' );
+
+		// Size from WC Bookings resource
+		$size = '';
+		$booking = isset( $cart_item['booking'] ) ? (array) $cart_item['booking'] : [];
+		$resource_id = 0;
+		if ( isset( $booking['wc_bookings_field_resource'] ) ) {
+			$resource_id = (int) $booking['wc_bookings_field_resource'];
+		} elseif ( isset( $booking['resource_id'] ) ) {
+			$resource_id = (int) $booking['resource_id'];
+		}
+		if ( $resource_id > 0 ) {
+			$resource = get_post( $resource_id );
+			if ( $resource && isset( $resource->post_title ) ) {
+				if ( preg_match( '/\b(XXL|XL|[SMLX])\b/i', $resource->post_title, $matches ) ) {
+					$size = strtoupper( $matches[1] );
+				} else {
+					$size = $resource->post_title;
+				}
+			}
+		}
+
+		// Dates
+		$dates = self::extract_rental_dates( $cart_item );
+
+		// Rider
+		$rider = $cart_item['_tcbf_participant_name'] ?? '';
+
+		return [
+			'model'      => $model,
+			'size'       => $size,
+			'start_date' => $dates['start'] ?? '',
+			'end_date'   => $dates['end'] ?? '',
+			'rider'      => $rider,
+		];
 	}
 
 	public static function get_transport_service_summary() : array {
