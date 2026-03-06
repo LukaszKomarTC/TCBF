@@ -42,6 +42,39 @@ final class Woo_Transport {
 
 	public static function init() : void {
 
+		// Diagnostic: capture fatal errors during transport AJAX requests
+		if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) {
+			$action = isset( $_REQUEST['action'] ) ? $_REQUEST['action'] : '';
+			if ( strpos( $action, 'tcbf_transport' ) === 0 ) {
+				register_shutdown_function( function () {
+					$error = error_get_last();
+					if ( $error && in_array( $error['type'], [ E_ERROR, E_PARSE, E_COMPILE_ERROR, E_CORE_ERROR ], true ) ) {
+						while ( ob_get_level() ) {
+							ob_end_clean();
+						}
+						header( 'Content-Type: application/json; charset=utf-8', true, 200 );
+						echo wp_json_encode( [
+							'success' => false,
+							'data'    => [
+								'message' => 'SHUTDOWN FATAL: ' . $error['message'],
+								'file'    => $error['file'],
+								'line'    => $error['line'],
+								'type'    => $error['type'],
+							],
+						] );
+					}
+				} );
+			}
+		}
+
+		// Diagnostic ping endpoint — tests if AJAX works at all
+		add_action( 'wp_ajax_tcbf_transport_ping', function () {
+			wp_send_json_success( [ 'ping' => 'pong', 'php' => PHP_VERSION, 'time' => time() ] );
+		} );
+		add_action( 'wp_ajax_nopriv_tcbf_transport_ping', function () {
+			wp_send_json_success( [ 'ping' => 'pong', 'php' => PHP_VERSION, 'time' => time() ] );
+		} );
+
 		// AJAX: bulk configure transport for selected bikes
 		add_action( 'wp_ajax_tcbf_transport_bulk_configure', [ __CLASS__, 'ajax_bulk_configure' ] );
 		add_action( 'wp_ajax_nopriv_tcbf_transport_bulk_configure', [ __CLASS__, 'ajax_bulk_configure' ] );

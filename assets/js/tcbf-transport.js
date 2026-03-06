@@ -97,6 +97,20 @@
 	 * ================================================================ */
 
 	function openConfigureModal() {
+		// Diagnostic: test if AJAX works at all
+		$.ajax({
+			url: config.ajaxUrl,
+			type: 'POST',
+			dataType: 'json',
+			data: { action: 'tcbf_transport_ping', nonce: config.nonce },
+			success: function (r) {
+				console.log('[TCBF Transport] PING OK:', r);
+			},
+			error: function (xhr, status, err) {
+				console.log('[TCBF Transport] PING FAILED:', xhr.status, xhr.responseText);
+			}
+		});
+
 		if ($modal) {
 			$modal.remove();
 		}
