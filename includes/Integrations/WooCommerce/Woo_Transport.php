@@ -922,7 +922,10 @@ final class Woo_Transport {
 	}
 
 	/**
-	 * Compact per-bike status indicator (replaces old per-bike toggles)
+	 * Compact per-bike status indicator.
+	 *
+	 * Shows ✓ for active directions and ✕ exclusion badges when the order has
+	 * transport configured but this bike is excluded.
 	 */
 	public static function render_transport_indicator( array $cart_item, string $cart_item_key ) : void {
 
@@ -937,20 +940,46 @@ final class Woo_Transport {
 		$has_delivery = self::rental_has_transport( $cart_item_key, self::DIR_DELIVERY );
 		$has_pickup   = self::rental_has_transport( $cart_item_key, self::DIR_PICKUP );
 
-		if ( ! $has_delivery && ! $has_pickup ) {
+		// Determine if the order has any transport at all (for exclusion badges)
+		$order_delivery_count = self::count_direction_bikes( self::DIR_DELIVERY );
+		$order_pickup_count   = self::count_direction_bikes( self::DIR_PICKUP );
+		$order_has_transport  = ( $order_delivery_count + $order_pickup_count ) > 0;
+
+		if ( ! $has_delivery && ! $has_pickup && ! $order_has_transport ) {
 			return;
 		}
 
 		$parts = [];
+		$excluded = false;
+
+		// Delivery status
 		if ( $has_delivery ) {
 			$parts[] = Woo::translate( '[:en]Delivery[:es]Entrega[:]' ) . ' &#10003;';
+		} elseif ( $order_delivery_count > 0 ) {
+			$parts[] = '<span class="tcbf-transport-indicator__excluded">' . Woo::translate( '[:en]Delivery[:es]Entrega[:]' ) . ' &#10007;</span>';
+			$excluded = true;
 		}
+
+		// Pickup status
 		if ( $has_pickup ) {
 			$parts[] = Woo::translate( '[:en]Pickup[:es]Recogida[:]' ) . ' &#10003;';
+		} elseif ( $order_pickup_count > 0 ) {
+			$parts[] = '<span class="tcbf-transport-indicator__excluded">' . Woo::translate( '[:en]Pickup[:es]Recogida[:]' ) . ' &#10007;</span>';
+			$excluded = true;
+		}
+
+		if ( empty( $parts ) ) {
+			return;
+		}
+
+		$css_class = 'tcbf-transport-indicator';
+		if ( $excluded && ! $has_delivery && ! $has_pickup ) {
+			$css_class .= ' tcbf-transport-indicator--excluded';
 		}
 
 		printf(
-			'<div class="tcbf-transport-indicator" data-cart-key="%s">%s</div>',
+			'<div class="%s" data-cart-key="%s">%s</div>',
+			esc_attr( $css_class ),
 			esc_attr( $cart_item_key ),
 			wp_kses_post( implode( ' <span class="tcbf-transport-indicator__sep">|</span> ', $parts ) )
 		);
@@ -1168,6 +1197,10 @@ final class Woo_Transport {
 			'datesUniform'    => $dates_info['is_uniform'],
 			'i18n'            => [
 				'modalTitle'       => Woo::translate( '[:en]Configure Bike Transport[:es]Configurar transporte de bicicletas[:]' ),
+				'modeLabel'        => Woo::translate( '[:en]Transport service needed[:es]Servicio de transporte[:]' ),
+				'modeDeliveryOnly' => Woo::translate( '[:en]Delivery only[:es]Solo entrega[:]' ),
+				'modePickupOnly'   => Woo::translate( '[:en]Pickup only[:es]Solo recogida[:]' ),
+				'modeBoth'         => Woo::translate( '[:en]Delivery + pickup[:es]Entrega + recogida[:]' ),
 				'deliverySection'  => Woo::translate( '[:en]Delivery[:es]Entrega[:]' ),
 				'deliverySectionFull' => Woo::translate( '[:en]Bike Delivery[:es]Entrega de bicicletas[:]' ),
 				'pickupSection'    => Woo::translate( '[:en]Return Pickup[:es]Recogida de devolución[:]' ),
@@ -1309,43 +1342,77 @@ final class Woo_Transport {
 
 	/**
 	 * Extract start and end rental dates from a cart item.
+	 *
+	 * Canonical date extractor — used by date uniformity checks, service date
+	 * derivation, bike label display. Always returns normalised Y-m-d strings.
 	 */
 	public static function extract_rental_dates( array $cart_item ) : array {
 
 		$booking = isset( $cart_item['booking'] ) ? (array) $cart_item['booking'] : [];
+		$start_date = null;
+		$end_date   = null;
 
+		// --- Strategy 1: year/month/day form fields (our programmatic sim_post) ---
 		$start_year  = $booking['wc_bookings_field_start_date_year'] ?? '';
 		$start_month = $booking['wc_bookings_field_start_date_month'] ?? '';
 		$start_day   = $booking['wc_bookings_field_start_date_day'] ?? '';
 
-		if ( $start_year && $start_month && $start_day ) {
+		if ( $start_year !== '' && $start_month !== '' && $start_day !== '' ) {
 			$start_date = sprintf( '%04d-%02d-%02d', (int) $start_year, (int) $start_month, (int) $start_day );
 
 			$end_year  = $booking['wc_bookings_field_end_date_year'] ?? '';
 			$end_month = $booking['wc_bookings_field_end_date_month'] ?? '';
 			$end_day   = $booking['wc_bookings_field_end_date_day'] ?? '';
 
-			if ( $end_year && $end_month && $end_day ) {
+			if ( $end_year !== '' && $end_month !== '' && $end_day !== '' ) {
 				$end_date = sprintf( '%04d-%02d-%02d', (int) $end_year, (int) $end_month, (int) $end_day );
 			} else {
-				$duration = isset( $booking['wc_bookings_field_duration'] ) ? max( 1, (int) $booking['wc_bookings_field_duration'] ) : 1;
-				$end_ts = strtotime( $start_date ) + ( ( $duration - 1 ) * DAY_IN_SECONDS );
-				$end_date = date( 'Y-m-d', $end_ts );
+				$duration  = isset( $booking['wc_bookings_field_duration'] ) ? max( 1, (int) $booking['wc_bookings_field_duration'] ) : 1;
+				$end_ts    = strtotime( $start_date . ' 00:00:00' ) + ( ( $duration - 1 ) * DAY_IN_SECONDS );
+				$end_date  = gmdate( 'Y-m-d', $end_ts );
 			}
-
-			return [ 'start' => $start_date, 'end' => $end_date ];
 		}
 
-		// Fallback: event timestamp
-		$event_ts = isset( $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] ) ? (int) $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] : 0;
-		if ( $event_ts > 0 ) {
-			return [
-				'start' => date( 'Y-m-d', $event_ts ),
-				'end'   => date( 'Y-m-d', $event_ts + DAY_IN_SECONDS ),
-			];
+		// --- Strategy 2: WC Bookings internal timestamps ---
+		if ( ! $start_date ) {
+			$bk_start = $booking['_start_date'] ?? 0;
+			$bk_end   = $booking['_end_date'] ?? 0;
+			if ( $bk_start ) {
+				$start_date = is_numeric( $bk_start )
+					? gmdate( 'Y-m-d', (int) $bk_start )
+					: gmdate( 'Y-m-d', strtotime( $bk_start ) );
+			}
+			if ( $bk_end ) {
+				$end_date = is_numeric( $bk_end )
+					? gmdate( 'Y-m-d', (int) $bk_end )
+					: gmdate( 'Y-m-d', strtotime( $bk_end ) );
+			}
 		}
 
-		return [ 'start' => null, 'end' => null ];
+		// --- Strategy 3: event timestamp fallback ---
+		if ( ! $start_date ) {
+			$event_ts = isset( $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] ) ? (int) $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] : 0;
+			if ( $event_ts > 0 ) {
+				$start_date = gmdate( 'Y-m-d', $event_ts );
+				$duration   = isset( $booking['wc_bookings_field_duration'] ) ? max( 1, (int) $booking['wc_bookings_field_duration'] ) : 1;
+				$end_date   = gmdate( 'Y-m-d', $event_ts + ( ( $duration - 1 ) * DAY_IN_SECONDS ) );
+			}
+		}
+
+		// If we got start but not end, default end = start
+		if ( $start_date && ! $end_date ) {
+			$end_date = $start_date;
+		}
+
+		// Final normalisation: ensure Y-m-d format
+		if ( $start_date ) {
+			$start_date = gmdate( 'Y-m-d', strtotime( $start_date . ' 00:00:00' ) );
+		}
+		if ( $end_date ) {
+			$end_date = gmdate( 'Y-m-d', strtotime( $end_date . ' 00:00:00' ) );
+		}
+
+		return [ 'start' => $start_date ?: null, 'end' => $end_date ?: null ];
 	}
 
 	/**
@@ -1648,49 +1715,13 @@ final class Woo_Transport {
 	 */
 	private static function derive_service_date( array $rental_item, string $direction ) : string {
 
-		$booking = isset( $rental_item['booking'] ) ? (array) $rental_item['booking'] : [];
+		$dates = self::extract_rental_dates( $rental_item );
 
-		// Try WC Bookings date fields
-		$start_year  = $booking['wc_bookings_field_start_date_year'] ?? '';
-		$start_month = $booking['wc_bookings_field_start_date_month'] ?? '';
-		$start_day   = $booking['wc_bookings_field_start_date_day'] ?? '';
-
-		if ( $start_year && $start_month && $start_day ) {
-			$start_date = sprintf( '%04d-%02d-%02d', (int) $start_year, (int) $start_month, (int) $start_day );
-
-			if ( $direction === self::DIR_DELIVERY ) {
-				return $start_date;
-			}
-
-			// For return, try to find end date
-			// WC Bookings typically uses duration from start
-			// If no explicit end, use start + 1 day as fallback
-			$end_year  = $booking['wc_bookings_field_end_date_year'] ?? '';
-			$end_month = $booking['wc_bookings_field_end_date_month'] ?? '';
-			$end_day   = $booking['wc_bookings_field_end_date_day'] ?? '';
-
-			if ( $end_year && $end_month && $end_day ) {
-				return sprintf( '%04d-%02d-%02d', (int) $end_year, (int) $end_month, (int) $end_day );
-			}
-
-			// Fallback: last day of rental = start + (duration - 1) days
-			// Duration=1 means single-day rental → return on same day as start
-			$duration = isset( $booking['wc_bookings_field_duration'] ) ? max( 1, (int) $booking['wc_bookings_field_duration'] ) : 1;
-			$end_ts = strtotime( $start_date ) + ( ( $duration - 1 ) * DAY_IN_SECONDS );
-			return date( 'Y-m-d', $end_ts );
+		if ( $direction === self::DIR_DELIVERY ) {
+			return $dates['start'] ?? '';
 		}
 
-		// Try event start timestamp
-		$event_ts = isset( $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] ) ? (int) $booking[\TC_BF\Plugin::BK_EB_EVENT_TS] : 0;
-		if ( $event_ts > 0 ) {
-			if ( $direction === self::DIR_DELIVERY ) {
-				return date( 'Y-m-d', $event_ts );
-			}
-			// Events are typically multi-day; use event_ts + 1 as fallback for return
-			return date( 'Y-m-d', $event_ts + DAY_IN_SECONDS );
-		}
-
-		return '';
+		return $dates['end'] ?? '';
 	}
 
 	private static function get_cart_fragments() : array {

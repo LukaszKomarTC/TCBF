@@ -1,5 +1,5 @@
 /**
- * TCBF Transport v3.1 — Service card + unified/split modal styles
+ * TCBF Transport v4.0 — Service card + mode selector + unified/split modal styles
  */
 
 /* ================================================================
@@ -184,8 +184,22 @@
 	font-weight: 500;
 }
 
+.tcbf-transport-indicator--excluded {
+	background: #f9fafb;
+	border-color: #e5e7eb;
+	color: #6b7280;
+}
+
 .tcbf-transport-indicator__sep {
 	color: #86efac;
+}
+
+.tcbf-transport-indicator--excluded .tcbf-transport-indicator__sep {
+	color: #d1d5db;
+}
+
+.tcbf-transport-indicator__excluded {
+	color: #dc2626;
 }
 
 /* ================================================================
@@ -256,6 +270,59 @@ body.tcbf-modal-open {
 
 .tcbf-transport-modal__body {
 	padding: 20px 24px;
+}
+
+/* ================================================================
+ * Mode selector (Delivery only / Pickup only / Both)
+ * ================================================================ */
+
+.tcbf-modal__mode-selector {
+	margin-bottom: 20px;
+	padding-bottom: 16px;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.tcbf-modal__mode-options {
+	display: flex;
+	gap: 0;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 1px solid #d1d5db;
+	margin-top: 6px;
+}
+
+.tcbf-modal__mode-option {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 9px 12px;
+	font-size: 13px;
+	font-weight: 500;
+	color: #555;
+	background: #fff;
+	cursor: pointer;
+	transition: background-color 0.15s, color 0.15s;
+	margin: 0;
+	text-align: center;
+}
+
+.tcbf-modal__mode-option + .tcbf-modal__mode-option {
+	border-left: 1px solid #d1d5db;
+}
+
+.tcbf-modal__mode-option input[type="radio"] {
+	display: none;
+}
+
+.tcbf-modal__mode-option--active {
+	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	color: #fff;
+}
+
+.tcbf-modal__mode-option:hover:not(.tcbf-modal__mode-option--active) {
+	background: #f3f4f6;
 }
 
 /* ================================================================
@@ -362,13 +429,15 @@ body.tcbf-modal-open {
 }
 
 /* ================================================================
- * Same address toggle
+ * Same address toggle (inside controls area)
  * ================================================================ */
 
 .tcbf-modal__same-address {
-	padding: 12px 0;
-	border-top: 1px solid #f0f0f0;
-	margin-top: 16px;
+	padding: 8px 0;
+}
+
+.tcbf-modal__same-address--split {
+	padding: 0 0 12px;
 }
 
 .tcbf-modal__same-address-label {
@@ -601,6 +670,16 @@ body.tcbf-modal-open {
 
 	.tcbf-transport-modal__body {
 		padding: 16px;
+	}
+
+	/* Mode selector: stack on mobile */
+	.tcbf-modal__mode-options {
+		flex-direction: column;
+	}
+
+	.tcbf-modal__mode-option + .tcbf-modal__mode-option {
+		border-left: none;
+		border-top: 1px solid #d1d5db;
 	}
 
 	/* Unified mode: stack vertically on mobile */
