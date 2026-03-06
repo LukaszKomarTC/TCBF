@@ -42,13 +42,9 @@ final class Woo_Transport {
 
 	public static function init() : void {
 
-		// AJAX: toggle transport on/off for a rental + direction
-		add_action( 'wp_ajax_tcbf_transport_toggle', [ __CLASS__, 'ajax_toggle_transport' ] );
-		add_action( 'wp_ajax_nopriv_tcbf_transport_toggle', [ __CLASS__, 'ajax_toggle_transport' ] );
-
-		// AJAX: set/update transport address for a direction
-		add_action( 'wp_ajax_tcbf_transport_set_address', [ __CLASS__, 'ajax_set_address' ] );
-		add_action( 'wp_ajax_nopriv_tcbf_transport_set_address', [ __CLASS__, 'ajax_set_address' ] );
+		// AJAX: bulk configure transport for selected bikes
+		add_action( 'wp_ajax_tcbf_transport_bulk_configure', [ __CLASS__, 'ajax_bulk_configure' ] );
+		add_action( 'wp_ajax_nopriv_tcbf_transport_bulk_configure', [ __CLASS__, 'ajax_bulk_configure' ] );
 
 		// AJAX: get transport price quote
 		add_action( 'wp_ajax_tcbf_transport_quote', [ __CLASS__, 'ajax_get_quote' ] );
@@ -74,8 +70,11 @@ final class Woo_Transport {
 		// Frontend assets
 		add_action( 'wp_enqueue_scripts', [ __CLASS__, 'enqueue_assets' ], 20 );
 
-		// Render transport toggles
-		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_transport_toggle' ], 20, 2 );
+		// Cart-level service card (after cart table)
+		add_action( 'woocommerce_after_cart_table', [ __CLASS__, 'render_transport_service_card' ], 10 );
+
+		// Per-bike compact status indicators
+		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_transport_indicator' ], 20, 2 );
 
 		// Cleanup on parent removal
 		add_action( 'woocommerce_remove_cart_item', [ __CLASS__, 'cleanup_transport_on_removal' ], 3, 2 );
@@ -85,182 +84,202 @@ final class Woo_Transport {
 	}
 
 	/* ================================================================
-	 * AJAX: Toggle transport on/off
+	 * AJAX: Bulk configure transport for selected bikes
+	 *
+	 * Single endpoint that handles add/update/remove of transport items
+	 * for any combination of delivery + pickup across selected bikes.
 	 * ================================================================ */
 
-	public static function ajax_toggle_transport() : void {
+	public static function ajax_bulk_configure() : void {
 
 		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
-
-		$cart_key  = isset( $_POST['cart_key'] ) ? sanitize_text_field( wp_unslash( $_POST['cart_key'] ) ) : '';
-		$direction = isset( $_POST['direction'] ) ? sanitize_text_field( wp_unslash( $_POST['direction'] ) ) : '';
-		$enabled   = isset( $_POST['enabled'] ) ? (string) $_POST['enabled'] : '0';
-
-		if ( $cart_key === '' || ! in_array( $direction, [ self::DIR_DELIVERY, self::DIR_PICKUP ], true ) ) {
-			wp_send_json_error( [ 'message' => 'Invalid parameters' ] );
-		}
 
 		if ( ! WC() || ! WC()->cart ) {
 			wp_send_json_error( [ 'message' => 'Cart not available' ] );
 		}
 
-		$rental_item = WC()->cart->get_cart_item( $cart_key );
-		if ( ! $rental_item ) {
-			wp_send_json_error( [ 'message' => 'Cart item not found' ] );
+		$cart = WC()->cart;
+
+		// Parse input
+		$enable_delivery = ! empty( $_POST['enable_delivery'] );
+		$enable_pickup   = ! empty( $_POST['enable_pickup'] );
+
+		$delivery_address_text = isset( $_POST['delivery_address'] ) ? sanitize_text_field( wp_unslash( $_POST['delivery_address'] ) ) : '';
+		$delivery_lat          = isset( $_POST['delivery_lat'] ) ? (float) $_POST['delivery_lat'] : 0.0;
+		$delivery_lng          = isset( $_POST['delivery_lng'] ) ? (float) $_POST['delivery_lng'] : 0.0;
+		$delivery_place_id     = isset( $_POST['delivery_place_id'] ) ? sanitize_text_field( wp_unslash( $_POST['delivery_place_id'] ) ) : '';
+		$delivery_window       = isset( $_POST['delivery_window'] ) ? sanitize_text_field( wp_unslash( $_POST['delivery_window'] ) ) : 'morning';
+
+		$same_address          = ! empty( $_POST['same_address'] );
+
+		$pickup_address_text   = isset( $_POST['pickup_address'] ) ? sanitize_text_field( wp_unslash( $_POST['pickup_address'] ) ) : '';
+		$pickup_lat            = isset( $_POST['pickup_lat'] ) ? (float) $_POST['pickup_lat'] : 0.0;
+		$pickup_lng            = isset( $_POST['pickup_lng'] ) ? (float) $_POST['pickup_lng'] : 0.0;
+		$pickup_place_id       = isset( $_POST['pickup_place_id'] ) ? sanitize_text_field( wp_unslash( $_POST['pickup_place_id'] ) ) : '';
+		$pickup_window         = isset( $_POST['pickup_window'] ) ? sanitize_text_field( wp_unslash( $_POST['pickup_window'] ) ) : 'morning';
+
+		// Selected bike cart keys (JSON array)
+		$bike_keys_raw = isset( $_POST['bike_keys'] ) ? wp_unslash( $_POST['bike_keys'] ) : '[]';
+		$bike_keys     = json_decode( $bike_keys_raw, true );
+		if ( ! is_array( $bike_keys ) ) {
+			$bike_keys = [];
 		}
 
-		if ( $enabled === '1' ) {
-			$address = self::get_direction_address( $direction );
+		// Validate windows
+		if ( ! in_array( $delivery_window, [ 'morning', 'afternoon' ], true ) ) {
+			$delivery_window = 'morning';
+		}
+		if ( ! in_array( $pickup_window, [ 'morning', 'afternoon' ], true ) ) {
+			$pickup_window = 'morning';
+		}
 
-			if ( empty( $address ) ) {
-				wp_send_json_success( [
-					'action'    => 'needs_address',
-					'cart_key'  => $cart_key,
-					'direction' => $direction,
-				] );
+		// Build address data for delivery
+		$delivery_addr = null;
+		if ( $enable_delivery ) {
+			if ( $delivery_address_text === '' || ( $delivery_lat == 0.0 && $delivery_lng == 0.0 ) ) {
+				wp_send_json_error( [ 'message' => 'Delivery address is required' ] );
 			}
+			$zone = TransportZones::resolve_zone( $delivery_lat, $delivery_lng );
+			$delivery_addr = [
+				'address'   => $delivery_address_text,
+				'lat'       => $delivery_lat,
+				'lng'       => $delivery_lng,
+				'place_id'  => $delivery_place_id,
+				'zone_id'   => $zone ? ( $zone['id'] ?? '' ) : '',
+				'zone_name' => $zone ? ( $zone['name'] ?? '' ) : '',
+			];
+		}
 
-			$window = self::get_direction_window( $direction );
-			$service_date = self::derive_service_date( $rental_item, $direction );
-
-			// Check availability: can we add 1 more bike to this (date, window)?
-			if ( $service_date && $window ) {
-				if ( ! TransportAvailability::can_add( $service_date, $window, 1 ) ) {
-					$remaining = TransportAvailability::remaining_capacity( $service_date, $window );
-					$in_cart   = TransportAvailability::count_in_cart( $service_date, $window );
-					wp_send_json_error( [
-						'message'   => sprintf( 'No capacity available for %s %s. %d slots remaining (%d in your cart).', $service_date, $window, $remaining, $in_cart ),
-						'remaining' => max( 0, $remaining - $in_cart ),
-					] );
+		// Build address data for pickup
+		$pickup_addr = null;
+		if ( $enable_pickup ) {
+			if ( $same_address && $delivery_addr ) {
+				$pickup_addr = $delivery_addr;
+			} else {
+				if ( $pickup_address_text === '' || ( $pickup_lat == 0.0 && $pickup_lng == 0.0 ) ) {
+					wp_send_json_error( [ 'message' => 'Pickup address is required' ] );
 				}
+				$zone = TransportZones::resolve_zone( $pickup_lat, $pickup_lng );
+				$pickup_addr = [
+					'address'   => $pickup_address_text,
+					'lat'       => $pickup_lat,
+					'lng'       => $pickup_lng,
+					'place_id'  => $pickup_place_id,
+					'zone_id'   => $zone ? ( $zone['id'] ?? '' ) : '',
+					'zone_name' => $zone ? ( $zone['name'] ?? '' ) : '',
+				];
 			}
+		}
 
-			$result = self::add_transport_item( $cart_key, $rental_item, $address, $direction, $window, $service_date );
-
-			if ( is_wp_error( $result ) ) {
-				wp_send_json_error( [ 'message' => $result->get_error_message() ] );
-			}
-
-			// Recalculate prices for this direction (bulk pricing)
-			self::recalculate_direction_prices( $direction );
-
-			wp_send_json_success( [
-				'action'    => 'added',
-				'cart_key'  => $cart_key,
-				'direction' => $direction,
-				'price'     => $result['price'],
-				'zone'      => $result['zone_name'] ?? '',
-				'fragments' => self::get_cart_fragments(),
-			] );
-
+		// Determine which bikes to operate on
+		// If no bike_keys provided, default to all eligible bikes
+		$eligible_keys = self::get_eligible_bike_keys();
+		if ( empty( $bike_keys ) ) {
+			$bike_keys = $eligible_keys;
 		} else {
-			self::remove_transport_item( $cart_key, $direction );
+			$bike_keys = array_intersect( $bike_keys, $eligible_keys );
+		}
 
-			// Recalculate remaining items in this direction
-			self::recalculate_direction_prices( $direction );
+		if ( empty( $bike_keys ) ) {
+			wp_send_json_error( [ 'message' => 'No eligible bikes in cart' ] );
+		}
 
-			if ( ! self::cart_has_any_transport() ) {
-				self::clear_all_direction_sessions();
+		// Step 1: Remove all existing transport items for selected bikes
+		self::remove_transport_for_bikes( $bike_keys );
+
+		// Step 2: Store session data
+		if ( $delivery_addr ) {
+			self::set_direction_address( self::DIR_DELIVERY, $delivery_addr );
+			self::set_direction_window( self::DIR_DELIVERY, $delivery_window );
+		}
+		if ( $pickup_addr ) {
+			self::set_direction_address( self::DIR_PICKUP, $pickup_addr );
+			self::set_direction_window( self::DIR_PICKUP, $pickup_window );
+		}
+		self::set_session( self::SESSION_LINK_RETURN, $same_address ? 1 : 0 );
+
+		// Step 3: Add transport items for each selected bike + enabled direction
+		$errors = [];
+
+		if ( $enable_delivery && $delivery_addr ) {
+			// Check capacity for delivery
+			$sample_item = $cart->get_cart_item( $bike_keys[0] );
+			$service_date = $sample_item ? self::derive_service_date( $sample_item, self::DIR_DELIVERY ) : '';
+
+			if ( $service_date && $delivery_window ) {
+				$capacity    = TransportAvailability::get_capacity_for_window( $delivery_window );
+				$in_orders   = TransportAvailability::count_booked_in_orders( $service_date, $delivery_window );
+				$available   = max( 0, $capacity - $in_orders );
+				if ( count( $bike_keys ) > $available ) {
+					$errors[] = sprintf( 'Delivery: only %d slots available for %s %s (requested %d).', $available, $service_date, $delivery_window, count( $bike_keys ) );
+				}
 			}
 
-			wp_send_json_success( [
-				'action'    => 'removed',
-				'cart_key'  => $cart_key,
-				'direction' => $direction,
-				'fragments' => self::get_cart_fragments(),
-			] );
-		}
-	}
-
-	/* ================================================================
-	 * AJAX: Set/update address for a direction
-	 * ================================================================ */
-
-	public static function ajax_set_address() : void {
-
-		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
-
-		$address_text = isset( $_POST['address'] ) ? sanitize_text_field( wp_unslash( $_POST['address'] ) ) : '';
-		$lat          = isset( $_POST['lat'] ) ? (float) $_POST['lat'] : 0.0;
-		$lng          = isset( $_POST['lng'] ) ? (float) $_POST['lng'] : 0.0;
-		$place_id     = isset( $_POST['place_id'] ) ? sanitize_text_field( wp_unslash( $_POST['place_id'] ) ) : '';
-		$direction    = isset( $_POST['direction'] ) ? sanitize_text_field( wp_unslash( $_POST['direction'] ) ) : 'delivery';
-		$window       = isset( $_POST['window'] ) ? sanitize_text_field( wp_unslash( $_POST['window'] ) ) : 'morning';
-		$cart_key     = isset( $_POST['cart_key'] ) ? sanitize_text_field( wp_unslash( $_POST['cart_key'] ) ) : '';
-		$link_return  = isset( $_POST['link_return'] ) ? (int) $_POST['link_return'] : 0;
-
-		if ( ! in_array( $direction, [ self::DIR_DELIVERY, self::DIR_PICKUP ], true ) ) {
-			wp_send_json_error( [ 'message' => 'Invalid direction' ] );
-		}
-
-		if ( ! in_array( $window, [ 'morning', 'afternoon' ], true ) ) {
-			$window = 'morning';
-		}
-
-		if ( $address_text === '' || ( $lat == 0.0 && $lng == 0.0 ) ) {
-			wp_send_json_error( [ 'message' => 'Invalid address' ] );
-		}
-
-		$zone = TransportZones::resolve_zone( $lat, $lng );
-
-		$address_data = [
-			'address'  => $address_text,
-			'lat'      => $lat,
-			'lng'      => $lng,
-			'place_id' => $place_id,
-			'zone_id'  => $zone ? ( $zone['id'] ?? '' ) : '',
-			'zone_name'=> $zone ? ( $zone['name'] ?? '' ) : '',
-		];
-
-		// Store in session
-		self::set_direction_address( $direction, $address_data );
-		self::set_direction_window( $direction, $window );
-
-		// Link return to delivery if requested
-		if ( $direction === self::DIR_DELIVERY && $link_return ) {
-			self::set_direction_address( self::DIR_PICKUP, $address_data );
-			self::set_direction_window( self::DIR_PICKUP, $window );
-			self::set_session( self::SESSION_LINK_RETURN, 1 );
-		} elseif ( $direction === self::DIR_DELIVERY ) {
-			// If previously linked, update return too
-			$currently_linked = (int) self::get_session( self::SESSION_LINK_RETURN );
-			if ( $currently_linked ) {
-				self::set_direction_address( self::DIR_PICKUP, $address_data );
-				self::set_direction_window( self::DIR_PICKUP, $window );
-			}
-		}
-
-		// If a cart_key was provided, add transport item for that rental
-		if ( $cart_key !== '' && WC() && WC()->cart ) {
-			$rental_item = WC()->cart->get_cart_item( $cart_key );
-			if ( $rental_item ) {
-				$service_date = self::derive_service_date( $rental_item, $direction );
-				$result = self::add_transport_item( $cart_key, $rental_item, $address_data, $direction, $window, $service_date );
-				if ( is_wp_error( $result ) ) {
-					wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+			if ( empty( $errors ) ) {
+				foreach ( $bike_keys as $key ) {
+					$rental = $cart->get_cart_item( $key );
+					if ( ! $rental ) continue;
+					$sdate = self::derive_service_date( $rental, self::DIR_DELIVERY );
+					$result = self::add_transport_item( $key, $rental, $delivery_addr, self::DIR_DELIVERY, $delivery_window, $sdate );
+					if ( is_wp_error( $result ) ) {
+						$errors[] = $result->get_error_message();
+						break;
+					}
 				}
 			}
 		}
 
-		// Recalculate prices for this direction
-		self::recalculate_direction_prices( $direction );
+		if ( $enable_pickup && $pickup_addr && empty( $errors ) ) {
+			$sample_item = $cart->get_cart_item( $bike_keys[0] );
+			$service_date = $sample_item ? self::derive_service_date( $sample_item, self::DIR_PICKUP ) : '';
 
-		// If linked, also recalculate pickup
-		if ( $direction === self::DIR_DELIVERY && ( $link_return || (int) self::get_session( self::SESSION_LINK_RETURN ) ) ) {
+			if ( $service_date && $pickup_window ) {
+				$capacity    = TransportAvailability::get_capacity_for_window( $pickup_window );
+				$in_orders   = TransportAvailability::count_booked_in_orders( $service_date, $pickup_window );
+				$available   = max( 0, $capacity - $in_orders );
+				if ( count( $bike_keys ) > $available ) {
+					$errors[] = sprintf( 'Pickup: only %d slots available for %s %s (requested %d).', $available, $service_date, $pickup_window, count( $bike_keys ) );
+				}
+			}
+
+			if ( empty( $errors ) ) {
+				foreach ( $bike_keys as $key ) {
+					$rental = $cart->get_cart_item( $key );
+					if ( ! $rental ) continue;
+					$sdate = self::derive_service_date( $rental, self::DIR_PICKUP );
+					$result = self::add_transport_item( $key, $rental, $pickup_addr, self::DIR_PICKUP, $pickup_window, $sdate );
+					if ( is_wp_error( $result ) ) {
+						$errors[] = $result->get_error_message();
+						break;
+					}
+				}
+			}
+		}
+
+		if ( ! empty( $errors ) ) {
+			// Rollback: remove any transport items we just added
+			self::remove_transport_for_bikes( $bike_keys );
+			wp_send_json_error( [ 'message' => implode( ' ', $errors ) ] );
+		}
+
+		// Step 4: Recalculate prices
+		if ( $enable_delivery ) {
+			self::recalculate_direction_prices( self::DIR_DELIVERY );
+		}
+		if ( $enable_pickup ) {
 			self::recalculate_direction_prices( self::DIR_PICKUP );
 		}
 
-		// Calculate quote for display
-		$bike_qty = max( 1, self::count_direction_bikes( $direction ) );
-		$quote = self::calculate_direction_quote( $address_data, $direction, $bike_qty );
+		if ( ! $enable_delivery && ! $enable_pickup ) {
+			self::clear_all_direction_sessions();
+		}
+
+		// Build summary for response
+		$summary = self::get_transport_service_summary();
 
 		wp_send_json_success( [
-			'action'    => 'address_set',
-			'direction' => $direction,
-			'address'   => $address_data,
-			'window'    => $window,
-			'quote'     => $quote,
-			'cart_key'  => $cart_key,
+			'action'    => 'configured',
+			'summary'   => $summary,
 			'fragments' => self::get_cart_fragments(),
 		] );
 	}
@@ -774,10 +793,101 @@ final class Woo_Transport {
 		return $item_data;
 	}
 
+	/* ================================================================
+	 * Cart-level service card
+	 * ================================================================ */
+
+	public static function render_transport_service_card() : void {
+
+		if ( ! is_cart() ) {
+			return;
+		}
+
+		$transport_product_id = TransportPricing::get_transport_product_id();
+		if ( $transport_product_id <= 0 ) {
+			return;
+		}
+
+		$eligible_count = self::count_eligible_bikes();
+		if ( $eligible_count <= 0 ) {
+			return;
+		}
+
+		$state   = self::get_transport_service_state();
+		$summary = self::get_transport_service_summary();
+
+		$state_class  = 'tcbf-service-card--' . $state;
+
+		echo '<div class="tcbf-service-card ' . esc_attr( $state_class ) . '" id="tcbf-service-card">';
+
+		echo '<div class="tcbf-service-card__header">';
+		echo '<div class="tcbf-service-card__icon">';
+		echo ( $state === 'configured' ) ? '&#10003;' : '&#128690;';
+		echo '</div>';
+		echo '<div class="tcbf-service-card__title-wrap">';
+		echo '<h3 class="tcbf-service-card__title">';
+		echo esc_html( Woo::translate( '[:en]Bike Transport[:es]Transporte de bicicletas[:]' ) );
+		echo '</h3>';
+		echo '<span class="tcbf-service-card__subtitle">';
+
+		switch ( $state ) {
+			case 'not_configured':
+				echo esc_html( Woo::translate( '[:en]Have your bikes delivered to your accommodation[:es]Recibe tus bicicletas en tu alojamiento[:]' ) );
+				break;
+			case 'partial':
+				$configured = (int) ( $summary['delivery_count'] ?? 0 );
+				$pickup_count = (int) ( $summary['pickup_count'] ?? 0 );
+				$total = max( $configured, $pickup_count );
+				echo esc_html( sprintf(
+					Woo::translate( '[:en]%d of %d bikes configured[:es]%d de %d bicicletas configuradas[:]' ),
+					$total,
+					$eligible_count
+				) );
+				break;
+			case 'configured':
+				echo esc_html( self::format_summary_line( $summary ) );
+				break;
+			case 'mismatch':
+				echo esc_html( Woo::translate( '[:en]Configuration needs updating[:es]La configuración necesita actualización[:]' ) );
+				break;
+		}
+
+		echo '</span>';
+		echo '</div>'; // title-wrap
+
+		// Price on the right if configured
+		if ( $state === 'configured' || $state === 'partial' ) {
+			$total_price = self::get_total_transport_price();
+			if ( $total_price > 0 ) {
+				echo '<span class="tcbf-service-card__price">' . wp_kses_post( wc_price( $total_price ) ) . '</span>';
+			}
+		}
+
+		echo '</div>'; // header
+
+		// Action button
+		echo '<div class="tcbf-service-card__actions">';
+		if ( $state === 'not_configured' ) {
+			echo '<button type="button" class="tcbf-service-card__btn tcbf-service-card__btn--primary" id="tcbf-configure-transport">';
+			echo esc_html( Woo::translate( '[:en]Add transport[:es]Añadir transporte[:]' ) );
+			echo '</button>';
+		} else {
+			echo '<button type="button" class="tcbf-service-card__btn tcbf-service-card__btn--secondary" id="tcbf-configure-transport">';
+			echo esc_html( Woo::translate( '[:en]Edit transport[:es]Editar transporte[:]' ) );
+			echo '</button>';
+			echo '<button type="button" class="tcbf-service-card__btn tcbf-service-card__btn--remove" id="tcbf-remove-transport">';
+			echo esc_html( Woo::translate( '[:en]Remove[:es]Eliminar[:]' ) );
+			echo '</button>';
+		}
+		echo '</div>'; // actions
+
+		echo '</div>'; // service-card
+	}
+
 	/**
-	 * Render transport toggles after cart item names
+	 * Compact per-bike status indicator (replaces old per-bike toggles)
 	 */
-	public static function render_transport_toggle( array $cart_item, string $cart_item_key ) : void {
+	public static function render_transport_indicator( array $cart_item, string $cart_item_key ) : void {
 
 		if ( ! is_cart() ) {
 			return;
@@ -787,71 +897,25 @@ final class Woo_Transport {
 			return;
 		}
 
-		$transport_product_id = TransportPricing::get_transport_product_id();
-		if ( $transport_product_id <= 0 ) {
+		$has_delivery = self::rental_has_transport( $cart_item_key, self::DIR_DELIVERY );
+		$has_pickup   = self::rental_has_transport( $cart_item_key, self::DIR_PICKUP );
+
+		if ( ! $has_delivery && ! $has_pickup ) {
 			return;
 		}
 
-		$delivery_address = self::get_direction_address( self::DIR_DELIVERY );
-		$return_address   = self::get_direction_address( self::DIR_PICKUP );
-
-		// Delivery toggle
-		self::render_single_toggle( $cart_item_key, self::DIR_DELIVERY, $delivery_address );
-
-		// Return toggle
-		self::render_single_toggle( $cart_item_key, self::DIR_PICKUP, $return_address );
-	}
-
-	private static function render_single_toggle( string $cart_item_key, string $direction, ?array $address ) : void {
-
-		$type = ( $direction === self::DIR_PICKUP ) ? 'pickup' : 'delivery';
-		$has_transport = self::rental_has_transport( $cart_item_key, $direction );
-		$checked = $has_transport ? 'checked' : '';
-
-		$label = ( $direction === self::DIR_DELIVERY )
-			? Woo::translate( '[:en]Bike delivery[:es]Entrega de bicicleta[:]' )
-			: Woo::translate( '[:en]Bike return[:es]Devolución de bicicleta[:]' );
-
-		$address_display = '';
-		$price_display = '';
-
-		if ( $has_transport && $address ) {
-			$address_display = esc_html( $address['address'] ?? '' );
-
-			foreach ( WC()->cart->get_cart() as $item ) {
-				if ( self::is_transport_item( $item )
-					&& self::is_transport_for_rental( $item, $cart_item_key )
-					&& ( $item['_tcbf_transport_type'] ?? '' ) === $type
-				) {
-					$price = (float) ( $item['_tcbf_transport_price'] ?? 0 );
-					if ( $price > 0 ) {
-						$price_display = wp_strip_all_tags( wc_price( $price ) );
-					}
-					break;
-				}
-			}
+		$parts = [];
+		if ( $has_delivery ) {
+			$parts[] = Woo::translate( '[:en]Delivery[:es]Entrega[:]' ) . ' &#10003;';
+		}
+		if ( $has_pickup ) {
+			$parts[] = Woo::translate( '[:en]Pickup[:es]Recogida[:]' ) . ' &#10003;';
 		}
 
 		printf(
-			'<div class="tcbf-transport-toggle" data-cart-key="%s" data-direction="%s">' .
-			'<label class="tcbf-transport-toggle__label">' .
-			'<input type="checkbox" class="tcbf-transport-toggle__input" data-cart-key="%s" data-direction="%s" %s />' .
-			'<span class="tcbf-transport-toggle__slider"></span>' .
-			'<span class="tcbf-transport-toggle__text">%s</span>' .
-			'</label>' .
-			'<span class="tcbf-transport-toggle__price" %s>%s</span>' .
-			'<span class="tcbf-transport-toggle__address" %s>%s</span>' .
-			'</div>',
+			'<div class="tcbf-transport-indicator" data-cart-key="%s">%s</div>',
 			esc_attr( $cart_item_key ),
-			esc_attr( $direction ),
-			esc_attr( $cart_item_key ),
-			esc_attr( $direction ),
-			$checked,
-			esc_html( $label ),
-			$price_display ? '' : 'style="display:none"',
-			$price_display ? esc_html( $price_display ) : '',
-			$address_display ? '' : 'style="display:none"',
-			$address_display ? esc_html( $address_display ) : ''
+			wp_kses_post( implode( ' <span class="tcbf-transport-indicator__sep">|</span> ', $parts ) )
 		);
 	}
 
@@ -1021,37 +1085,61 @@ final class Woo_Transport {
 			true
 		);
 
-		$delivery_address = self::get_direction_address( self::DIR_DELIVERY );
-		$return_address   = self::get_direction_address( self::DIR_PICKUP );
+		$summary = self::get_transport_service_summary();
+
+		// Build bike list for JS checklist
+		$bike_list = [];
+		if ( WC() && WC()->cart ) {
+			foreach ( WC()->cart->get_cart() as $key => $item ) {
+				if ( self::is_transport_eligible( $item ) ) {
+					$product = $item['data'] ?? null;
+					$name = $product ? $product->get_name() : Woo::translate( '[:en]Bike[:es]Bicicleta[:]' );
+					$participant = $item['_tcbf_participant_name'] ?? '';
+					$has_delivery = self::rental_has_transport( $key, self::DIR_DELIVERY );
+					$has_pickup   = self::rental_has_transport( $key, self::DIR_PICKUP );
+					$bike_list[] = [
+						'key'          => $key,
+						'name'         => $name,
+						'participant'  => $participant,
+						'has_delivery' => $has_delivery,
+						'has_pickup'   => $has_pickup,
+					];
+				}
+			}
+		}
 
 		wp_localize_script( 'tcbf-transport', 'tcbfTransport', [
 			'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
 			'nonce'           => wp_create_nonce( 'tcbf_transport_nonce' ),
 			'hasMapsKey'      => $google_maps_key !== '',
-			'deliveryAddress' => $delivery_address ?: null,
-			'deliveryWindow'  => self::get_direction_window( self::DIR_DELIVERY ),
-			'returnAddress'   => $return_address ?: null,
-			'returnWindow'    => self::get_direction_window( self::DIR_PICKUP ),
-			'linkReturn'      => (int) ( self::get_session( self::SESSION_LINK_RETURN ) ?? 0 ),
+			'summary'         => $summary,
+			'bikes'           => $bike_list,
 			'i18n'            => [
-				'deliveryTitle'    => Woo::translate( '[:en]Delivery Address[:es]Dirección de entrega[:]' ),
-				'returnTitle'      => Woo::translate( '[:en]Return Pickup Address[:es]Dirección de recogida[:]' ),
-				'addressLabel'     => Woo::translate( '[:en]Enter address[:es]Ingrese la dirección[:]' ),
+				'modalTitle'       => Woo::translate( '[:en]Configure Bike Transport[:es]Configurar transporte de bicicletas[:]' ),
+				'deliverySection'  => Woo::translate( '[:en]Delivery[:es]Entrega[:]' ),
+				'pickupSection'    => Woo::translate( '[:en]Return Pickup[:es]Recogida de devolución[:]' ),
+				'addressLabel'     => Woo::translate( '[:en]Delivery address (hotel, accommodation, or any location)[:es]Dirección de entrega (hotel, alojamiento o cualquier ubicación)[:]' ),
+				'pickupAddressLabel' => Woo::translate( '[:en]Pickup address[:es]Dirección de recogida[:]' ),
+				'sameAddressLabel' => Woo::translate( '[:en]Same address for pickup[:es]Misma dirección para recogida[:]' ),
+				'differentAddress' => Woo::translate( '[:en]Use a different pickup address[:es]Usar una dirección de recogida diferente[:]' ),
 				'windowLabel'      => Woo::translate( '[:en]Time window[:es]Horario[:]' ),
-				'windowMorning'    => Woo::translate( '[:en]Morning[:es]Mañana[:]' ),
-				'windowAfternoon'  => Woo::translate( '[:en]Afternoon[:es]Tarde[:]' ),
-				'confirmBtn'       => Woo::translate( '[:en]Confirm[:es]Confirmar[:]' ),
+				'windowMorning'    => Woo::translate( '[:en]Morning (9:00–13:00)[:es]Mañana (9:00–13:00)[:]' ),
+				'windowAfternoon'  => Woo::translate( '[:en]Afternoon (14:00–18:00)[:es]Tarde (14:00–18:00)[:]' ),
+				'bikesLabel'       => Woo::translate( '[:en]Bikes to transport[:es]Bicicletas a transportar[:]' ),
+				'selectAll'        => Woo::translate( '[:en]Select all[:es]Seleccionar todas[:]' ),
+				'confirmBtn'       => Woo::translate( '[:en]Confirm transport[:es]Confirmar transporte[:]' ),
 				'cancelBtn'        => Woo::translate( '[:en]Cancel[:es]Cancelar[:]' ),
-				'quoteLabel'       => Woo::translate( '[:en]Transport cost[:es]Coste de transporte[:]' ),
+				'quoteLabel'       => Woo::translate( '[:en]Estimated cost[:es]Coste estimado[:]' ),
 				'perBikeLabel'     => Woo::translate( '[:en]per bike[:es]por bicicleta[:]' ),
 				'zoneLabel'        => Woo::translate( '[:en]Zone[:es]Zona[:]' ),
-				'outsideZones'     => Woo::translate( '[:en]Outside service zones[:es]Fuera de zonas de servicio[:]' ),
+				'outsideZones'     => Woo::translate( '[:en]Outside service area — please contact us[:es]Fuera del área de servicio — contáctenos[:]' ),
 				'loading'          => Woo::translate( '[:en]Calculating...[:es]Calculando...[:]' ),
+				'saving'           => Woo::translate( '[:en]Saving...[:es]Guardando...[:]' ),
 				'errorGeneric'     => Woo::translate( '[:en]Something went wrong. Please try again.[:es]Algo salió mal. Inténtalo de nuevo.[:]' ),
-				'linkReturnLabel'  => Woo::translate( '[:en]Use same address for return[:es]Usar misma dirección para devolución[:]' ),
 				'availabilityLabel'=> Woo::translate( '[:en]Available slots[:es]Plazas disponibles[:]' ),
 				'geocoding'        => Woo::translate( '[:en]Looking up address...[:es]Buscando dirección...[:]' ),
 				'geocodeFailed'    => Woo::translate( '[:en]Could not find that address. Please try a different one.[:es]No se encontró esa dirección. Pruebe con otra.[:]' ),
+				'removeConfirm'    => Woo::translate( '[:en]Remove transport for all bikes?[:es]¿Eliminar transporte para todas las bicicletas?[:]' ),
 			],
 		] );
 
@@ -1061,6 +1149,183 @@ final class Woo_Transport {
 			[],
 			TC_BF_VERSION
 		);
+	}
+
+	/* ================================================================
+	 * State detection & summary helpers
+	 * ================================================================ */
+
+	public static function get_transport_service_state() : string {
+
+		$eligible = self::count_eligible_bikes();
+		if ( $eligible <= 0 ) {
+			return 'not_configured';
+		}
+
+		$delivery_count = self::count_direction_bikes( self::DIR_DELIVERY );
+		$pickup_count   = self::count_direction_bikes( self::DIR_PICKUP );
+		$total_transport = $delivery_count + $pickup_count;
+
+		if ( $total_transport === 0 ) {
+			return 'not_configured';
+		}
+
+		// Check for mismatch: transport items referencing non-existent rental keys
+		if ( self::has_orphan_transport_items() ) {
+			return 'mismatch';
+		}
+
+		// Partial: some bikes have transport but not all
+		$has_delivery = $delivery_count > 0;
+		$has_pickup   = $pickup_count > 0;
+
+		if ( $has_delivery && $delivery_count < $eligible ) {
+			return 'partial';
+		}
+		if ( $has_pickup && $pickup_count < $eligible ) {
+			return 'partial';
+		}
+
+		return 'configured';
+	}
+
+	public static function get_transport_service_summary() : array {
+
+		$delivery_addr  = self::get_direction_address( self::DIR_DELIVERY );
+		$pickup_addr    = self::get_direction_address( self::DIR_PICKUP );
+		$delivery_count = self::count_direction_bikes( self::DIR_DELIVERY );
+		$pickup_count   = self::count_direction_bikes( self::DIR_PICKUP );
+		$link_return    = (int) ( self::get_session( self::SESSION_LINK_RETURN ) ?? 0 );
+
+		$delivery_quote = null;
+		$pickup_quote   = null;
+
+		if ( $delivery_count > 0 && $delivery_addr ) {
+			$delivery_quote = self::calculate_direction_quote( $delivery_addr, self::DIR_DELIVERY, $delivery_count );
+		}
+		if ( $pickup_count > 0 && $pickup_addr ) {
+			$pickup_quote = self::calculate_direction_quote( $pickup_addr, self::DIR_PICKUP, $pickup_count );
+		}
+
+		return [
+			'delivery_count'   => $delivery_count,
+			'pickup_count'     => $pickup_count,
+			'delivery_address' => $delivery_addr,
+			'pickup_address'   => $pickup_addr,
+			'delivery_window'  => self::get_direction_window( self::DIR_DELIVERY ),
+			'pickup_window'    => self::get_direction_window( self::DIR_PICKUP ),
+			'delivery_quote'   => $delivery_quote,
+			'pickup_quote'     => $pickup_quote,
+			'link_return'      => $link_return,
+			'eligible_count'   => self::count_eligible_bikes(),
+			'state'            => self::get_transport_service_state(),
+		];
+	}
+
+	public static function count_eligible_bikes() : int {
+
+		if ( ! WC() || ! WC()->cart ) {
+			return 0;
+		}
+
+		$count = 0;
+		foreach ( WC()->cart->get_cart() as $item ) {
+			if ( self::is_transport_eligible( $item ) ) {
+				$count++;
+			}
+		}
+		return $count;
+	}
+
+	public static function get_eligible_bike_keys() : array {
+
+		if ( ! WC() || ! WC()->cart ) {
+			return [];
+		}
+
+		$keys = [];
+		foreach ( WC()->cart->get_cart() as $key => $item ) {
+			if ( self::is_transport_eligible( $item ) ) {
+				$keys[] = $key;
+			}
+		}
+		return $keys;
+	}
+
+	private static function has_orphan_transport_items() : bool {
+
+		if ( ! WC() || ! WC()->cart ) {
+			return false;
+		}
+
+		$cart_contents = WC()->cart->get_cart();
+		foreach ( $cart_contents as $item ) {
+			if ( ! self::is_transport_item( $item ) ) {
+				continue;
+			}
+			$parent_key = $item['_tcbf_transport_parent_key'] ?? '';
+			if ( $parent_key !== '' && ! isset( $cart_contents[ $parent_key ] ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static function get_total_transport_price() : float {
+
+		if ( ! WC() || ! WC()->cart ) {
+			return 0.0;
+		}
+
+		$total = 0.0;
+		foreach ( WC()->cart->get_cart() as $item ) {
+			if ( self::is_transport_item( $item ) ) {
+				$total += (float) ( $item['_tcbf_transport_price'] ?? 0 );
+			}
+		}
+		return $total;
+	}
+
+	private static function format_summary_line( array $summary ) : string {
+
+		$parts = [];
+		if ( (int) $summary['delivery_count'] > 0 ) {
+			$parts[] = sprintf(
+				Woo::translate( '[:en]Delivery × %d[:es]Entrega × %d[:]' ),
+				$summary['delivery_count']
+			);
+		}
+		if ( (int) $summary['pickup_count'] > 0 ) {
+			$parts[] = sprintf(
+				Woo::translate( '[:en]Pickup × %d[:es]Recogida × %d[:]' ),
+				$summary['pickup_count']
+			);
+		}
+		return implode( ' + ', $parts );
+	}
+
+	private static function remove_transport_for_bikes( array $bike_keys ) : void {
+
+		if ( ! WC() || ! WC()->cart ) {
+			return;
+		}
+
+		$cart = WC()->cart;
+		$to_remove = [];
+
+		foreach ( $cart->get_cart() as $key => $item ) {
+			if ( ! self::is_transport_item( $item ) ) {
+				continue;
+			}
+			$parent_key = $item['_tcbf_transport_parent_key'] ?? '';
+			if ( in_array( $parent_key, $bike_keys, true ) ) {
+				$to_remove[] = $key;
+			}
+		}
+
+		foreach ( $to_remove as $key ) {
+			$cart->remove_cart_item( $key );
+		}
 	}
 
 	/* ================================================================

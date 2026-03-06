@@ -1,104 +1,165 @@
 /**
- * TCBF Transport v2 — Dual-direction toggles + map-first modal styles
+ * TCBF Transport v3 — Service card + combined modal styles
  */
 
 /* ================================================================
- * Transport toggle (inline with rental cart item)
+ * Service card (below cart table)
  * ================================================================ */
 
-.tcbf-transport-toggle {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px;
-	margin-top: 6px;
-	padding: 8px 12px;
+.tcbf-service-card {
+	margin: 16px 0;
+	padding: 16px 20px;
 	background: #f8f9fa;
 	border: 1px solid #e2e5ea;
-	border-radius: 6px;
-	font-size: 13px;
-	line-height: 1.4;
+	border-radius: 10px;
+	transition: opacity 0.2s;
 }
 
-.tcbf-transport-toggle + .tcbf-transport-toggle {
-	margin-top: 4px;
-}
-
-.tcbf-transport-toggle--loading {
-	opacity: 0.6;
+.tcbf-service-card--loading {
+	opacity: 0.5;
 	pointer-events: none;
 }
 
-/* Toggle switch */
-.tcbf-transport-toggle__label {
+.tcbf-service-card__header {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	cursor: pointer;
-	user-select: none;
-	margin: 0;
-	font-weight: 500;
+	gap: 12px;
 }
 
-.tcbf-transport-toggle__input {
-	position: absolute;
-	opacity: 0;
-	width: 0;
-	height: 0;
-}
-
-.tcbf-transport-toggle__slider {
-	position: relative;
-	display: inline-block;
-	width: 36px;
-	height: 20px;
-	background: #ccc;
-	border-radius: 20px;
-	transition: background-color 0.2s ease;
+.tcbf-service-card__icon {
 	flex-shrink: 0;
+	width: 40px;
+	height: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 10px;
+	font-size: 20px;
+	background: #e8eaed;
+	color: #555;
 }
 
-.tcbf-transport-toggle__slider::after {
-	content: '';
-	position: absolute;
-	top: 2px;
-	left: 2px;
-	width: 16px;
-	height: 16px;
-	background: #fff;
-	border-radius: 50%;
-	transition: transform 0.2s ease;
-	box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+.tcbf-service-card--configured .tcbf-service-card__icon {
+	background: #dcfce7;
+	color: #166534;
 }
 
-.tcbf-transport-toggle__input:checked + .tcbf-transport-toggle__slider {
-	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+.tcbf-service-card__title-wrap {
+	flex: 1;
+	min-width: 0;
 }
 
-.tcbf-transport-toggle__input:checked + .tcbf-transport-toggle__slider::after {
-	transform: translateX(16px);
+.tcbf-service-card__title {
+	margin: 0 !important;
+	font-size: 15px !important;
+	font-weight: 600 !important;
+	color: #1a1a1a;
+	line-height: 1.3;
 }
 
-.tcbf-transport-toggle__text {
-	color: #333;
+.tcbf-service-card__subtitle {
+	display: block;
 	font-size: 13px;
+	color: #666;
+	margin-top: 2px;
 }
 
-.tcbf-transport-toggle__price {
+.tcbf-service-card__price {
+	flex-shrink: 0;
+	font-size: 15px;
 	font-weight: 600;
 	color: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
-	margin-left: auto;
 }
 
-.tcbf-transport-toggle__address {
-	flex-basis: 100%;
-	font-size: 12px;
-	color: #666;
-	padding-left: 44px;
+.tcbf-service-card__actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.tcbf-service-card__btn {
+	padding: 8px 18px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	border: none;
+	transition: background-color 0.15s, color 0.15s;
+}
+
+.tcbf-service-card__btn--primary {
+	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	color: #fff;
+}
+
+.tcbf-service-card__btn--primary:hover {
+	filter: brightness(1.1);
+}
+
+.tcbf-service-card__btn--secondary {
+	background: #e8eaed;
+	color: #333;
+}
+
+.tcbf-service-card__btn--secondary:hover {
+	background: #d1d5db;
+}
+
+.tcbf-service-card__btn--remove {
+	background: transparent;
+	color: #dc2626;
+	padding: 8px 12px;
+}
+
+.tcbf-service-card__btn--remove:hover {
+	background: #fef2f2;
+}
+
+/* State variants */
+.tcbf-service-card--not_configured {
+	border-style: dashed;
+	border-color: #d1d5db;
+}
+
+.tcbf-service-card--partial {
+	border-color: #fbbf24;
+	background: #fffbeb;
+}
+
+.tcbf-service-card--configured {
+	border-color: #86efac;
+	background: #f0fdf4;
+}
+
+.tcbf-service-card--mismatch {
+	border-color: #fca5a5;
+	background: #fef2f2;
 }
 
 /* ================================================================
- * Address picker modal — larger, map-first
+ * Per-bike compact indicator
+ * ================================================================ */
+
+.tcbf-transport-indicator {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 4px;
+	padding: 3px 10px;
+	background: #f0fdf4;
+	border: 1px solid #bbf7d0;
+	border-radius: 4px;
+	font-size: 11px;
+	color: #166534;
+	font-weight: 500;
+}
+
+.tcbf-transport-indicator__sep {
+	color: #86efac;
+}
+
+/* ================================================================
+ * Modal overlay + container
  * ================================================================ */
 
 body.tcbf-modal-open {
@@ -169,7 +230,7 @@ body.tcbf-modal-open {
 	color: #333;
 }
 
-/* Body: map + controls side by side on desktop */
+/* Body: map + controls side by side */
 .tcbf-transport-modal__body {
 	display: flex;
 	gap: 24px;
@@ -177,7 +238,7 @@ body.tcbf-modal-open {
 }
 
 .tcbf-transport-modal__map-wrap {
-	flex: 1 1 55%;
+	flex: 1 1 50%;
 	min-width: 0;
 }
 
@@ -191,17 +252,25 @@ body.tcbf-modal-open {
 	background: #f0f0f0;
 }
 
+.tcbf-transport-modal__map--pickup {
+	margin-top: 12px;
+	height: 220px;
+}
+
 .tcbf-transport-modal__controls {
-	flex: 1 1 45%;
+	flex: 1 1 50%;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: 14px;
+	overflow-y: auto;
+	max-height: 520px;
 }
 
+/* Form elements */
 .tcbf-transport-modal__label {
 	display: block;
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 500;
 	color: #555;
 	margin-bottom: 4px;
@@ -209,10 +278,10 @@ body.tcbf-modal-open {
 
 .tcbf-transport-modal__input {
 	width: 100%;
-	padding: 10px 14px;
+	padding: 9px 12px;
 	border: 1px solid #d1d5db;
 	border-radius: 8px;
-	font-size: 15px;
+	font-size: 14px;
 	outline: none;
 	transition: border-color 0.15s ease;
 	box-sizing: border-box;
@@ -223,11 +292,64 @@ body.tcbf-modal-open {
 	box-shadow: 0 0 0 3px rgba(67, 76, 0, 0.1);
 }
 
-/* Window selector */
-.tcbf-transport-modal__window-row {
+/* Section toggle (delivery / pickup) */
+.tcbf-modal__section {
+	border: 1px solid #e2e5ea;
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.tcbf-modal__section-header {
+	padding: 10px 14px;
+	background: #f8f9fa;
+}
+
+.tcbf-modal__section-toggle {
 	display: flex;
-	flex-direction: column;
-	gap: 4px;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	color: #333;
+	cursor: pointer;
+	margin: 0;
+}
+
+.tcbf-modal__section-toggle input[type="checkbox"] {
+	margin: 0;
+}
+
+.tcbf-modal__section-body {
+	padding: 12px 14px;
+}
+
+/* Same address toggle */
+.tcbf-modal__same-address {
+	padding: 2px 0;
+}
+
+.tcbf-modal__same-address-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: #555;
+	cursor: pointer;
+	margin: 0;
+}
+
+.tcbf-modal__same-address-label input[type="checkbox"] {
+	margin: 0;
+}
+
+/* Pickup window (when same address) */
+.tcbf-modal__pickup-window-only {
+	padding: 4px 0;
+}
+
+/* Window selector */
+.tcbf-modal__window-row {
+	margin-top: 8px;
 }
 
 .tcbf-transport-modal__window-buttons {
@@ -240,8 +362,8 @@ body.tcbf-modal-open {
 
 .tcbf-transport-modal__window-btn {
 	flex: 1;
-	padding: 8px 16px;
-	font-size: 14px;
+	padding: 7px 12px;
+	font-size: 13px;
 	font-weight: 500;
 	background: #fff;
 	color: #555;
@@ -263,23 +385,9 @@ body.tcbf-modal-open {
 	background: #f3f4f6;
 }
 
-/* Link return checkbox */
-.tcbf-transport-modal__link-return {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	font-size: 13px;
-	color: #555;
-	cursor: pointer;
-}
-
-.tcbf-transport-modal__link-return input[type="checkbox"] {
-	margin: 0;
-}
-
 /* Quote preview */
 .tcbf-transport-modal__quote {
-	padding: 12px 16px;
+	padding: 10px 14px;
 	background: #f0fdf4;
 	border: 1px solid #bbf7d0;
 	border-radius: 8px;
@@ -289,7 +397,7 @@ body.tcbf-modal-open {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	padding: 4px 0;
+	padding: 3px 0;
 }
 
 .tcbf-transport-modal__quote-label {
@@ -303,6 +411,36 @@ body.tcbf-modal-open {
 	color: #166534;
 }
 
+/* Bike checklist */
+.tcbf-modal__bikes {
+	border-top: 1px solid #f0f0f0;
+	padding-top: 10px;
+}
+
+.tcbf-modal__bike-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.tcbf-modal__bike-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	background: #f8f9fa;
+	border-radius: 6px;
+	font-size: 13px;
+	color: #333;
+	cursor: pointer;
+	margin: 0;
+}
+
+.tcbf-modal__bike-item input[type="checkbox"] {
+	margin: 0;
+}
+
+/* Footer */
 .tcbf-transport-modal__footer {
 	display: flex;
 	justify-content: flex-end;
@@ -374,7 +512,15 @@ body.tcbf-modal-open {
 	}
 
 	.tcbf-transport-modal__map {
-		height: 280px;
+		height: 260px;
+	}
+
+	.tcbf-transport-modal__map--pickup {
+		height: 180px;
+	}
+
+	.tcbf-transport-modal__controls {
+		max-height: none;
 	}
 
 	.tcbf-transport-modal__header {
@@ -385,22 +531,32 @@ body.tcbf-modal-open {
 		padding: 12px 16px 16px;
 	}
 
-	.tcbf-transport-toggle {
-		padding: 6px 10px;
+	.tcbf-service-card {
+		padding: 12px 14px;
 	}
 
-	.tcbf-transport-toggle__address {
-		padding-left: 0;
+	.tcbf-service-card__header {
+		flex-wrap: wrap;
+	}
+
+	.tcbf-service-card__price {
+		flex-basis: 100%;
+		margin-top: 4px;
+		padding-left: 52px;
 	}
 }
 
 @media (max-width: 480px) {
 	.tcbf-transport-modal__map {
-		height: 220px;
+		height: 200px;
 	}
 
 	.tcbf-transport-modal {
 		margin: 4px;
 		max-height: 98vh;
+	}
+
+	.tcbf-service-card__actions {
+		flex-direction: column;
 	}
 }
