@@ -437,7 +437,9 @@ body.tcbf-modal-open {
 }
 
 .tcbf-modal__same-address--split {
-	padding: 0 0 12px;
+	padding: 0 0 8px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid #f0f0f0;
 }
 
 .tcbf-modal__same-address-label {
@@ -548,6 +550,12 @@ body.tcbf-modal-open {
 	font-size: 14px;
 	font-weight: 600;
 	color: #166534;
+}
+
+.tcbf-transport-modal__quote-sep {
+	height: 1px;
+	background: #bbf7d0;
+	margin: 4px 0;
 }
 
 /* ================================================================

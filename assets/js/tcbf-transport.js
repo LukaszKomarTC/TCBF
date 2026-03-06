@@ -269,14 +269,6 @@
 			'<span>' + escHtml(i18n.differentPickupSeparator || i18n.pickupSection) + '</span>' +
 			'</div>' +
 
-			// Same address toggle in split mode (above pickup section)
-			'<div class="tcbf-modal__same-address tcbf-modal__same-address--split">' +
-			'<label class="tcbf-modal__same-address-label">' +
-			'<input type="checkbox" class="tcbf-same-address-mirror" />' +
-			'<span>' + escHtml(i18n.sameAddressLabel) + '</span>' +
-			'</label>' +
-			'</div>' +
-
 			// Pickup section
 			'<div class="tcbf-modal__direction-section">' +
 			'<h4 class="tcbf-modal__direction-title">' + escHtml(i18n.pickupSectionFull || i18n.pickupSection) + '</h4>' +
@@ -285,6 +277,15 @@
 			'<div class="tcbf-transport-modal__map" id="tcbf-split-pickup-map"></div>' +
 			'</div>' +
 			'<div class="tcbf-modal__direction-controls">' +
+
+			// Same address toggle (inside pickup controls, above address input)
+			'<div class="tcbf-modal__same-address tcbf-modal__same-address--split">' +
+			'<label class="tcbf-modal__same-address-label">' +
+			'<input type="checkbox" class="tcbf-same-address-mirror" />' +
+			'<span>' + escHtml(i18n.sameAddressLabel) + '</span>' +
+			'</label>' +
+			'</div>' +
+
 			'<label class="tcbf-transport-modal__label" for="tcbf-split-pickup-address">' + escHtml(i18n.pickupAddressLabel) + '</label>' +
 			'<input type="text" id="tcbf-split-pickup-address" class="tcbf-transport-modal__input" placeholder="Hotel, address..." autocomplete="off" />' +
 			'<div class="tcbf-modal__window-row">' +
@@ -307,10 +308,25 @@
 
 			// === Quote preview (global, at bottom) ===
 			'<div class="tcbf-transport-modal__quote" id="tcbf-quote" style="display:none">' +
+
+			// Per-direction rows (visible when mode=both and 2 quotes returned)
+			'<div class="tcbf-transport-modal__quote-row" id="tcbf-quote-delivery-row" style="display:none">' +
+			'<span class="tcbf-transport-modal__quote-label" id="tcbf-quote-delivery-label"></span>' +
+			'<span class="tcbf-transport-modal__quote-value" id="tcbf-quote-delivery-price"></span>' +
+			'</div>' +
+			'<div class="tcbf-transport-modal__quote-row" id="tcbf-quote-pickup-row" style="display:none">' +
+			'<span class="tcbf-transport-modal__quote-label" id="tcbf-quote-pickup-label"></span>' +
+			'<span class="tcbf-transport-modal__quote-value" id="tcbf-quote-pickup-price"></span>' +
+			'</div>' +
+			'<div class="tcbf-transport-modal__quote-sep" id="tcbf-quote-sep" style="display:none"></div>' +
+
+			// Total / single-direction row
 			'<div class="tcbf-transport-modal__quote-row">' +
-			'<span class="tcbf-transport-modal__quote-label">' + escHtml(i18n.quoteLabel) + ':</span>' +
+			'<span class="tcbf-transport-modal__quote-label" id="tcbf-quote-total-label">' + escHtml(i18n.quoteLabel) + ':</span>' +
 			'<span class="tcbf-transport-modal__quote-value" id="tcbf-quote-price"></span>' +
 			'</div>' +
+
+			// Simple zone row (visible for single-direction only)
 			'<div class="tcbf-transport-modal__quote-row" id="tcbf-quote-zone-row">' +
 			'<span class="tcbf-transport-modal__quote-label">' + escHtml(i18n.zoneLabel) + ':</span>' +
 			'<span class="tcbf-transport-modal__quote-value" id="tcbf-quote-zone"></span>' +
@@ -746,6 +762,16 @@
 			var $quote = $('#tcbf-quote');
 			var $price = $('#tcbf-quote-price');
 			var $zone = $('#tcbf-quote-zone');
+			var $zoneRow = $('#tcbf-quote-zone-row');
+			var $totalLabel = $('#tcbf-quote-total-label');
+			var $delRow = $('#tcbf-quote-delivery-row');
+			var $pickRow = $('#tcbf-quote-pickup-row');
+			var $sep = $('#tcbf-quote-sep');
+
+			// Reset breakdown rows
+			$delRow.hide(); $pickRow.hide(); $sep.hide();
+			$zoneRow.show();
+			$totalLabel.text(escHtml(i18n.quoteLabel) + ':');
 
 			$quote.show();
 			$price.text(i18n.loading);
@@ -754,9 +780,11 @@
 			var mode = getSelectedMode();
 			var sameAddr = isSameAddressMode();
 			var requests = [];
+			var directions = []; // track which direction each request maps to
 
 			if (hasDelivery && deliveryPlace && deliveryPlace.lat) {
 				var dWin = getWindowForDirection('delivery');
+				directions.push('delivery');
 				requests.push($.ajax({
 					url: config.ajaxUrl, method: 'POST', dataType: 'json',
 					data: {
@@ -769,11 +797,10 @@
 			}
 
 			if (hasPickup) {
-				// In unified mode (pickup-only or both+same), address is in deliveryPlace.
-				// In split mode (both+different), pickup address is in pickupPlace.
 				var pPlace = (mode === 'both' && !sameAddr) ? pickupPlace : deliveryPlace;
 				if (pPlace && pPlace.lat) {
 					var pWin = getWindowForDirection('pickup');
+					directions.push('pickup');
 					requests.push($.ajax({
 						url: config.ajaxUrl, method: 'POST', dataType: 'json',
 						data: {
@@ -791,18 +818,21 @@
 			$.when.apply($, requests).then(function () {
 				var responses = requests.length === 1 ? [arguments] : Array.prototype.slice.call(arguments);
 				var totalPrice = 0;
-				var zoneNames = [];
-
 				var errorMsg = null;
+				var perDirection = {}; // { delivery: {price, zone}, pickup: {price, zone} }
+
 				for (var i = 0; i < responses.length; i++) {
 					var data = responses[i][0];
+					var dir = directions[i];
 
 					if (data && data.success && data.data) {
 						var q = data.data.quote || {};
-						totalPrice += parseFloat(q.price_total || 0);
-						if (data.data.zone_name && zoneNames.indexOf(data.data.zone_name) === -1) {
-							zoneNames.push(data.data.zone_name);
-						}
+						var price = parseFloat(q.price_total || 0);
+						totalPrice += price;
+						perDirection[dir] = {
+							price: price,
+							zone: data.data.zone_name || ''
+						};
 					} else if (data && !data.success && data.data && data.data.message) {
 						errorMsg = data.data.message;
 					}
@@ -811,16 +841,47 @@
 				if (errorMsg) {
 					$price.text(errorMsg);
 					$zone.text('');
-				} else if (totalPrice > 0) {
+					return;
+				}
+
+				var hasBothDirections = perDirection.delivery && perDirection.pickup;
+
+				if (hasBothDirections) {
+					// Show per-direction breakdown
+					var dLabel = escHtml(i18n.deliverySection);
+					if (perDirection.delivery.zone) dLabel += ' \u00B7 ' + escHtml(perDirection.delivery.zone);
+					$('#tcbf-quote-delivery-label').text(dLabel + ':');
+					var dText = formatPrice(perDirection.delivery.price);
+					if (bikeCount > 1) dText += ' (' + formatPrice(perDirection.delivery.price / bikeCount) + ' ' + i18n.perBikeLabel + ')';
+					$('#tcbf-quote-delivery-price').text(dText);
+
+					var pLabel = escHtml(i18n.pickupSection);
+					if (perDirection.pickup.zone) pLabel += ' \u00B7 ' + escHtml(perDirection.pickup.zone);
+					$('#tcbf-quote-pickup-label').text(pLabel + ':');
+					var pText = formatPrice(perDirection.pickup.price);
+					if (bikeCount > 1) pText += ' (' + formatPrice(perDirection.pickup.price / bikeCount) + ' ' + i18n.perBikeLabel + ')';
+					$('#tcbf-quote-pickup-price').text(pText);
+
+					$delRow.show(); $pickRow.show(); $sep.show();
+					$zoneRow.hide();
+					$totalLabel.text(escHtml(i18n.totalLabel || 'Total') + ':');
+				}
+
+				// Total row (always)
+				if (totalPrice > 0) {
 					var text = formatPrice(totalPrice);
 					if (bikeCount > 1) {
 						text += ' (' + formatPrice(totalPrice / bikeCount) + ' ' + i18n.perBikeLabel + ')';
 					}
 					$price.text(text);
-					$zone.text(zoneNames.length > 0 ? zoneNames.join(', ') : (i18n.outsideZones || ''));
 				} else {
 					$price.text('--');
-					$zone.text(zoneNames.length > 0 ? zoneNames.join(', ') : (i18n.outsideZones || ''));
+				}
+
+				// Zone row (single-direction only)
+				if (!hasBothDirections) {
+					var singleDir = perDirection.delivery || perDirection.pickup;
+					$zone.text(singleDir && singleDir.zone ? singleDir.zone : (i18n.outsideZones || ''));
 				}
 			}).fail(function (jqXHR) {
 				if (typeof console !== 'undefined') console.error('[TCBF Transport] Quote AJAX failed', jqXHR && jqXHR.status, jqXHR && jqXHR.responseText);
