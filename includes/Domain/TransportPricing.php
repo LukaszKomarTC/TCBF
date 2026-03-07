@@ -127,21 +127,24 @@ final class TransportPricing {
 	 *   - bike_qty: Number of bikes for this direction (int, default 1)
 	 *   - rental_start_ts: Rental start timestamp
 	 *   - rental_end_ts: Rental end timestamp
+	 *   - both_directions: bool — set to true when BOTH delivery and pickup
+	 *     are active. Enables bundle discount on each direction's quote.
 	 * @return array Quote result with price_total, per_bike_price, breakdown, zone info
 	 */
 	public static function calculate_quote( array $params ) : array {
 
 		$config = self::get_config();
 
-		$type          = sanitize_text_field( $params['type'] ?? 'pickup' );
-		$pickup_lat    = (float) ( $params['pickup_lat'] ?? 0 );
-		$pickup_lng    = (float) ( $params['pickup_lng'] ?? 0 );
-		$dropoff_lat   = (float) ( $params['dropoff_lat'] ?? 0 );
-		$dropoff_lng   = (float) ( $params['dropoff_lng'] ?? 0 );
-		$pickup_time   = sanitize_text_field( $params['pickup_time_window'] ?? '' );
-		$dropoff_time  = sanitize_text_field( $params['dropoff_time_window'] ?? '' );
-		$bike_boxes    = max( 0, (int) ( $params['bike_boxes'] ?? 0 ) );
-		$bike_qty      = max( 1, (int) ( $params['bike_qty'] ?? 1 ) );
+		$type             = sanitize_text_field( $params['type'] ?? 'pickup' );
+		$pickup_lat       = (float) ( $params['pickup_lat'] ?? 0 );
+		$pickup_lng       = (float) ( $params['pickup_lng'] ?? 0 );
+		$dropoff_lat      = (float) ( $params['dropoff_lat'] ?? 0 );
+		$dropoff_lng      = (float) ( $params['dropoff_lng'] ?? 0 );
+		$pickup_time      = sanitize_text_field( $params['pickup_time_window'] ?? '' );
+		$dropoff_time     = sanitize_text_field( $params['dropoff_time_window'] ?? '' );
+		$bike_boxes       = max( 0, (int) ( $params['bike_boxes'] ?? 0 ) );
+		$bike_qty         = max( 1, (int) ( $params['bike_qty'] ?? 1 ) );
+		$both_directions  = ! empty( $params['both_directions'] );
 
 		// Validate type
 		if ( ! in_array( $type, [ 'pickup', 'delivery', 'both' ], true ) ) {
@@ -162,11 +165,41 @@ final class TransportPricing {
 		}
 
 		// --- Base price ---
-		$base_price = self::resolve_base_price( $type, $zone_pickup, $zone_dropoff, $config );
+		$bundle_discount_applied = 0.0;
+
+		if ( $both_directions && in_array( $type, [ 'pickup', 'delivery' ], true ) ) {
+			// Both directions are active: check if we should use a bundle price
+			// instead of the standalone per-direction price.
+			$active_zone = ( $type === 'delivery' ) ? $zone_dropoff : $zone_pickup;
+
+			if ( $active_zone !== null && self::has_zone_price( $active_zone, 'both_price' ) ) {
+				// Zone has an explicit both_price — split it evenly across the two directions
+				$base_price = Money::money_round( (float) $active_zone['both_price'] / 2 );
+			} else {
+				// Use the normal per-direction price, then apply bundle discount (split evenly)
+				$base_price = self::resolve_base_price( $type, $zone_pickup, $zone_dropoff, $config );
+				$bundle_discount = (float) ( $config['bundle_discount'] ?? 0 );
+				if ( $bundle_discount > 0 ) {
+					$bundle_discount_applied = Money::money_round( $bundle_discount / 2 );
+				}
+			}
+		} else {
+			$base_price = self::resolve_base_price( $type, $zone_pickup, $zone_dropoff, $config );
+		}
+
 		$breakdown[] = [
 			'label' => self::base_price_label( $type ),
 			'amount' => $base_price,
 		];
+
+		if ( $bundle_discount_applied > 0 ) {
+			$base_price -= $bundle_discount_applied;
+			$base_price  = max( 0, $base_price );
+			$breakdown[] = [
+				'label'  => 'Bundle discount (both directions)',
+				'amount' => -$bundle_discount_applied,
+			];
+		}
 
 		// --- Distance fallback (outside known zones) ---
 		$distance_charge = 0.0;

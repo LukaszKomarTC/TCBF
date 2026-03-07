@@ -782,6 +782,8 @@
 			var requests = [];
 			var directions = []; // track which direction each request maps to
 
+			var bothActive = (hasDelivery && hasPickup) ? 1 : 0;
+
 			if (hasDelivery && deliveryPlace && deliveryPlace.lat) {
 				var dWin = getWindowForDirection('delivery');
 				directions.push('delivery');
@@ -791,6 +793,7 @@
 						action: 'tcbf_transport_quote',
 						lat: deliveryPlace.lat, lng: deliveryPlace.lng,
 						direction: 'delivery', window: dWin,
+						both_active: bothActive,
 						nonce: config.nonce
 					}
 				}));
@@ -807,6 +810,7 @@
 							action: 'tcbf_transport_quote',
 							lat: pPlace.lat, lng: pPlace.lng,
 							direction: 'pickup', window: pWin,
+							both_active: bothActive,
 							nonce: config.nonce
 						}
 					}));

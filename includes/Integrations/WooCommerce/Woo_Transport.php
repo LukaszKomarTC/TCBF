@@ -354,14 +354,19 @@ final class Woo_Transport {
 		// Count how many bikes are toggled for this direction (include the one being added)
 		$bike_qty = max( 1, self::count_direction_bikes( $direction ) );
 
+		// Detect if both directions are active for bundle pricing in the quote preview.
+		// The frontend sends a 'both_active' flag when both toggles are on.
+		$both_directions = ! empty( $_POST['both_active'] );
+
 		$type = ( $direction === self::DIR_PICKUP ) ? 'pickup' : 'delivery';
 		$quote = TransportPricing::calculate_quote( [
-			'type'        => $type,
-			'dropoff_lat' => ( $type === 'delivery' ) ? $lat : 0,
-			'dropoff_lng' => ( $type === 'delivery' ) ? $lng : 0,
-			'pickup_lat'  => ( $type === 'pickup' ) ? $lat : 0,
-			'pickup_lng'  => ( $type === 'pickup' ) ? $lng : 0,
-			'bike_qty'    => $bike_qty,
+			'type'            => $type,
+			'dropoff_lat'     => ( $type === 'delivery' ) ? $lat : 0,
+			'dropoff_lng'     => ( $type === 'delivery' ) ? $lng : 0,
+			'pickup_lat'      => ( $type === 'pickup' ) ? $lat : 0,
+			'pickup_lng'      => ( $type === 'pickup' ) ? $lng : 0,
+			'bike_qty'        => $bike_qty,
+			'both_directions' => $both_directions,
 		] );
 
 		// Availability info
@@ -714,7 +719,12 @@ final class Woo_Transport {
 			return;
 		}
 
-		$quote = self::calculate_direction_quote( $address, $direction, $bike_qty );
+		// Check if both directions are active for bundle discount
+		$other_direction = ( $direction === self::DIR_DELIVERY ) ? self::DIR_PICKUP : self::DIR_DELIVERY;
+		$both_directions = ( self::get_direction_address( $other_direction ) !== null )
+			&& ( self::count_direction_bikes( $other_direction ) > 0 );
+
+		$quote = self::calculate_direction_quote( $address, $direction, $bike_qty, $both_directions );
 		$per_bike = $quote['per_bike_price'];
 
 		foreach ( $cart->get_cart() as $key => $item ) {
@@ -766,7 +776,7 @@ final class Woo_Transport {
 		}
 	}
 
-	private static function calculate_direction_quote( array $address_data, string $direction, int $bike_qty = 0 ) : array {
+	private static function calculate_direction_quote( array $address_data, string $direction, int $bike_qty = 0, bool $both_directions = false ) : array {
 
 		if ( $bike_qty <= 0 ) {
 			$bike_qty = max( 1, self::count_direction_bikes( $direction ) );
@@ -775,12 +785,13 @@ final class Woo_Transport {
 		$type = ( $direction === self::DIR_PICKUP ) ? 'pickup' : 'delivery';
 
 		return TransportPricing::calculate_quote( [
-			'type'        => $type,
-			'dropoff_lat' => ( $type === 'delivery' ) ? (float) ( $address_data['lat'] ?? 0 ) : 0,
-			'dropoff_lng' => ( $type === 'delivery' ) ? (float) ( $address_data['lng'] ?? 0 ) : 0,
-			'pickup_lat'  => ( $type === 'pickup' ) ? (float) ( $address_data['lat'] ?? 0 ) : 0,
-			'pickup_lng'  => ( $type === 'pickup' ) ? (float) ( $address_data['lng'] ?? 0 ) : 0,
-			'bike_qty'    => $bike_qty,
+			'type'            => $type,
+			'dropoff_lat'     => ( $type === 'delivery' ) ? (float) ( $address_data['lat'] ?? 0 ) : 0,
+			'dropoff_lng'     => ( $type === 'delivery' ) ? (float) ( $address_data['lng'] ?? 0 ) : 0,
+			'pickup_lat'      => ( $type === 'pickup' ) ? (float) ( $address_data['lat'] ?? 0 ) : 0,
+			'pickup_lng'      => ( $type === 'pickup' ) ? (float) ( $address_data['lng'] ?? 0 ) : 0,
+			'bike_qty'        => $bike_qty,
+			'both_directions' => $both_directions,
 		] );
 	}
 
