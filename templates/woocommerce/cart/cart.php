@@ -16,6 +16,7 @@
  *
  * TCBF Customization:
  * - Groups items by tc_group_id (pack grouping)
+ * - Adds per-item EB summary after each rental/participation row
  * - Adds pack totals footer for groups with EB discount
  * - Uses event images for tour items
  * - Maintains all WooCommerce hooks
@@ -31,6 +32,7 @@ $tcbf_cart_template_loaded = true;
  * Sort group items so each rental is immediately followed by its transport children.
  * Order: participation → rental 1 → transport(s) for rental 1 → rental 2 → transport(s) for rental 2 → …
  */
+if ( ! function_exists( 'tcbf_sort_group_items' ) ) :
 function tcbf_sort_group_items( array $group_items ) : array {
 	$participation = [];
 	$rentals       = [];
@@ -83,6 +85,41 @@ function tcbf_sort_group_items( array $group_items ) : array {
 
 	return $sorted;
 }
+endif;
+
+/**
+ * Render an inline EB summary row for a single cart item.
+ */
+if ( ! function_exists( 'tcbf_render_inline_eb_row' ) ) :
+function tcbf_render_inline_eb_row( array $cart_item, $group_id ) : void {
+	$item_eb_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
+	if ( ! $item_eb_totals['has_eb'] ) {
+		return;
+	}
+	?>
+	<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--inline" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
+		<td colspan="6" class="tcbf-pack-footer-cell">
+			<div class="tcbf-pack-footer tcbf-pack-footer--cart tcbf-pack-footer--inline">
+				<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
+					<span class="tcbf-pack-footer-label"><?php echo esc_html( $item_eb_totals['base_label'] ); ?></span>
+					<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $item_eb_totals['base_price'] ) ); ?></span>
+				</div>
+				<?php if ( $item_eb_totals['eb_discount'] > 0 ) : ?>
+				<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">
+					<span class="tcbf-pack-footer-label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
+					<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $item_eb_totals['eb_discount'] ) ); ?></span>
+				</div>
+				<?php endif; ?>
+				<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
+					<span class="tcbf-pack-footer-label"><?php echo esc_html( $item_eb_totals['total_label'] ); ?></span>
+					<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $item_eb_totals['pack_total'] ) ); ?></span>
+				</div>
+			</div>
+		</td>
+	</tr>
+	<?php
+}
+endif;
 
 // Cart/checkout pack UI CSS is injected via Plugin.php (wp_head). Order pages use Woo_OrderMeta styles.
 
@@ -158,6 +195,10 @@ do_action( 'woocommerce_before_cart' ); ?>
 						// Determine if parent or child
 						$is_parent = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::is_cart_item_parent( $cart_item );
 						$row_class = $is_parent ? 'tcbf-cart-row--parent' : 'tcbf-cart-row--child';
+
+						// Determine scope for inline EB rendering
+						$item_scope = $cart_item['tcbf_scope']
+							?? ( isset( $cart_item['booking'] ) ? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) : '' );
 
 						// Get event image for parent items
 						$event_id = isset( $cart_item['_event_id'] ) ? (int) $cart_item['_event_id'] : 0;
@@ -264,15 +305,20 @@ do_action( 'woocommerce_before_cart' ); ?>
 							</td>
 						</tr>
 						<?php
+
+						// Inline EB summary: render after each rental/participation item, before transport children
+						if ( in_array( $item_scope, [ 'rental', 'participation' ], true ) ) {
+							tcbf_render_inline_eb_row( $cart_item, $group_id );
+						}
 					}
 				endforeach;
 
-				// Pack footer row (only if has EB)
-				if ( $pack_totals['has_eb'] ) :
+				// Group-level pack footer (overall total for true packs with participation + rental)
+				if ( $pack_totals['has_eb'] && $pack_totals['is_pack'] ) :
 					?>
-					<tr class="tcbf-pack-footer-row" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
+					<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--group" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
 						<td colspan="6" class="tcbf-pack-footer-cell">
-							<div class="tcbf-pack-footer tcbf-pack-footer--cart">
+							<div class="tcbf-pack-footer tcbf-pack-footer--cart tcbf-pack-footer--group">
 								<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
 									<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['base_label'] ); ?></span>
 									<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['base_price'] ) ); ?></span>
@@ -284,7 +330,7 @@ do_action( 'woocommerce_before_cart' ); ?>
 								</div>
 								<?php endif; ?>
 								<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
-									<span class="tcbf-pack-footer-label"><?php esc_html_e( 'Pack total', 'tc-booking-flow-next' ); ?></span>
+									<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['total_label'] ); ?></span>
 									<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['pack_total'] ) ); ?></span>
 								</div>
 							</div>
@@ -465,5 +511,17 @@ do_action( 'woocommerce_before_cart' ); ?>
 	width: 80px;
 	height: auto;
 	border-radius: 4px;
+}
+/* Inline EB summary rows (per-item) */
+.tcbf-pack-footer-row--inline .tcbf-pack-footer--inline {
+	border-left: 3px solid color-mix(in srgb, var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00))) 30%, transparent);
+	padding-left: 12px;
+	font-size: 0.9em;
+}
+/* Group-level pack footer (overall total) */
+.tcbf-pack-footer-row--group .tcbf-pack-footer--group {
+	border-top: 1px solid #ddd;
+	padding-top: 8px;
+	margin-top: 4px;
 }
 </style>
