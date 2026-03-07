@@ -28,7 +28,10 @@ final class TransportZones {
 			'lng'               => 2.0833,
 			'radius_km'         => 5,
 			'remote'            => false,
-			'difficulty_factor' => 1.0,
+			'delivery_price'    => null,
+			'pickup_price'      => null,
+			'both_price'        => null,
+			'difficulty_factor' => 1.0, // deprecated — kept for backward compat
 		],
 		[
 			'id'                => 'girona_airport',
@@ -37,6 +40,9 @@ final class TransportZones {
 			'lng'               => 2.7605,
 			'radius_km'         => 5,
 			'remote'            => false,
+			'delivery_price'    => null,
+			'pickup_price'      => null,
+			'both_price'        => null,
 			'difficulty_factor' => 1.0,
 		],
 		[
@@ -46,6 +52,9 @@ final class TransportZones {
 			'lng'               => 2.8214,
 			'radius_km'         => 8,
 			'remote'            => false,
+			'delivery_price'    => null,
+			'pickup_price'      => null,
+			'both_price'        => null,
 			'difficulty_factor' => 1.0,
 		],
 		[
@@ -55,6 +64,9 @@ final class TransportZones {
 			'lng'               => 2.1686,
 			'radius_km'         => 12,
 			'remote'            => false,
+			'delivery_price'    => null,
+			'pickup_price'      => null,
+			'both_price'        => null,
 			'difficulty_factor' => 1.0,
 		],
 	];

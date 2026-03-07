@@ -62,6 +62,9 @@ final class Settings_Transport {
 		$config['surcharge_bike_box'] = self::sanitize_price( $_POST['tcbf_surcharge_bike_box'] ?? '' );
 		$config['surcharge_remote']   = self::sanitize_price( $_POST['tcbf_surcharge_remote'] ?? '' );
 
+		// Bundle discount (for "both" computed from delivery + pickup)
+		$config['bundle_discount'] = self::sanitize_price( $_POST['tcbf_bundle_discount'] ?? '' );
+
 		// Bulk pricing
 		$config['price_additional_bike_multiplier'] = min( 1.0, max( 0.0, (float) ( $_POST['tcbf_additional_bike_multiplier'] ?? 0.7 ) ) );
 
@@ -80,6 +83,11 @@ final class Settings_Transport {
 				if ( $id === '' || $name === '' ) {
 					continue;
 				}
+				// Zone prices: empty string = null (use global fallback)
+				$delivery_price = trim( $zone_data['delivery_price'] ?? '' );
+				$pickup_price   = trim( $zone_data['pickup_price'] ?? '' );
+				$both_price     = trim( $zone_data['both_price'] ?? '' );
+
 				$zones[] = [
 					'id'                => $id,
 					'name'              => $name,
@@ -87,6 +95,9 @@ final class Settings_Transport {
 					'lng'               => (float) ( $zone_data['lng'] ?? 0 ),
 					'radius_km'         => max( 0.1, (float) ( $zone_data['radius_km'] ?? 5 ) ),
 					'remote'            => ! empty( $zone_data['remote'] ),
+					'delivery_price'    => ( $delivery_price !== '' ) ? round( max( 0, (float) $delivery_price ), 2 ) : null,
+					'pickup_price'      => ( $pickup_price !== '' )   ? round( max( 0, (float) $pickup_price ), 2 )   : null,
+					'both_price'        => ( $both_price !== '' )     ? round( max( 0, (float) $both_price ), 2 )     : null,
 					'difficulty_factor' => max( 0.1, (float) ( $zone_data['difficulty_factor'] ?? 1.0 ) ),
 				];
 			}
@@ -174,7 +185,10 @@ final class Settings_Transport {
 			</table>
 
 			<!-- Base Pricing -->
-			<h2><?php echo esc_html__( 'Base Pricing', 'tc-booking-flow-next' ); ?></h2>
+			<h2><?php echo esc_html__( 'Base Pricing (Global Fallback)', 'tc-booking-flow-next' ); ?></h2>
+			<p class="description" style="margin-bottom: 12px;">
+				<?php echo esc_html__( 'Default prices used when a zone does not have its own price set. Zone-specific prices (below) take precedence.', 'tc-booking-flow-next' ); ?>
+			</p>
 			<table class="form-table" role="presentation">
 				<tbody>
 					<tr>
@@ -205,6 +219,19 @@ final class Settings_Transport {
 							<input type="number" class="small-text" name="tcbf_base_both" id="tcbf_base_both"
 								value="<?php echo esc_attr( (string) $config['base_both'] ); ?>" min="0" step="0.01" />
 							<span>&euro;</span>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="tcbf_bundle_discount"><?php echo esc_html__( 'Bundle discount', 'tc-booking-flow-next' ); ?></label>
+						</th>
+						<td>
+							<input type="number" class="small-text" name="tcbf_bundle_discount" id="tcbf_bundle_discount"
+								value="<?php echo esc_attr( (string) ( $config['bundle_discount'] ?? 15 ) ); ?>" min="0" step="0.01" />
+							<span>&euro;</span>
+							<p class="description">
+								<?php echo esc_html__( 'Discount applied when "both" (pickup + delivery) is computed from separate zone prices. Not used when a zone has an explicit "both" price.', 'tc-booking-flow-next' ); ?>
+							</p>
 						</td>
 					</tr>
 				</tbody>
@@ -346,10 +373,10 @@ final class Settings_Transport {
 			<!-- Zones -->
 			<h2><?php echo esc_html__( 'Zones', 'tc-booking-flow-next' ); ?></h2>
 			<p class="description" style="margin-bottom: 12px;">
-				<?php echo esc_html__( 'Hub-based zones. Each zone is a center point (lat/lng) with a radius in km.', 'tc-booking-flow-next' ); ?>
+				<?php echo esc_html__( 'Hub-based zones. Each zone is a center point (lat/lng) with a radius in km. Leave price fields empty to use global fallback prices.', 'tc-booking-flow-next' ); ?>
 			</p>
 
-			<table class="widefat striped" style="max-width: 900px;" id="tcbf-zones-table">
+			<table class="widefat striped" id="tcbf-zones-table">
 				<thead>
 					<tr>
 						<th><?php echo esc_html__( 'ID', 'tc-booking-flow-next' ); ?></th>
@@ -357,8 +384,10 @@ final class Settings_Transport {
 						<th><?php echo esc_html__( 'Lat', 'tc-booking-flow-next' ); ?></th>
 						<th><?php echo esc_html__( 'Lng', 'tc-booking-flow-next' ); ?></th>
 						<th><?php echo esc_html__( 'Radius (km)', 'tc-booking-flow-next' ); ?></th>
+						<th><?php echo esc_html__( 'Delivery &euro;', 'tc-booking-flow-next' ); ?></th>
+						<th><?php echo esc_html__( 'Pickup &euro;', 'tc-booking-flow-next' ); ?></th>
+						<th><?php echo esc_html__( 'Both &euro;', 'tc-booking-flow-next' ); ?></th>
 						<th><?php echo esc_html__( 'Remote', 'tc-booking-flow-next' ); ?></th>
-						<th><?php echo esc_html__( 'Difficulty', 'tc-booking-flow-next' ); ?></th>
 						<th></th>
 					</tr>
 				</thead>
@@ -385,13 +414,16 @@ final class Settings_Transport {
 				var tbody = document.getElementById('tcbf-zones-body');
 				var row = document.createElement('tr');
 				row.innerHTML =
-					'<td><input type="text" name="tcbf_zones[' + idx + '][id]" value="" style="width:120px" /></td>' +
-					'<td><input type="text" name="tcbf_zones[' + idx + '][name]" value="" style="width:160px" /></td>' +
-					'<td><input type="number" name="tcbf_zones[' + idx + '][lat]" value="" step="0.0001" style="width:100px" /></td>' +
-					'<td><input type="number" name="tcbf_zones[' + idx + '][lng]" value="" step="0.0001" style="width:100px" /></td>' +
-					'<td><input type="number" name="tcbf_zones[' + idx + '][radius_km]" value="5" step="0.1" min="0.1" style="width:80px" /></td>' +
+					'<td><input type="text" name="tcbf_zones[' + idx + '][id]" value="" style="width:100px" /></td>' +
+					'<td><input type="text" name="tcbf_zones[' + idx + '][name]" value="" style="width:140px" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][lat]" value="" step="0.0001" style="width:90px" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][lng]" value="" step="0.0001" style="width:90px" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][radius_km]" value="5" step="0.1" min="0.1" style="width:70px" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][delivery_price]" value="" step="0.01" min="0" style="width:70px" placeholder="—" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][pickup_price]" value="" step="0.01" min="0" style="width:70px" placeholder="—" /></td>' +
+					'<td><input type="number" name="tcbf_zones[' + idx + '][both_price]" value="" step="0.01" min="0" style="width:70px" placeholder="—" /></td>' +
 					'<td><input type="checkbox" name="tcbf_zones[' + idx + '][remote]" value="1" /></td>' +
-					'<td><input type="number" name="tcbf_zones[' + idx + '][difficulty_factor]" value="1.0" step="0.01" min="0.1" style="width:70px" /></td>' +
+					'<input type="hidden" name="tcbf_zones[' + idx + '][difficulty_factor]" value="1.0" />' +
 					'<td><button type="button" class="button-link tcbf-remove-zone" style="color:#b32d2e">&times;</button></td>';
 				tbody.appendChild(row);
 				idx++;
@@ -413,36 +445,50 @@ final class Settings_Transport {
 	 */
 	private static function render_zone_row( int $i, array $zone ) : void {
 		$prefix = 'tcbf_zones[' . $i . ']';
+		$delivery_val = ( isset( $zone['delivery_price'] ) && $zone['delivery_price'] !== null ) ? (string) $zone['delivery_price'] : '';
+		$pickup_val   = ( isset( $zone['pickup_price'] ) && $zone['pickup_price'] !== null )     ? (string) $zone['pickup_price']   : '';
+		$both_val     = ( isset( $zone['both_price'] ) && $zone['both_price'] !== null )         ? (string) $zone['both_price']     : '';
 		?>
 		<tr>
 			<td>
 				<input type="text" name="<?php echo esc_attr( $prefix . '[id]' ); ?>"
-					value="<?php echo esc_attr( $zone['id'] ?? '' ); ?>" style="width:120px" />
+					value="<?php echo esc_attr( $zone['id'] ?? '' ); ?>" style="width:100px" />
 			</td>
 			<td>
 				<input type="text" name="<?php echo esc_attr( $prefix . '[name]' ); ?>"
-					value="<?php echo esc_attr( $zone['name'] ?? '' ); ?>" style="width:160px" />
+					value="<?php echo esc_attr( $zone['name'] ?? '' ); ?>" style="width:140px" />
 			</td>
 			<td>
 				<input type="number" name="<?php echo esc_attr( $prefix . '[lat]' ); ?>"
-					value="<?php echo esc_attr( (string) ( $zone['lat'] ?? '' ) ); ?>" step="0.0001" style="width:100px" />
+					value="<?php echo esc_attr( (string) ( $zone['lat'] ?? '' ) ); ?>" step="0.0001" style="width:90px" />
 			</td>
 			<td>
 				<input type="number" name="<?php echo esc_attr( $prefix . '[lng]' ); ?>"
-					value="<?php echo esc_attr( (string) ( $zone['lng'] ?? '' ) ); ?>" step="0.0001" style="width:100px" />
+					value="<?php echo esc_attr( (string) ( $zone['lng'] ?? '' ) ); ?>" step="0.0001" style="width:90px" />
 			</td>
 			<td>
 				<input type="number" name="<?php echo esc_attr( $prefix . '[radius_km]' ); ?>"
-					value="<?php echo esc_attr( (string) ( $zone['radius_km'] ?? 5 ) ); ?>" step="0.1" min="0.1" style="width:80px" />
+					value="<?php echo esc_attr( (string) ( $zone['radius_km'] ?? 5 ) ); ?>" step="0.1" min="0.1" style="width:70px" />
+			</td>
+			<td>
+				<input type="number" name="<?php echo esc_attr( $prefix . '[delivery_price]' ); ?>"
+					value="<?php echo esc_attr( $delivery_val ); ?>" step="0.01" min="0" style="width:70px" placeholder="—" />
+			</td>
+			<td>
+				<input type="number" name="<?php echo esc_attr( $prefix . '[pickup_price]' ); ?>"
+					value="<?php echo esc_attr( $pickup_val ); ?>" step="0.01" min="0" style="width:70px" placeholder="—" />
+			</td>
+			<td>
+				<input type="number" name="<?php echo esc_attr( $prefix . '[both_price]' ); ?>"
+					value="<?php echo esc_attr( $both_val ); ?>" step="0.01" min="0" style="width:70px" placeholder="—" />
 			</td>
 			<td>
 				<input type="checkbox" name="<?php echo esc_attr( $prefix . '[remote]' ); ?>"
 					value="1" <?php checked( ! empty( $zone['remote'] ) ); ?> />
 			</td>
-			<td>
-				<input type="number" name="<?php echo esc_attr( $prefix . '[difficulty_factor]' ); ?>"
-					value="<?php echo esc_attr( (string) ( $zone['difficulty_factor'] ?? 1.0 ) ); ?>" step="0.01" min="0.1" style="width:70px" />
-			</td>
+			<?php // difficulty_factor: preserved as hidden for backward compat ?>
+			<input type="hidden" name="<?php echo esc_attr( $prefix . '[difficulty_factor]' ); ?>"
+				value="<?php echo esc_attr( (string) ( $zone['difficulty_factor'] ?? 1.0 ) ); ?>" />
 			<td>
 				<button type="button" class="button-link tcbf-remove-zone" style="color:#b32d2e">&times;</button>
 			</td>

@@ -46,9 +46,11 @@ final class TransportPricing {
 		'night_start_hour'      => 21,
 		'night_end_hour'        => 7,
 
-		// Zone-pair overrides: "zone_from|zone_to" => price
-		// Empty = use base price + surcharges
+		// Zone-pair overrides: "zone_from|zone_to" => price (legacy, dormant)
 		'zone_pair_prices'      => [],
+
+		// Bundle discount: applied when "both" is computed from delivery + pickup zone prices
+		'bundle_discount'       => 15.00,
 
 		// Bulk bike pricing: additional bikes are cheaper
 		'price_additional_bike_multiplier' => 0.7,  // 70% of base for 2nd+ bike
@@ -248,10 +250,19 @@ final class TransportPricing {
 			];
 		}
 
-		// --- Difficulty factor (zone-level multiplier) ---
+		// --- Difficulty factor (zone-level multiplier) — DEPRECATED ---
+		// Skipped when zone has explicit prices (delivery_price/pickup_price/both_price).
+		// Kept for backward compat with zones that only use difficulty_factor.
 		$difficulty_factor = 1.0;
 		$active_zone = $zone_dropoff ?? $zone_pickup;
-		if ( $active_zone !== null && isset( $active_zone['difficulty_factor'] ) ) {
+		$zone_has_explicit_price = (
+			( $active_zone !== null ) && (
+				self::has_zone_price( $active_zone, 'delivery_price' ) ||
+				self::has_zone_price( $active_zone, 'pickup_price' ) ||
+				self::has_zone_price( $active_zone, 'both_price' )
+			)
+		);
+		if ( ! $zone_has_explicit_price && $active_zone !== null && isset( $active_zone['difficulty_factor'] ) ) {
 			$difficulty_factor = (float) $active_zone['difficulty_factor'];
 			if ( $difficulty_factor <= 0 ) {
 				$difficulty_factor = 1.0;
@@ -328,34 +339,111 @@ final class TransportPricing {
 
 	/**
 	 * Resolve base price for a transport type and zone pair
+	 *
+	 * Fallback chain per direction:
+	 * 1. Zone-specific price for requested type (delivery_price / pickup_price / both_price)
+	 * 2. Legacy zone_pair_prices (dormant, kept for backward compat)
+	 * 3. Global base price for requested type
+	 *
+	 * For "both": if zone has both_price, use it. Otherwise compute
+	 * delivery_price + pickup_price minus bundle_discount.
 	 */
 	private static function resolve_base_price( string $type, ?array $zone_pickup, ?array $zone_dropoff, array $config ) : float {
 
-		// Check zone-pair override
+		// --- Single-direction: pickup or delivery ---
+		if ( $type === 'pickup' ) {
+			// 1. Zone-specific pickup price
+			if ( $zone_pickup !== null && self::has_zone_price( $zone_pickup, 'pickup_price' ) ) {
+				return (float) $zone_pickup['pickup_price'];
+			}
+			// 2. Legacy zone-pair override
+			$pair_price = self::resolve_zone_pair_price( $zone_pickup, $zone_dropoff, $config );
+			if ( $pair_price !== null ) {
+				return $pair_price;
+			}
+			// 3. Global fallback
+			return (float) $config['base_pickup'];
+		}
+
+		if ( $type === 'delivery' ) {
+			// 1. Zone-specific delivery price
+			if ( $zone_dropoff !== null && self::has_zone_price( $zone_dropoff, 'delivery_price' ) ) {
+				return (float) $zone_dropoff['delivery_price'];
+			}
+			// 2. Legacy zone-pair override
+			$pair_price = self::resolve_zone_pair_price( $zone_pickup, $zone_dropoff, $config );
+			if ( $pair_price !== null ) {
+				return $pair_price;
+			}
+			// 3. Global fallback
+			return (float) $config['base_delivery'];
+		}
+
+		// --- Both directions ---
+		if ( $type === 'both' ) {
+			// Determine which zone is "active" for both (prefer dropoff, then pickup)
+			$active_zone = $zone_dropoff ?? $zone_pickup;
+
+			// 1. Zone-specific both_price
+			if ( $active_zone !== null && self::has_zone_price( $active_zone, 'both_price' ) ) {
+				return (float) $active_zone['both_price'];
+			}
+
+			// 2. Compute from zone delivery + pickup prices minus bundle discount
+			$has_delivery = ( $zone_dropoff !== null && self::has_zone_price( $zone_dropoff, 'delivery_price' ) );
+			$has_pickup   = ( $zone_pickup !== null && self::has_zone_price( $zone_pickup, 'pickup_price' ) );
+
+			if ( $has_delivery || $has_pickup ) {
+				$del = $has_delivery ? (float) $zone_dropoff['delivery_price'] : (float) $config['base_delivery'];
+				$pck = $has_pickup   ? (float) $zone_pickup['pickup_price']    : (float) $config['base_pickup'];
+				$bundle_discount = (float) ( $config['bundle_discount'] ?? 0 );
+				return max( 0, Money::money_round( $del + $pck - $bundle_discount ) );
+			}
+
+			// 3. Legacy zone-pair override
+			$pair_price = self::resolve_zone_pair_price( $zone_pickup, $zone_dropoff, $config );
+			if ( $pair_price !== null ) {
+				return $pair_price;
+			}
+
+			// 4. Global fallback
+			return (float) $config['base_both'];
+		}
+
+		return (float) $config['base_pickup'];
+	}
+
+	/**
+	 * Check if a zone has a valid (non-null, non-empty) price for a given key
+	 */
+	private static function has_zone_price( array $zone, string $key ) : bool {
+		return isset( $zone[ $key ] ) && $zone[ $key ] !== null && $zone[ $key ] !== '';
+	}
+
+	/**
+	 * Legacy: resolve zone-pair price override (dormant feature, kept for backward compat)
+	 */
+	private static function resolve_zone_pair_price( ?array $zone_pickup, ?array $zone_dropoff, array $config ) : ?float {
+
 		$zone_pair_prices = $config['zone_pair_prices'] ?? [];
-		if ( ! empty( $zone_pair_prices ) && is_array( $zone_pair_prices ) ) {
-			$pickup_id  = $zone_pickup  ? ( $zone_pickup['id'] ?? '' )  : '_outside';
-			$dropoff_id = $zone_dropoff ? ( $zone_dropoff['id'] ?? '' ) : '_outside';
-
-			$pair_key = $pickup_id . '|' . $dropoff_id;
-			if ( isset( $zone_pair_prices[ $pair_key ] ) ) {
-				return (float) $zone_pair_prices[ $pair_key ];
-			}
-
-			// Try reverse direction
-			$pair_key_rev = $dropoff_id . '|' . $pickup_id;
-			if ( isset( $zone_pair_prices[ $pair_key_rev ] ) ) {
-				return (float) $zone_pair_prices[ $pair_key_rev ];
-			}
+		if ( empty( $zone_pair_prices ) || ! is_array( $zone_pair_prices ) ) {
+			return null;
 		}
 
-		// Default base prices by type
-		switch ( $type ) {
-			case 'pickup':   return (float) $config['base_pickup'];
-			case 'delivery': return (float) $config['base_delivery'];
-			case 'both':     return (float) $config['base_both'];
-			default:         return (float) $config['base_pickup'];
+		$pickup_id  = $zone_pickup  ? ( $zone_pickup['id'] ?? '' )  : '_outside';
+		$dropoff_id = $zone_dropoff ? ( $zone_dropoff['id'] ?? '' ) : '_outside';
+
+		$pair_key = $pickup_id . '|' . $dropoff_id;
+		if ( isset( $zone_pair_prices[ $pair_key ] ) ) {
+			return (float) $zone_pair_prices[ $pair_key ];
 		}
+
+		$pair_key_rev = $dropoff_id . '|' . $pickup_id;
+		if ( isset( $zone_pair_prices[ $pair_key_rev ] ) ) {
+			return (float) $zone_pair_prices[ $pair_key_rev ];
+		}
+
+		return null;
 	}
 
 	/**
