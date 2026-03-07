@@ -27,6 +27,63 @@ defined( 'ABSPATH' ) || exit;
 global $tcbf_cart_template_loaded;
 $tcbf_cart_template_loaded = true;
 
+/**
+ * Sort group items so each rental is immediately followed by its transport children.
+ * Order: participation → rental 1 → transport(s) for rental 1 → rental 2 → transport(s) for rental 2 → …
+ */
+function tcbf_sort_group_items( array $group_items ) : array {
+	$participation = [];
+	$rentals       = [];
+	$transport     = []; // keyed by parent rental cart key
+	$other         = [];
+
+	foreach ( $group_items as $cart_key => $item ) {
+		$scope = $item['tcbf_scope']
+			?? ( isset( $item['booking'] ) ? ( $item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) : '' );
+
+		if ( $scope === 'participation' ) {
+			$participation[ $cart_key ] = $item;
+		} elseif ( $scope === 'transport' ) {
+			$parent_key = $item['_tcbf_transport_parent_key'] ?? '';
+			if ( ! isset( $transport[ $parent_key ] ) ) {
+				$transport[ $parent_key ] = [];
+			}
+			$transport[ $parent_key ][ $cart_key ] = $item;
+		} elseif ( $scope === 'rental' || $scope === '' ) {
+			$rentals[ $cart_key ] = $item;
+		} else {
+			$other[ $cart_key ] = $item;
+		}
+	}
+
+	// Reassemble: participation → (rental + its transport children) → other
+	$sorted = [];
+	foreach ( $participation as $k => $v ) {
+		$sorted[ $k ] = $v;
+	}
+	foreach ( $rentals as $rental_key => $rental_item ) {
+		$sorted[ $rental_key ] = $rental_item;
+		// Append transport items that belong to this rental
+		if ( isset( $transport[ $rental_key ] ) ) {
+			foreach ( $transport[ $rental_key ] as $tk => $tv ) {
+				$sorted[ $tk ] = $tv;
+			}
+			unset( $transport[ $rental_key ] );
+		}
+	}
+	// Any orphaned transport items (parent not found in this group)
+	foreach ( $transport as $children ) {
+		foreach ( $children as $tk => $tv ) {
+			$sorted[ $tk ] = $tv;
+		}
+	}
+	foreach ( $other as $k => $v ) {
+		$sorted[ $k ] = $v;
+	}
+
+	return $sorted;
+}
+
 // Cart/checkout pack UI CSS is injected via Plugin.php (wp_head). Order pages use Woo_OrderMeta styles.
 
 do_action( 'woocommerce_before_cart' ); ?>
@@ -72,6 +129,8 @@ do_action( 'woocommerce_before_cart' ); ?>
 			// Render grouped items first
 			$is_first_pack = true;
 			foreach ( $tcbf_groups as $group_id => $group_items ) :
+				// Sort items: participation first, then each rental followed by its transport children
+				$group_items = tcbf_sort_group_items( $group_items );
 				$group_items_array = array_values( $group_items );
 				$pack_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( $group_items_array );
 				$is_first_in_group = true;
