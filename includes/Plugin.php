@@ -2149,31 +2149,52 @@ final class Plugin {
 			return;
 		}
 
-		// Skip items without EB data
-		if ( ! class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' ) ) {
-			return;
-		}
+		// Try BookingLedger data first (top-level cart item keys)
+		$base      = (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+		$eb_amount = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+		$total     = (float) ( $cart_item['_tcbf_ledger_total'] ?? 0 );
 
-		$item_totals = Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
-		if ( ! $item_totals['has_eb'] ) {
-			return;
+		if ( $eb_amount > 0 && $base > 0 ) {
+			$base_label  = '[:en]Price before EB[:es]Precio antes de RA[:]';
+			$eb_label    = '[:en]Early booking discount[:es]Descuento reserva anticipada[:]';
+			$total_label = '[:en]Total[:es]Total[:]';
+			if ( function_exists( 'tc_sc_event_tr' ) ) {
+				$base_label  = tc_sc_event_tr( $base_label );
+				$eb_label    = tc_sc_event_tr( $eb_label );
+				$total_label = tc_sc_event_tr( $total_label );
+			}
+		} else {
+			// Fallback: try Woo_OrderMeta booking meta
+			if ( ! class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' ) ) {
+				return;
+			}
+			$item_totals = Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
+			if ( ! $item_totals['has_eb'] ) {
+				return;
+			}
+			$base        = $item_totals['base_price'];
+			$eb_amount   = $item_totals['eb_discount'];
+			$total       = $item_totals['pack_total'];
+			$base_label  = $item_totals['base_label'];
+			$eb_label    = __( 'Early booking discount', 'tc-booking-flow-next' );
+			$total_label = $item_totals['total_label'];
 		}
 
 		?>
 		<div class="tcbf-eb-summary">
 			<div class="tcbf-eb-summary__line">
-				<span class="tcbf-eb-summary__label"><?php echo esc_html( $item_totals['base_label'] ); ?></span>
-				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $item_totals['base_price'] ) ); ?></span>
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $base_label ); ?></span>
+				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $base ) ); ?></span>
 			</div>
-			<?php if ( $item_totals['eb_discount'] > 0 ) : ?>
+			<?php if ( $eb_amount > 0 ) : ?>
 			<div class="tcbf-eb-summary__line tcbf-eb-summary__line--discount">
-				<span class="tcbf-eb-summary__label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
-				<span class="tcbf-eb-summary__value tcbf-eb-summary__value--discount">-<?php echo wp_kses_post( wc_price( $item_totals['eb_discount'] ) ); ?></span>
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $eb_label ); ?></span>
+				<span class="tcbf-eb-summary__value tcbf-eb-summary__value--discount">-<?php echo wp_kses_post( wc_price( $eb_amount ) ); ?></span>
 			</div>
 			<?php endif; ?>
 			<div class="tcbf-eb-summary__line tcbf-eb-summary__line--total">
-				<span class="tcbf-eb-summary__label"><?php echo esc_html( $item_totals['total_label'] ); ?></span>
-				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $item_totals['pack_total'] ) ); ?></span>
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $total_label ); ?></span>
+				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $total ) ); ?></span>
 			</div>
 		</div>
 		<?php
