@@ -168,8 +168,6 @@ do_action( 'woocommerce_before_cart' ); ?>
 			foreach ( $tcbf_groups as $group_id => $group_items ) :
 				// Sort items: participation first, then each rental followed by its transport children
 				$group_items = tcbf_sort_group_items( $group_items );
-				$group_items_array = array_values( $group_items );
-				$pack_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( $group_items_array );
 				$is_first_in_group = true;
 				$group_count = count( $group_items );
 				$current_idx = 0;
@@ -196,9 +194,10 @@ do_action( 'woocommerce_before_cart' ); ?>
 						$is_parent = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::is_cart_item_parent( $cart_item );
 						$row_class = $is_parent ? 'tcbf-cart-row--parent' : 'tcbf-cart-row--child';
 
-						// Determine scope for inline EB rendering
-						$item_scope = $cart_item['tcbf_scope']
-							?? ( isset( $cart_item['booking'] ) ? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) : '' );
+						// Determine scope for inline EB rendering (use Pack_Grouping for reliable detection)
+						$item_scope = class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping' )
+							? \TC_BF\Integrations\WooCommerce\Pack_Grouping::get_scope( $cart_item )
+							: ( $cart_item['tcbf_scope'] ?? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) );
 
 						// Get event image for parent items
 						$event_id = isset( $cart_item['_event_id'] ) ? (int) $cart_item['_event_id'] : 0;
@@ -307,37 +306,15 @@ do_action( 'woocommerce_before_cart' ); ?>
 						<?php
 
 						// Inline EB summary: render after each rental/participation item, before transport children
-						if ( in_array( $item_scope, [ 'rental', 'participation' ], true ) ) {
+						// (empty scope is treated as rental, same as tcbf_sort_group_items)
+						if ( $item_scope !== 'transport' ) {
 							tcbf_render_inline_eb_row( $cart_item, $group_id );
 						}
 					}
 				endforeach;
 
-				// Group-level pack footer (overall total for true packs with participation + rental)
-				if ( $pack_totals['has_eb'] && $pack_totals['is_pack'] ) :
-					?>
-					<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--group" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
-						<td colspan="6" class="tcbf-pack-footer-cell">
-							<div class="tcbf-pack-footer tcbf-pack-footer--cart tcbf-pack-footer--group">
-								<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
-									<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['base_label'] ); ?></span>
-									<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['base_price'] ) ); ?></span>
-								</div>
-								<?php if ( $pack_totals['eb_discount'] > 0 ) : ?>
-								<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">
-									<span class="tcbf-pack-footer-label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
-									<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ); ?></span>
-								</div>
-								<?php endif; ?>
-								<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
-									<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['total_label'] ); ?></span>
-									<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['pack_total'] ) ); ?></span>
-								</div>
-							</div>
-						</td>
-					</tr>
-					<?php
-				endif;
+				// Group-level pack footer removed: each rental/participation item now
+				// has its own inline EB summary rendered directly after the item row.
 			endforeach;
 
 			// Render ungrouped items
