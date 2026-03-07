@@ -231,6 +231,9 @@ final class Plugin {
 		add_action('woocommerce_after_mini_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
 		add_action('woocommerce_checkout_cart_item_product_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
 
+		// ---- Cart display: show per-item EB summary block (base price, discount, total) after item name
+		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_summary' ], 20, 2);
+
 		// ---- Cart display: add event link to participation items (title)
 		add_filter('woocommerce_cart_item_name', [ $this, 'woo_add_pack_badge_to_title' ], 10, 3);
 
@@ -1388,6 +1391,44 @@ final class Plugin {
 			echo "  font-size: 14px;\n";
 			echo "}\n";
 
+			echo "\n/* ===== Per-item EB summary (inline in product-name cell) ===== */\n";
+			echo ".tcbf-eb-summary {\n";
+			echo "  background: rgba(0, 0, 0, 0.02);\n";
+			echo "  border-left: 3px solid var(--tcbf-eb-purple, #7c3aed);\n";
+			echo "  padding: 8px 12px;\n";
+			echo "  margin-top: 10px;\n";
+			echo "  font-size: 13px;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line {\n";
+			echo "  display: flex;\n";
+			echo "  justify-content: space-between;\n";
+			echo "  align-items: center;\n";
+			echo "  padding: 2px 0;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__label {\n";
+			echo "  color: #6b7280;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__value {\n";
+			echo "  font-weight: 600;\n";
+			echo "  color: #374151;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__value--discount {\n";
+			echo "  color: var(--tcbf-eb-purple, #7c3aed);\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line--total {\n";
+			echo "  border-top: 1px solid rgba(0, 0, 0, 0.08);\n";
+			echo "  margin-top: 3px;\n";
+			echo "  padding-top: 5px;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line--total .tcbf-eb-summary__label {\n";
+			echo "  font-weight: 600;\n";
+			echo "  color: #374151;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line--total .tcbf-eb-summary__value {\n";
+			echo "  font-weight: 700;\n";
+			echo "  color: #111827;\n";
+			echo "}\n";
+
 			echo "\n/* ===== Pack UI Polish (Phase 9A/9C) ===== */\n";
 			echo "/* Product name cell: allow text to shrink without affecting thumbnail */\n";
 			echo ".woocommerce-cart-form__contents td.product-name {\n";
@@ -2009,108 +2050,15 @@ final class Plugin {
 	}
 
 	/**
-	 * Render pack footer rows in cart table.
+	 * Render pack footer rows in cart table (legacy, now handled by woo_cart_item_eb_summary).
 	 *
-	 * Outputs footer rows with pack totals (base price, EB discount, pack total)
-	 * for each pack group. Uses JavaScript to position them after each pack's last item.
+	 * Per-item EB summaries are now rendered inline via the woocommerce_after_cart_item_name hook.
+	 * This method is kept as a no-op to avoid breaking the hook registration.
 	 */
 	public function woo_render_cart_pack_footers() {
-		// Skip if our cart template is loaded (it renders inline EB directly)
-		global $tcbf_cart_template_loaded;
-		if ( ! empty( $tcbf_cart_template_loaded ) ) {
-			return;
-		}
-
-		if ( ! class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' ) ) {
-			return;
-		}
-
-		$cart = WC()->cart;
-		if ( ! $cart ) {
-			return;
-		}
-
-		// Collect per-item EB data for non-transport items
-		$eb_rows = []; // [ [ 'product_id' => int, 'group_id' => int, 'totals' => array ], ... ]
-		foreach ( $cart->get_cart() as $cart_key => $cart_item ) {
-			$group_id = isset( $cart_item['tc_group_id'] ) ? (int) $cart_item['tc_group_id'] : 0;
-			if ( $group_id <= 0 ) {
-				continue;
-			}
-
-			// Skip transport items — EB only applies to rental/participation
-			$scope = '';
-			if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping' ) ) {
-				$scope = \TC_BF\Integrations\WooCommerce\Pack_Grouping::get_scope( $cart_item );
-			}
-			if ( $scope === 'transport' ) {
-				continue;
-			}
-
-			$item_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
-			if ( ! $item_totals['has_eb'] ) {
-				continue;
-			}
-
-			$eb_rows[] = [
-				'product_id' => (int) $cart_item['product_id'],
-				'group_id'   => $group_id,
-				'cart_key'   => $cart_key,
-				'totals'     => $item_totals,
-			];
-		}
-
-		if ( empty( $eb_rows ) ) {
-			return;
-		}
-
-		// Render each EB summary row with unique data attribute for JS positioning
-		foreach ( $eb_rows as $idx => $row ) {
-			$totals = $row['totals'];
-			?>
-			<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--inline" data-tcbf-group="<?php echo esc_attr( $row['group_id'] ); ?>" data-tcbf-eb-for="<?php echo esc_attr( $row['cart_key'] ); ?>" data-tcbf-eb-idx="<?php echo esc_attr( $idx ); ?>">
-				<td colspan="6" class="tcbf-pack-footer-cell">
-					<div class="tcbf-pack-footer tcbf-pack-footer--cart tcbf-pack-footer--inline">
-						<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
-							<span class="tcbf-pack-footer-label"><?php echo esc_html( $totals['base_label'] ); ?></span>
-							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $totals['base_price'] ) ); ?></span>
-						</div>
-						<?php if ( $totals['eb_discount'] > 0 ) : ?>
-						<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">
-							<span class="tcbf-pack-footer-label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
-							<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $totals['eb_discount'] ) ); ?></span>
-						</div>
-						<?php endif; ?>
-						<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
-							<span class="tcbf-pack-footer-label"><?php echo esc_html( $totals['total_label'] ?? __( 'Total', 'tc-booking-flow-next' ) ); ?></span>
-							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $totals['pack_total'] ) ); ?></span>
-						</div>
-					</div>
-				</td>
-			</tr>
-			<?php
-		}
-
-		// JS: position each EB row after its parent item row
-		// Find the parent row by matching the cart remove link href (contains remove_item=cart_key)
-		?>
-		<script>
-		(function() {
-			document.querySelectorAll('.tcbf-pack-footer-row--inline[data-tcbf-eb-for]').forEach(function(footerRow) {
-				var cartKey = footerRow.getAttribute('data-tcbf-eb-for');
-				if (!cartKey) return;
-				// WooCommerce remove URLs contain: ?remove_item=CART_KEY&...
-				var removeLink = document.querySelector('a.remove[href*="remove_item=' + cartKey + '"]');
-				if (removeLink) {
-					var itemRow = removeLink.closest('tr');
-					if (itemRow && itemRow.parentNode) {
-						itemRow.parentNode.insertBefore(footerRow, itemRow.nextSibling);
-					}
-				}
-			});
-		})();
-		</script>
-		<?php
+		// Per-item EB summaries are now rendered inline via woo_cart_item_eb_summary
+		// hooked to woocommerce_after_cart_item_name at priority 20.
+		// This method is kept as a no-op to avoid breaking the hook registration.
 	}
 
 	/**
@@ -2178,6 +2126,57 @@ final class Plugin {
 		echo '</span>';
 		echo '</div>';
 		echo '</div>';
+	}
+
+	/**
+	 * Render per-item EB summary block (base price, EB discount, total) inside the product-name cell.
+	 * Only for non-transport cart items that have EB. Renders after the EB badge.
+	 */
+	public function woo_cart_item_eb_summary( $cart_item, $cart_item_key = null ) {
+		// Handle reversed params from mini-cart
+		if ( is_string( $cart_item ) && is_array( $cart_item_key ) ) {
+			$temp = $cart_item;
+			$cart_item = $cart_item_key;
+			$cart_item_key = $temp;
+		}
+
+		// Skip transport items
+		$scope = '';
+		if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping' ) ) {
+			$scope = Integrations\WooCommerce\Pack_Grouping::get_scope( $cart_item );
+		}
+		if ( $scope === 'transport' ) {
+			return;
+		}
+
+		// Skip items without EB data
+		if ( ! class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' ) ) {
+			return;
+		}
+
+		$item_totals = Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
+		if ( ! $item_totals['has_eb'] ) {
+			return;
+		}
+
+		?>
+		<div class="tcbf-eb-summary">
+			<div class="tcbf-eb-summary__line">
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $item_totals['base_label'] ); ?></span>
+				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $item_totals['base_price'] ) ); ?></span>
+			</div>
+			<?php if ( $item_totals['eb_discount'] > 0 ) : ?>
+			<div class="tcbf-eb-summary__line tcbf-eb-summary__line--discount">
+				<span class="tcbf-eb-summary__label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
+				<span class="tcbf-eb-summary__value tcbf-eb-summary__value--discount">-<?php echo wp_kses_post( wc_price( $item_totals['eb_discount'] ) ); ?></span>
+			</div>
+			<?php endif; ?>
+			<div class="tcbf-eb-summary__line tcbf-eb-summary__line--total">
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $item_totals['total_label'] ); ?></span>
+				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $item_totals['pack_total'] ) ); ?></span>
+			</div>
+		</div>
+		<?php
 	}
 
 	private function localize_text( string $text ) : string {
