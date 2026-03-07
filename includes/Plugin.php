@@ -2133,6 +2133,12 @@ final class Plugin {
 	 * Only for non-transport cart items that have EB. Renders after the EB badge.
 	 */
 	public function woo_cart_item_eb_summary( $cart_item, $cart_item_key = null ) {
+		// Skip when custom cart template handles inline EB rendering
+		global $tcbf_cart_template_loaded;
+		if ( ! empty( $tcbf_cart_template_loaded ) ) {
+			return;
+		}
+
 		// Handle reversed params from mini-cart
 		if ( is_string( $cart_item ) && is_array( $cart_item_key ) ) {
 			$temp = $cart_item;
