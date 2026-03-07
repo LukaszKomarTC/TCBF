@@ -2015,7 +2015,7 @@ final class Plugin {
 	 * for each pack group. Uses JavaScript to position them after each pack's last item.
 	 */
 	public function woo_render_cart_pack_footers() {
-		// Skip if our cart template is loaded (it renders footers directly)
+		// Skip if our cart template is loaded (it renders inline EB directly)
 		global $tcbf_cart_template_loaded;
 		if ( ! empty( $tcbf_cart_template_loaded ) ) {
 			return;
@@ -2030,48 +2030,60 @@ final class Plugin {
 			return;
 		}
 
-		// Group cart items by tc_group_id
-		$groups = [];
+		// Collect per-item EB data for non-transport items
+		$eb_rows = []; // [ [ 'product_id' => int, 'group_id' => int, 'totals' => array ], ... ]
 		foreach ( $cart->get_cart() as $cart_key => $cart_item ) {
 			$group_id = isset( $cart_item['tc_group_id'] ) ? (int) $cart_item['tc_group_id'] : 0;
-			if ( $group_id > 0 ) {
-				if ( ! isset( $groups[ $group_id ] ) ) {
-					$groups[ $group_id ] = [];
-				}
-				$groups[ $group_id ][] = $cart_item;
-			}
-		}
-
-		if ( empty( $groups ) ) {
-			return;
-		}
-
-		// Output footer rows for each pack group
-		foreach ( $groups as $group_id => $group_items ) {
-			$pack_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( $group_items );
-
-			// Only show footer if pack has EB discount
-			if ( ! $pack_totals['has_eb'] ) {
+			if ( $group_id <= 0 ) {
 				continue;
 			}
 
+			// Skip transport items — EB only applies to rental/participation
+			$scope = '';
+			if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping' ) ) {
+				$scope = \TC_BF\Integrations\WooCommerce\Pack_Grouping::get_scope( $cart_item );
+			}
+			if ( $scope === 'transport' ) {
+				continue;
+			}
+
+			$item_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
+			if ( ! $item_totals['has_eb'] ) {
+				continue;
+			}
+
+			$eb_rows[] = [
+				'product_id' => (int) $cart_item['product_id'],
+				'group_id'   => $group_id,
+				'cart_key'   => $cart_key,
+				'totals'     => $item_totals,
+			];
+		}
+
+		if ( empty( $eb_rows ) ) {
+			return;
+		}
+
+		// Render each EB summary row with unique data attribute for JS positioning
+		foreach ( $eb_rows as $idx => $row ) {
+			$totals = $row['totals'];
 			?>
-			<tr class="tcbf-pack-footer-row" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
+			<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--inline" data-tcbf-group="<?php echo esc_attr( $row['group_id'] ); ?>" data-tcbf-eb-for="<?php echo esc_attr( $row['cart_key'] ); ?>" data-tcbf-eb-idx="<?php echo esc_attr( $idx ); ?>">
 				<td colspan="6" class="tcbf-pack-footer-cell">
-					<div class="tcbf-pack-footer tcbf-pack-footer--cart">
+					<div class="tcbf-pack-footer tcbf-pack-footer--cart tcbf-pack-footer--inline">
 						<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
-							<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['base_label'] ); ?></span>
-							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['base_price'] ) ); ?></span>
+							<span class="tcbf-pack-footer-label"><?php echo esc_html( $totals['base_label'] ); ?></span>
+							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $totals['base_price'] ) ); ?></span>
 						</div>
-						<?php if ( $pack_totals['eb_discount'] > 0 ) : ?>
+						<?php if ( $totals['eb_discount'] > 0 ) : ?>
 						<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">
 							<span class="tcbf-pack-footer-label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
-							<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ); ?></span>
+							<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $totals['eb_discount'] ) ); ?></span>
 						</div>
 						<?php endif; ?>
 						<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
-							<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['total_label'] ?? __( 'Pack total', 'tc-booking-flow-next' ) ); ?></span>
-							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['pack_total'] ) ); ?></span>
+							<span class="tcbf-pack-footer-label"><?php echo esc_html( $totals['total_label'] ?? __( 'Total', 'tc-booking-flow-next' ) ); ?></span>
+							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $totals['pack_total'] ) ); ?></span>
 						</div>
 					</div>
 				</td>
@@ -2079,16 +2091,21 @@ final class Plugin {
 			<?php
 		}
 
-		// Output JavaScript to move footer rows after their pack's last item
+		// JS: position each EB row after its parent item row
+		// Find the parent row by matching the cart remove link href (contains remove_item=cart_key)
 		?>
 		<script>
 		(function() {
-			document.querySelectorAll('.tcbf-pack-footer-row').forEach(function(footerRow) {
-				var groupId = footerRow.getAttribute('data-tcbf-group');
-				var packItems = document.querySelectorAll('tr.tcbf-pack-group-' + groupId);
-				if (packItems.length > 0) {
-					var lastItem = packItems[packItems.length - 1];
-					lastItem.parentNode.insertBefore(footerRow, lastItem.nextSibling);
+			document.querySelectorAll('.tcbf-pack-footer-row--inline[data-tcbf-eb-for]').forEach(function(footerRow) {
+				var cartKey = footerRow.getAttribute('data-tcbf-eb-for');
+				if (!cartKey) return;
+				// WooCommerce remove URLs contain: ?remove_item=CART_KEY&...
+				var removeLink = document.querySelector('a.remove[href*="remove_item=' + cartKey + '"]');
+				if (removeLink) {
+					var itemRow = removeLink.closest('tr');
+					if (itemRow && itemRow.parentNode) {
+						itemRow.parentNode.insertBefore(footerRow, itemRow.nextSibling);
+					}
 				}
 			});
 		})();

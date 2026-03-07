@@ -124,6 +124,7 @@ endif;
 // Cart/checkout pack UI CSS is injected via Plugin.php (wp_head). Order pages use Woo_OrderMeta styles.
 
 do_action( 'woocommerce_before_cart' ); ?>
+<!-- TCBF cart template v2 active -->
 
 <form class="woocommerce-cart-form" action="<?php echo esc_url( wc_get_cart_url() ); ?>" method="post">
 	<?php do_action( 'woocommerce_before_cart_table' ); ?>
