@@ -49,6 +49,23 @@
 		}
 	});
 
+	// Refresh transport state after WooCommerce AJAX cart updates
+	$(document.body).on('updated_cart_totals', function () {
+		$.ajax({
+			url: config.ajaxUrl, method: 'POST', dataType: 'json',
+			data: {
+				action: 'tcbf_transport_refresh_state',
+				nonce: config.nonce
+			}
+		}).done(function (response) {
+			if (response && response.success && response.data) {
+				config.bikes = response.data.bikes || [];
+				config.datesUniform = response.data.datesUniform;
+				config.summary = response.data.summary || {};
+			}
+		});
+	});
+
 	function removeAllTransport() {
 		var $card = $('#tcbf-service-card');
 		$card.addClass('tcbf-service-card--loading');

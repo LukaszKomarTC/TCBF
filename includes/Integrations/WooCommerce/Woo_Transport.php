@@ -54,6 +54,10 @@ final class Woo_Transport {
 		add_action( 'wp_ajax_tcbf_transport_geocode', [ __CLASS__, 'ajax_geocode' ] );
 		add_action( 'wp_ajax_nopriv_tcbf_transport_geocode', [ __CLASS__, 'ajax_geocode' ] );
 
+		// AJAX: refresh transport state after cart update
+		add_action( 'wp_ajax_tcbf_transport_refresh_state', [ __CLASS__, 'ajax_refresh_state' ] );
+		add_action( 'wp_ajax_nopriv_tcbf_transport_refresh_state', [ __CLASS__, 'ajax_refresh_state' ] );
+
 		// Cart display
 		add_filter( 'woocommerce_get_item_data', [ __CLASS__, 'display_transport_cart_item_data' ], 25, 2 );
 
@@ -446,6 +450,53 @@ final class Woo_Transport {
 			'lat'               => (float) ( $location['lat'] ?? 0 ),
 			'lng'               => (float) ( $location['lng'] ?? 0 ),
 			'place_id'          => $result['place_id'] ?? '',
+		] );
+	}
+
+	/* ================================================================
+	 * AJAX: Refresh transport state after cart update
+	 *
+	 * Returns fresh bikes list, date uniformity, and summary so the
+	 * frontend can update its config after WooCommerce AJAX cart updates.
+	 * ================================================================ */
+
+	public static function ajax_refresh_state() : void {
+
+		if ( ob_get_level() ) {
+			ob_clean();
+		}
+
+		check_ajax_referer( 'tcbf_transport_nonce', 'nonce' );
+
+		$dates_info = self::get_rental_dates_uniformity();
+		$summary    = self::get_transport_service_summary();
+
+		$bike_list = [];
+		if ( WC() && WC()->cart ) {
+			foreach ( WC()->cart->get_cart() as $key => $item ) {
+				if ( self::is_transport_eligible( $item ) ) {
+					$label        = self::format_transport_bike_label( $item );
+					$has_delivery = self::rental_has_transport( $key, self::DIR_DELIVERY );
+					$has_pickup   = self::rental_has_transport( $key, self::DIR_PICKUP );
+					$bike_list[]  = [
+						'key'          => $key,
+						'model'        => $label['model'],
+						'size'         => $label['size'],
+						'start_date'   => $label['start_date'],
+						'end_date'     => $label['end_date'],
+						'rider'        => $label['rider'],
+						'has_delivery' => $has_delivery,
+						'has_pickup'   => $has_pickup,
+					];
+				}
+			}
+		}
+
+		wp_send_json_success( [
+			'bikes'        => $bike_list,
+			'datesUniform' => $dates_info['is_uniform'],
+			'summary'      => $summary,
+			'state'        => self::get_transport_service_state(),
 		] );
 	}
 
