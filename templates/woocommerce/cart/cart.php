@@ -233,7 +233,7 @@ do_action( 'woocommerce_before_cart' ); ?>
 							$custom_thumb_url = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_event_image_url( $event_id );
 						}
 						?>
-						<tr class="woocommerce-cart-form__cart-item <?php echo esc_attr( apply_filters( 'woocommerce_cart_item_class', 'cart_item', $cart_item, $cart_item_key ) ); ?> tcbf-pack-item <?php echo esc_attr( $row_class ); ?>" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
+						<tr class="woocommerce-cart-form__cart-item <?php echo esc_attr( apply_filters( 'woocommerce_cart_item_class', 'cart_item', $cart_item, $cart_item_key ) ); ?> tcbf-pack-item <?php echo esc_attr( $row_class ); ?>" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>" data-cart_item_key="<?php echo esc_attr( $cart_item_key ); ?>">
 
 							<td class="product-remove">
 								<?php
@@ -330,12 +330,6 @@ do_action( 'woocommerce_before_cart' ); ?>
 							</td>
 						</tr>
 						<?php
-
-						// Inline EB summary: render after each rental/participation item, before transport children
-						// (empty scope is treated as rental, same as tcbf_sort_group_items)
-						if ( $item_scope !== 'transport' ) {
-							tcbf_render_inline_eb_row( $cart_item, $group_id );
-						}
 					}
 				endforeach;
 
