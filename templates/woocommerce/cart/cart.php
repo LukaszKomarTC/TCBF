@@ -330,6 +330,10 @@ do_action( 'woocommerce_before_cart' ); ?>
 							</td>
 						</tr>
 						<?php
+						// Render inline EB row after rental/participation items (not transport)
+						if ( $item_scope !== 'transport' ) {
+							tcbf_render_inline_eb_row( $cart_item, $group_id );
+						}
 					}
 				endforeach;
 			endforeach;
@@ -433,6 +437,8 @@ do_action( 'woocommerce_before_cart' ); ?>
 						</td>
 					</tr>
 					<?php
+					// Render inline EB row for ungrouped items
+					tcbf_render_inline_eb_row( $cart_item, 0 );
 				}
 			endforeach;
 			?>

@@ -769,6 +769,12 @@ class Woo_BookingLedger {
 	 * Uses JavaScript to position them after their booking item.
 	 */
 	public static function render_booking_footer_rows() : void {
+		// Skip when custom cart template handles inline EB rendering
+		global $tcbf_cart_template_loaded;
+		if ( ! empty( $tcbf_cart_template_loaded ) ) {
+			return;
+		}
+
 		$cart = WC()->cart;
 		if ( ! $cart ) {
 			return;
