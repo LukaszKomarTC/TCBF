@@ -88,7 +88,7 @@ function tcbf_sort_group_items( array $group_items ) : array {
 endif;
 
 /**
- * Render an inline EB summary row for a single cart item.
+ * Render an inline EB summary row for a single cart item (used for ungrouped items).
  * Checks both BookingLedger data (top-level keys) and Woo_OrderMeta booking data.
  */
 if ( ! function_exists( 'tcbf_render_inline_eb_row' ) ) :
@@ -120,6 +120,86 @@ function tcbf_render_inline_eb_row( array $cart_item, $group_id ) : void {
 		$base_label  = $item_eb_totals['base_label'];
 		$eb_label    = __( 'Early booking discount', 'tc-booking-flow-next' );
 		$total_label = $item_eb_totals['total_label'];
+	}
+	?>
+	<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--inline" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
+		<td colspan="6" class="tcbf-pack-footer-cell">
+			<div class="tcbf-pack-footer tcbf-pack-footer--cart tcbf-pack-footer--inline">
+				<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
+					<span class="tcbf-pack-footer-label"><?php echo esc_html( $base_label ); ?></span>
+					<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $base ) ); ?></span>
+				</div>
+				<?php if ( $eb_amount > 0 ) : ?>
+				<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">
+					<span class="tcbf-pack-footer-label"><?php echo esc_html( $eb_label ); ?></span>
+					<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $eb_amount ) ); ?></span>
+				</div>
+				<?php endif; ?>
+				<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
+					<span class="tcbf-pack-footer-label"><?php echo esc_html( $total_label ); ?></span>
+					<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $total ) ); ?></span>
+				</div>
+			</div>
+		</td>
+	</tr>
+	<?php
+}
+endif;
+
+/**
+ * Render a combined EB summary row for an entire group (pack).
+ * Aggregates EB data across all items in the group — used for grouped items only.
+ */
+if ( ! function_exists( 'tcbf_render_group_eb_row' ) ) :
+function tcbf_render_group_eb_row( array $group_items, $group_id ) : void {
+	$group_items_array = array_values( $group_items );
+
+	// First check if any item has BookingLedger data (top-level keys)
+	$ledger_base = 0;
+	$ledger_eb   = 0;
+	$ledger_total = 0;
+	$has_ledger  = false;
+
+	foreach ( $group_items_array as $item ) {
+		$item_eb = (float) ( $item['_tcbf_ledger_eb_amount'] ?? 0 );
+		if ( $item_eb > 0 ) {
+			$has_ledger   = true;
+			$ledger_base  += (float) ( $item['_tcbf_ledger_base'] ?? 0 );
+			$ledger_eb    += $item_eb;
+			$ledger_total += (float) ( $item['_tcbf_ledger_total'] ?? 0 );
+		}
+	}
+
+	if ( $has_ledger && $ledger_eb > 0 && $ledger_base > 0 ) {
+		$base      = $ledger_base;
+		$eb_amount = $ledger_eb;
+		$total     = $ledger_total;
+		// Use "Pack" labels when group has multiple items
+		$is_pack     = count( $group_items_array ) > 1;
+		$base_label  = $is_pack
+			? '[:en]Pack price before EB[:es]Precio del pack antes de RA[:]'
+			: '[:en]Price before EB[:es]Precio antes de RA[:]';
+		$eb_label    = '[:en]Early booking discount[:es]Descuento reserva anticipada[:]';
+		$total_label = $is_pack
+			? '[:en]Pack total[:es]Total del pack[:]'
+			: '[:en]Total[:es]Total[:]';
+		if ( function_exists( 'tc_sc_event_tr' ) ) {
+			$base_label  = tc_sc_event_tr( $base_label );
+			$eb_label    = tc_sc_event_tr( $eb_label );
+			$total_label = tc_sc_event_tr( $total_label );
+		}
+	} else {
+		// Fallback: use Woo_OrderMeta with ALL group items combined
+		$pack_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( $group_items_array );
+		if ( ! $pack_totals['has_eb'] ) {
+			return;
+		}
+		$base        = $pack_totals['base_price'];
+		$eb_amount   = $pack_totals['eb_discount'];
+		$total       = $pack_totals['pack_total'];
+		$base_label  = $pack_totals['base_label'];
+		$eb_label    = __( 'Early booking discount', 'tc-booking-flow-next' );
+		$total_label = $pack_totals['total_label'];
 	}
 	?>
 	<tr class="tcbf-pack-footer-row tcbf-pack-footer-row--inline" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
@@ -330,12 +410,12 @@ do_action( 'woocommerce_before_cart' ); ?>
 							</td>
 						</tr>
 						<?php
-						// Render inline EB row after rental/participation items (not transport)
-						if ( $item_scope !== 'transport' ) {
-							tcbf_render_inline_eb_row( $cart_item, $group_id );
-						}
 					}
 				endforeach;
+
+				// Render ONE combined EB row per group (after all items in the group)
+				tcbf_render_group_eb_row( $group_items, $group_id );
+
 			endforeach;
 
 			// Render ungrouped items
