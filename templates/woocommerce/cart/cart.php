@@ -226,6 +226,131 @@ function tcbf_render_group_eb_row( array $group_items, $group_id ) : void {
 }
 endif;
 
+/**
+ * Render a single cart item row (used for ungrouped items).
+ * Returns true if the item was rendered, false if skipped.
+ */
+if ( ! function_exists( 'tcbf_render_ungrouped_item_row' ) ) :
+function tcbf_render_ungrouped_item_row( $cart_item_key, $cart_item, $row_extra_class = '' ) {
+	$_product     = apply_filters( 'woocommerce_cart_item_product', $cart_item['data'], $cart_item, $cart_item_key );
+	$product_id   = apply_filters( 'woocommerce_cart_item_product_id', $cart_item['product_id'], $cart_item, $cart_item_key );
+	$product_name = apply_filters( 'woocommerce_cart_item_name', $_product->get_name(), $cart_item, $cart_item_key );
+
+	if ( ! ( $_product && $_product->exists() && $cart_item['quantity'] > 0 && apply_filters( 'woocommerce_cart_item_visible', true, $cart_item, $cart_item_key ) ) ) {
+		return false;
+	}
+	$product_permalink = apply_filters( 'woocommerce_cart_item_permalink', $_product->is_visible() ? $_product->get_permalink( $cart_item ) : '', $cart_item, $cart_item_key );
+
+	// Event image for rental items
+	$event_id = isset( $cart_item['_event_id'] ) ? (int) $cart_item['_event_id'] : 0;
+	$event_url = $event_id > 0 ? get_permalink( $event_id ) : '';
+	$custom_thumb_url = '';
+	$scope = $cart_item['tcbf_scope']
+		?? ( isset( $cart_item['booking'] ) ? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) : '' );
+	if ( $scope !== 'transport' && $event_id > 0 ) {
+		$custom_thumb_url = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_event_image_url( $event_id );
+	}
+	?>
+	<tr class="woocommerce-cart-form__cart-item <?php echo esc_attr( apply_filters( 'woocommerce_cart_item_class', 'cart_item', $cart_item, $cart_item_key ) ); ?> <?php echo esc_attr( $row_extra_class ); ?>" data-cart_item_key="<?php echo esc_attr( $cart_item_key ); ?>">
+
+		<td class="product-remove">
+			<?php
+			echo apply_filters(
+				'woocommerce_cart_item_remove_link',
+				sprintf(
+					'<a href="%s" class="remove" aria-label="%s" data-product_id="%s" data-product_sku="%s">&times;</a>',
+					esc_url( wc_get_cart_remove_url( $cart_item_key ) ),
+					/* translators: %s is the product name */
+					esc_attr( sprintf( __( 'Remove %s from cart', 'woocommerce' ), wp_strip_all_tags( $product_name ) ) ),
+					esc_attr( $product_id ),
+					esc_attr( $_product->get_sku() )
+				),
+				$cart_item_key
+			);
+			?>
+		</td>
+
+		<td class="product-thumbnail">
+			<?php
+			if ( $custom_thumb_url ) {
+				$thumbnail = '<img src="' . esc_url( $custom_thumb_url ) . '" class="tcbf-event-thumb" alt="' . esc_attr( $product_name ) . '" />';
+			} else {
+				$thumbnail = apply_filters( 'woocommerce_cart_item_thumbnail', $_product->get_image(), $cart_item, $cart_item_key );
+			}
+
+			if ( ! $product_permalink ) {
+				echo $thumbnail;
+			} else {
+				$link_url = $event_url ?: $product_permalink;
+				printf( '<a href="%s">%s</a>', esc_url( $link_url ), $thumbnail );
+			}
+			?>
+		</td>
+
+		<td class="product-name" data-title="<?php esc_attr_e( 'Product', 'woocommerce' ); ?>">
+			<?php
+			$title_url = $event_url ?: $product_permalink;
+			if ( ! $title_url ) {
+				echo wp_kses_post( $product_name );
+			} else {
+				echo wp_kses_post( sprintf( '<a href="%s" class="tcbf-product-link">%s</a>', esc_url( $title_url ), $product_name ) );
+			}
+
+			do_action( 'woocommerce_after_cart_item_name', $cart_item, $cart_item_key );
+
+			// Meta data.
+			echo wc_get_formatted_cart_item_data( $cart_item );
+
+			// Backorder notification.
+			if ( $_product->backorders_require_notification() && $_product->is_on_backorder( $cart_item['quantity'] ) ) {
+				echo wp_kses_post( apply_filters( 'woocommerce_cart_item_backorder_notification', '<p class="backorder_notification">' . esc_html__( 'Available on backorder', 'woocommerce' ) . '</p>', $product_id ) );
+			}
+			?>
+		</td>
+
+		<td class="product-price" data-title="<?php esc_attr_e( 'Price', 'woocommerce' ); ?>">
+			<?php
+			echo apply_filters( 'woocommerce_cart_item_price', WC()->cart->get_product_price( $_product ), $cart_item, $cart_item_key );
+			?>
+		</td>
+
+		<td class="product-quantity" data-title="<?php esc_attr_e( 'Quantity', 'woocommerce' ); ?>">
+			<?php
+			if ( $_product->is_sold_individually() ) {
+				$min_quantity = 1;
+				$max_quantity = 1;
+			} else {
+				$min_quantity = 0;
+				$max_quantity = $_product->get_max_purchase_quantity();
+			}
+
+			$product_quantity = woocommerce_quantity_input(
+				array(
+					'input_name'   => "cart[{$cart_item_key}][qty]",
+					'input_value'  => $cart_item['quantity'],
+					'max_value'    => $max_quantity,
+					'min_value'    => $min_quantity,
+					'product_name' => $product_name,
+				),
+				$_product,
+				false
+			);
+
+			echo apply_filters( 'woocommerce_cart_item_quantity', $product_quantity, $cart_item_key, $cart_item );
+			?>
+		</td>
+
+		<td class="product-subtotal" data-title="<?php esc_attr_e( 'Subtotal', 'woocommerce' ); ?>">
+			<?php
+			echo apply_filters( 'woocommerce_cart_item_subtotal', WC()->cart->get_product_subtotal( $_product, $cart_item['quantity'] ), $cart_item, $cart_item_key );
+			?>
+		</td>
+	</tr>
+	<?php
+	return true;
+}
+endif;
+
 // Cart/checkout pack UI CSS is injected via Plugin.php (wp_head). Order pages use Woo_OrderMeta styles.
 
 do_action( 'woocommerce_before_cart' ); ?>
@@ -418,108 +543,86 @@ do_action( 'woocommerce_before_cart' ); ?>
 
 			endforeach;
 
-			// Render ungrouped items
-			foreach ( $tcbf_ungrouped as $cart_item_key => $cart_item ) :
-				$_product = apply_filters( 'woocommerce_cart_item_product', $cart_item['data'], $cart_item, $cart_item_key );
-				$product_id = apply_filters( 'woocommerce_cart_item_product_id', $cart_item['product_id'], $cart_item, $cart_item_key );
-				$product_name = apply_filters( 'woocommerce_cart_item_name', $_product->get_name(), $cart_item, $cart_item_key );
+			// Organize ungrouped items into rental sub-groups:
+			// Each rental + its transport children form a visual sub-group.
+			$ungrouped_rental_subgroups = []; // keyed by rental cart_item_key => [ 'rental' => [...], 'transport' => [...] ]
+			$ungrouped_transport_keys   = []; // track transport items claimed by a rental
+			$ungrouped_standalone       = []; // items with no rental/transport relationship
 
-				if ( $_product && $_product->exists() && $cart_item['quantity'] > 0 && apply_filters( 'woocommerce_cart_item_visible', true, $cart_item, $cart_item_key ) ) {
-					$product_permalink = apply_filters( 'woocommerce_cart_item_permalink', $_product->is_visible() ? $_product->get_permalink( $cart_item ) : '', $cart_item, $cart_item_key );
-					?>
-					<tr class="woocommerce-cart-form__cart-item <?php echo esc_attr( apply_filters( 'woocommerce_cart_item_class', 'cart_item', $cart_item, $cart_item_key ) ); ?>" data-cart_item_key="<?php echo esc_attr( $cart_item_key ); ?>">
+			// First pass: identify rentals and their transport children
+			foreach ( $tcbf_ungrouped as $cart_item_key => $cart_item ) {
+				$scope = $cart_item['tcbf_scope']
+					?? ( isset( $cart_item['booking'] ) ? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) : '' );
 
-						<td class="product-remove">
-							<?php
-							echo apply_filters(
-								'woocommerce_cart_item_remove_link',
-								sprintf(
-									'<a href="%s" class="remove" aria-label="%s" data-product_id="%s" data-product_sku="%s">&times;</a>',
-									esc_url( wc_get_cart_remove_url( $cart_item_key ) ),
-									/* translators: %s is the product name */
-									esc_attr( sprintf( __( 'Remove %s from cart', 'woocommerce' ), wp_strip_all_tags( $product_name ) ) ),
-									esc_attr( $product_id ),
-									esc_attr( $_product->get_sku() )
-								),
-								$cart_item_key
-							);
-							?>
-						</td>
-
-						<td class="product-thumbnail">
-							<?php
-							$thumbnail = apply_filters( 'woocommerce_cart_item_thumbnail', $_product->get_image(), $cart_item, $cart_item_key );
-
-							if ( ! $product_permalink ) {
-								echo $thumbnail;
-							} else {
-								printf( '<a href="%s">%s</a>', esc_url( $product_permalink ), $thumbnail );
-							}
-							?>
-						</td>
-
-						<td class="product-name" data-title="<?php esc_attr_e( 'Product', 'woocommerce' ); ?>">
-							<?php
-							if ( ! $product_permalink ) {
-								echo wp_kses_post( $product_name );
-							} else {
-								echo wp_kses_post( sprintf( '<a href="%s">%s</a>', esc_url( $product_permalink ), $product_name ) );
-							}
-
-							do_action( 'woocommerce_after_cart_item_name', $cart_item, $cart_item_key );
-
-							// Meta data.
-							echo wc_get_formatted_cart_item_data( $cart_item );
-
-							// Backorder notification.
-							if ( $_product->backorders_require_notification() && $_product->is_on_backorder( $cart_item['quantity'] ) ) {
-								echo wp_kses_post( apply_filters( 'woocommerce_cart_item_backorder_notification', '<p class="backorder_notification">' . esc_html__( 'Available on backorder', 'woocommerce' ) . '</p>', $product_id ) );
-							}
-							?>
-						</td>
-
-						<td class="product-price" data-title="<?php esc_attr_e( 'Price', 'woocommerce' ); ?>">
-							<?php
-							echo apply_filters( 'woocommerce_cart_item_price', WC()->cart->get_product_price( $_product ), $cart_item, $cart_item_key );
-							?>
-						</td>
-
-						<td class="product-quantity" data-title="<?php esc_attr_e( 'Quantity', 'woocommerce' ); ?>">
-							<?php
-							if ( $_product->is_sold_individually() ) {
-								$min_quantity = 1;
-								$max_quantity = 1;
-							} else {
-								$min_quantity = 0;
-								$max_quantity = $_product->get_max_purchase_quantity();
-							}
-
-							$product_quantity = woocommerce_quantity_input(
-								array(
-									'input_name'   => "cart[{$cart_item_key}][qty]",
-									'input_value'  => $cart_item['quantity'],
-									'max_value'    => $max_quantity,
-									'min_value'    => $min_quantity,
-									'product_name' => $product_name,
-								),
-								$_product,
-								false
-							);
-
-							echo apply_filters( 'woocommerce_cart_item_quantity', $product_quantity, $cart_item_key, $cart_item );
-							?>
-						</td>
-
-						<td class="product-subtotal" data-title="<?php esc_attr_e( 'Subtotal', 'woocommerce' ); ?>">
-							<?php
-							echo apply_filters( 'woocommerce_cart_item_subtotal', WC()->cart->get_product_subtotal( $_product, $cart_item['quantity'] ), $cart_item, $cart_item_key );
-							?>
-						</td>
-					</tr>
-					<?php
-					// Render inline EB row for ungrouped items
-					tcbf_render_inline_eb_row( $cart_item, 0 );
+				if ( $scope === 'transport' ) {
+					$parent_key = $cart_item['_tcbf_transport_parent_key'] ?? '';
+					if ( $parent_key && isset( $tcbf_ungrouped[ $parent_key ] ) ) {
+						if ( ! isset( $ungrouped_rental_subgroups[ $parent_key ] ) ) {
+							$ungrouped_rental_subgroups[ $parent_key ] = [ 'transport' => [] ];
+						}
+						$ungrouped_rental_subgroups[ $parent_key ]['transport'][ $cart_item_key ] = $cart_item;
+						$ungrouped_transport_keys[ $cart_item_key ] = true;
+					}
+				} elseif ( $scope === 'rental' || $scope === '' ) {
+					if ( ! isset( $ungrouped_rental_subgroups[ $cart_item_key ] ) ) {
+						$ungrouped_rental_subgroups[ $cart_item_key ] = [ 'transport' => [] ];
+					}
+					$ungrouped_rental_subgroups[ $cart_item_key ]['rental_key'] = $cart_item_key;
+					$ungrouped_rental_subgroups[ $cart_item_key ]['rental']     = $cart_item;
 				}
+			}
+
+			// Second pass: collect truly standalone items (not a rental with sub-group, not a claimed transport)
+			foreach ( $tcbf_ungrouped as $cart_item_key => $cart_item ) {
+				if ( isset( $ungrouped_rental_subgroups[ $cart_item_key ] ) ) {
+					continue; // rental with sub-group — rendered below
+				}
+				if ( isset( $ungrouped_transport_keys[ $cart_item_key ] ) ) {
+					continue; // transport claimed by a rental — rendered with its parent
+				}
+				$ungrouped_standalone[ $cart_item_key ] = $cart_item;
+			}
+
+			// Render rental sub-groups: rental → EB row → transport children
+			$is_first_ungrouped = empty( $tcbf_groups );
+			foreach ( $ungrouped_rental_subgroups as $rental_key => $subgroup ) :
+				if ( ! isset( $subgroup['rental'] ) ) {
+					// Orphaned transport entries — add to standalone for rendering
+					foreach ( $subgroup['transport'] as $tk => $tv ) {
+						$ungrouped_standalone[ $tk ] = $tv;
+					}
+					continue;
+				}
+
+				if ( ! $is_first_ungrouped ) : ?>
+				<tr class="tcbf-pack-separator"><td colspan="6"></td></tr>
+				<?php endif;
+				$is_first_ungrouped = false;
+
+				// Render the rental item
+				$rendered = tcbf_render_ungrouped_item_row( $rental_key, $subgroup['rental'], 'tcbf-cart-row--parent' );
+
+				if ( $rendered ) {
+					// EB row for this rental
+					tcbf_render_inline_eb_row( $subgroup['rental'], 0 );
+
+					// Transport children (delivery/pickup)
+					foreach ( $subgroup['transport'] as $transport_key => $transport_item ) :
+						tcbf_render_ungrouped_item_row( $transport_key, $transport_item, 'tcbf-cart-row--child' );
+					endforeach;
+				}
+			endforeach;
+
+			// Render truly standalone items (no transport relationship)
+			foreach ( $ungrouped_standalone as $cart_item_key => $cart_item ) :
+				if ( ! $is_first_ungrouped ) : ?>
+				<tr class="tcbf-pack-separator"><td colspan="6"></td></tr>
+				<?php endif;
+				$is_first_ungrouped = false;
+
+				tcbf_render_ungrouped_item_row( $cart_item_key, $cart_item );
+				// EB row for standalone items
+				tcbf_render_inline_eb_row( $cart_item, 0 );
 			endforeach;
 			?>
 
