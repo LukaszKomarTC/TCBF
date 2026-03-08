@@ -80,6 +80,9 @@ final class Woo_Transport {
 		// Per-bike compact status indicators
 		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_transport_indicator' ], 20, 2 );
 
+		// Order/email: render transport meta after item meta
+		add_action( 'woocommerce_order_item_meta_end', [ __CLASS__, 'render_order_item_transport_meta' ], 10, 4 );
+
 		// Cleanup on parent removal
 		add_action( 'woocommerce_remove_cart_item', [ __CLASS__, 'cleanup_transport_on_removal' ], 3, 2 );
 
@@ -1115,6 +1118,76 @@ final class Woo_Transport {
 			if ( isset( $values[ $key ] ) ) {
 				$item->add_meta_data( $key, $values[ $key ], true );
 			}
+		}
+	}
+
+	/**
+	 * Render transport meta below order item (emails + fallback order view).
+	 *
+	 * Fires via woocommerce_order_item_meta_end. Shows service type, date,
+	 * window, address, and zone for transport line items in emails.
+	 */
+	public static function render_order_item_transport_meta( int $item_id, $item, $order, bool $plain_text = false ) : void {
+
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return;
+		}
+
+		$transport_type = $item->get_meta( '_tcbf_transport_type' );
+		if ( $transport_type === '' ) {
+			return;
+		}
+
+		$service_date = $item->get_meta( '_tcbf_transport_service_date' );
+		$window       = $item->get_meta( '_tcbf_transport_window' );
+		$address      = $item->get_meta( '_tcbf_transport_address' );
+		$zone_name    = $item->get_meta( '_tcbf_transport_zone_name' );
+
+		$dir_label = ( $transport_type === 'pickup' )
+			? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
+			: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+
+		$window_label = '';
+		if ( $window !== '' ) {
+			$window_label = ( $window === 'morning' )
+				? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
+				: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
+		}
+
+		if ( $plain_text ) {
+			echo "\n" . esc_html( Woo::translate( '[:en]Service[:es]Servicio[:]' ) ) . ': ' . esc_html( $dir_label ) . "\n";
+			if ( $service_date !== '' ) {
+				echo esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . ': ' . esc_html( $service_date ) . "\n";
+			}
+			if ( $window_label !== '' ) {
+				echo esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ': ' . esc_html( $window_label ) . "\n";
+			}
+			if ( $address !== '' ) {
+				echo esc_html( Woo::translate( '[:en]Address[:es]Dirección[:]' ) ) . ': ' . esc_html( $address ) . "\n";
+			}
+			if ( $zone_name !== '' ) {
+				echo esc_html( Woo::translate( '[:en]Zone[:es]Zona[:]' ) ) . ': ' . esc_html( $zone_name ) . "\n";
+			}
+		} else {
+			echo '<div class="tcbf-transport-order-meta" style="margin-top:6px; font-size:0.9em; color:#555;">';
+
+			echo '<div><strong>' . esc_html( Woo::translate( '[:en]Service[:es]Servicio[:]' ) ) . ':</strong> ' . esc_html( $dir_label ) . '</div>';
+
+			if ( $service_date !== '' ) {
+				echo '<div><strong>' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . ':</strong> ' . esc_html( $service_date ) . '</div>';
+			}
+			if ( $window_label !== '' ) {
+				echo '<div><strong>' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</strong> ' . esc_html( $window_label ) . '</div>';
+			}
+			if ( $address !== '' ) {
+				$display_address = mb_strlen( $address ) > 60 ? mb_substr( $address, 0, 57 ) . '...' : $address;
+				echo '<div><strong>' . esc_html( Woo::translate( '[:en]Address[:es]Dirección[:]' ) ) . ':</strong> ' . esc_html( $display_address ) . '</div>';
+			}
+			if ( $zone_name !== '' ) {
+				echo '<div><strong>' . esc_html( Woo::translate( '[:en]Zone[:es]Zona[:]' ) ) . ':</strong> ' . esc_html( $zone_name ) . '</div>';
+			}
+
+			echo '</div>';
 		}
 	}
 

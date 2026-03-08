@@ -1605,6 +1605,14 @@ class Woo_OrderMeta {
 			}
 		}
 
+		// Transport meta
+		$transport_type     = self::get_item_meta_ci( $item, '_tcbf_transport_type' );
+		$transport_address  = self::get_item_meta_ci( $item, '_tcbf_transport_address' );
+		$transport_zone     = self::get_item_meta_ci( $item, '_tcbf_transport_zone_name' );
+		$transport_window   = self::get_item_meta_ci( $item, '_tcbf_transport_window' );
+		$transport_date     = self::get_item_meta_ci( $item, '_tcbf_transport_service_date' );
+		$is_transport       = ( $transport_type !== '' );
+
 		return [
 			'item_id'           => $item_id,
 			'item'              => $item,
@@ -1627,6 +1635,12 @@ class Woo_OrderMeta {
 			'eb_amount'         => $eb_amount,
 			'eb_base'           => $eb_base,
 			'confirmation'      => $confirmation,
+			'is_transport'      => $is_transport,
+			'transport_type'    => $transport_type,
+			'transport_address' => $transport_address,
+			'transport_zone'    => $transport_zone,
+			'transport_window'  => $transport_window,
+			'transport_date'    => $transport_date,
 		];
 	}
 
@@ -2397,6 +2411,60 @@ class Woo_OrderMeta {
 		// Meta lines (booking date, event, size)
 		echo '<div class="tcbf-order-meta-lines">';
 
+		// Transport-specific meta
+		if ( ! empty( $record['is_transport'] ) ) {
+
+			// Direction (Delivery / Return pickup)
+			if ( $record['transport_type'] !== '' ) {
+				$dir_label = ( $record['transport_type'] === 'pickup' )
+					? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
+					: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Service[:es]Servicio[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $dir_label ) . '</span>';
+				echo '</div>';
+			}
+
+			// Service date
+			if ( $record['transport_date'] !== '' ) {
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $record['transport_date'] ) . '</span>';
+				echo '</div>';
+			}
+
+			// Time window
+			if ( $record['transport_window'] !== '' ) {
+				$window_label = ( $record['transport_window'] === 'morning' )
+					? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
+					: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $window_label ) . '</span>';
+				echo '</div>';
+			}
+
+			// Address
+			if ( $record['transport_address'] !== '' ) {
+				$display_address = mb_strlen( $record['transport_address'] ) > 60
+					? mb_substr( $record['transport_address'], 0, 57 ) . '...'
+					: $record['transport_address'];
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Address[:es]Dirección[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $display_address ) . '</span>';
+				echo '</div>';
+			}
+
+			// Zone
+			if ( $record['transport_zone'] !== '' ) {
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Zone[:es]Zona[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $record['transport_zone'] ) . '</span>';
+				echo '</div>';
+			}
+
+		} else {
+
 		// Booking date
 		if ( $record['booking_date'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
@@ -2424,6 +2492,8 @@ class Woo_OrderMeta {
 			echo '<span class="tcbf-talla-value">' . esc_html( $record['size'] ) . '</span>';
 			echo '</div>';
 		}
+
+		} // end non-transport meta
 
 		echo '</div>'; // .tcbf-order-meta-lines
 
