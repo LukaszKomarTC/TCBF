@@ -86,6 +86,9 @@ final class Woo_Transport {
 		// Cleanup on parent removal
 		add_action( 'woocommerce_remove_cart_item', [ __CLASS__, 'cleanup_transport_on_removal' ], 3, 2 );
 
+		// Recalculate prices after a transport item is removed (e.g. bundle discount changes)
+		add_action( 'woocommerce_cart_item_removed', [ __CLASS__, 'recalculate_after_transport_removal' ], 10, 2 );
+
 		// Clear session on cart empty
 		add_action( 'woocommerce_cart_emptied', [ __CLASS__, 'clear_transport_session' ], 5 );
 	}
@@ -659,6 +662,50 @@ final class Woo_Transport {
 					'type'          => $item['_tcbf_transport_type'] ?? '',
 				] );
 			}
+		}
+	}
+
+	/**
+	 * Recalculate transport prices after a transport item is removed
+	 *
+	 * When one direction is removed, the other direction may lose its bundle discount.
+	 * Also clears session data for directions with no remaining transport items.
+	 *
+	 * @param string $cart_item_key Removed cart item key
+	 * @param object $cart          WC_Cart instance
+	 */
+	public static function recalculate_after_transport_removal( string $cart_item_key, $cart ) : void {
+
+		if ( ! $cart || ! method_exists( $cart, 'get_cart' ) ) {
+			return;
+		}
+
+		// WooCommerce stores the removed item in $cart->removed_cart_contents
+		$removed = $cart->removed_cart_contents[ $cart_item_key ] ?? null;
+		if ( ! $removed || ! self::is_transport_item( $removed ) ) {
+			return;
+		}
+
+		Logger::log( 'transport.recalculate_after_removal.start', [
+			'cart_item_key' => $cart_item_key,
+			'type'          => $removed['_tcbf_transport_type'] ?? '',
+		] );
+
+		// Recalculate prices for both directions (one may now lose bundle discount)
+		$has_delivery = self::count_direction_bikes( self::DIR_DELIVERY ) > 0;
+		$has_pickup   = self::count_direction_bikes( self::DIR_PICKUP ) > 0;
+
+		if ( $has_delivery ) {
+			self::recalculate_direction_prices( self::DIR_DELIVERY );
+		}
+
+		if ( $has_pickup ) {
+			self::recalculate_direction_prices( self::DIR_PICKUP );
+		}
+
+		// If no transport items remain in either direction, clear session data
+		if ( ! $has_delivery && ! $has_pickup ) {
+			self::clear_all_direction_sessions();
 		}
 	}
 

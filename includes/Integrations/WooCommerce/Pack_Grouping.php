@@ -75,6 +75,9 @@ final class Pack_Grouping {
 		// Validate pack integrity before checkout
 		add_action( 'woocommerce_checkout_process', [ __CLASS__, 'validate_pack_integrity' ], 10 );
 
+		// Remove expired entries from cart (fires on cart/checkout page load)
+		add_action( 'woocommerce_check_cart_items', [ __CLASS__, 'remove_expired_cart_items' ], 1 );
+
 		// Lock quantities to 1 for pack items
 		add_filter( 'woocommerce_cart_item_quantity', [ __CLASS__, 'lock_pack_quantity' ], 10, 3 );
 
@@ -196,6 +199,18 @@ final class Pack_Grouping {
 
 		// No group ID = not a pack item
 		if ( ! $group_id ) {
+			return;
+		}
+
+		// If a transport item is removed directly, do NOT cascade to the rest of the group.
+		// Transport items can be individually removed without affecting the core pack
+		// (participation + rental). Price recalculation is handled by Woo_Transport.
+		$removed_scope = self::get_scope( $removed_item );
+		if ( $removed_scope === 'transport' ) {
+			\TC_BF\Support\Logger::log( 'pack.atomic_remove.skip_transport', [
+				'group_id'      => $group_id,
+				'cart_item_key' => $cart_item_key,
+			] );
 			return;
 		}
 
@@ -420,6 +435,69 @@ final class Pack_Grouping {
 				] );
 			}
 		}
+	}
+
+	/**
+	 * Remove cart items whose GF entry has been marked as expired by the cron job
+	 *
+	 * Fires on cart/checkout page load. Uses woocommerce_remove_cart_item internally,
+	 * so transport cleanup (Woo_Transport::cleanup_transport_on_removal) and atomic
+	 * group removal cascade automatically.
+	 */
+	public static function remove_expired_cart_items() : void {
+
+		if ( ! WC() || ! WC()->cart || ! class_exists( '\\TC_BF\\Domain\\Entry_State' ) ) {
+			return;
+		}
+
+		$cart = WC()->cart;
+		$cart_contents = $cart->get_cart();
+
+		if ( empty( $cart_contents ) ) {
+			return;
+		}
+
+		// Collect group IDs that are expired (check each unique group once)
+		$expired_groups = [];
+		foreach ( $cart_contents as $item ) {
+			$group_id = isset( $item[ self::META_GROUP_ID ] ) ? (int) $item[ self::META_GROUP_ID ] : 0;
+			if ( $group_id <= 0 || isset( $expired_groups[ $group_id ] ) ) {
+				continue;
+			}
+
+			$state = \TC_BF\Domain\Entry_State::get_state( $group_id );
+			if ( $state === \TC_BF\Domain\Entry_State::STATE_EXPIRED ) {
+				$expired_groups[ $group_id ] = true;
+			}
+		}
+
+		if ( empty( $expired_groups ) ) {
+			return;
+		}
+
+		\TC_BF\Support\Logger::log( 'pack.remove_expired.start', [
+			'expired_groups' => array_keys( $expired_groups ),
+		] );
+
+		// Remove all cart items belonging to expired groups
+		// This triggers woocommerce_remove_cart_item → cleanup_transport_on_removal + atomic_remove
+		foreach ( $cart_contents as $key => $item ) {
+			$group_id = isset( $item[ self::META_GROUP_ID ] ) ? (int) $item[ self::META_GROUP_ID ] : 0;
+			if ( $group_id > 0 && isset( $expired_groups[ $group_id ] ) ) {
+				$cart->remove_cart_item( $key );
+
+				\TC_BF\Support\Logger::log( 'pack.remove_expired.item', [
+					'group_id'      => $group_id,
+					'cart_item_key' => $key,
+					'scope'         => self::get_scope( $item ),
+				] );
+			}
+		}
+
+		wc_add_notice(
+			__( 'Some items were removed from your cart because the reservation time has expired. Please submit a new booking.', 'tc-booking-flow' ),
+			'notice'
+		);
 	}
 
 	/**
