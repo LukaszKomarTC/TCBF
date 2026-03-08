@@ -1873,6 +1873,15 @@ final class Woo_Transport {
 			return false;
 		}
 
+		// Exclude rentals that belong to a tour pack (participation + rental).
+		// Tour-pack bikes are used at the tour location — no transport needed.
+		if ( $scope === 'rental' ) {
+			$group_id = Pack_Grouping::get_group_id( $cart_item );
+			if ( $group_id > 0 && Pack_Grouping::group_has_participation( $group_id ) ) {
+				return false;
+			}
+		}
+
 		return true;
 	}
 

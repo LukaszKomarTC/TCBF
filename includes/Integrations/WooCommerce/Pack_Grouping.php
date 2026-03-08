@@ -723,6 +723,31 @@ final class Pack_Grouping {
 	}
 
 	/**
+	 * Check if a group is a tour pack (has a participation item)
+	 *
+	 * A tour pack = participation + rental in the same group.
+	 * Used by transport eligibility to exclude tour-pack rentals.
+	 *
+	 * @param int $group_id Group ID to check
+	 * @return bool True if group contains a participation item
+	 */
+	public static function group_has_participation( int $group_id ) : bool {
+
+		if ( $group_id <= 0 || ! WC() || ! WC()->cart ) {
+			return false;
+		}
+
+		foreach ( WC()->cart->get_cart() as $item ) {
+			if ( self::get_group_id( $item ) === $group_id
+				&& self::get_scope( $item ) === 'participation' ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Get participant name from cart item
 	 *
 	 * @param array $cart_item Cart item data
