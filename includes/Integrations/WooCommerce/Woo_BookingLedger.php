@@ -769,13 +769,6 @@ class Woo_BookingLedger {
 	 * Uses JavaScript to position them after their booking item.
 	 */
 	public static function render_booking_footer_rows() : void {
-		// When the TCBF cart template is active, it renders EB footers inline
-		// after each rental row — skip the hook-based rendering + JS repositioning.
-		global $tcbf_cart_template_loaded;
-		if ( ! empty( $tcbf_cart_template_loaded ) ) {
-			return;
-		}
-
 		$cart = WC()->cart;
 		if ( ! $cart ) {
 			return;
@@ -850,15 +843,27 @@ class Woo_BookingLedger {
 		(function() {
 			document.querySelectorAll('.tcbf-booking-footer-row').forEach(function(footerRow) {
 				var cartKey = footerRow.getAttribute('data-tcbf-cart-key');
-				// Find the cart item row by its cart_item_key
-				var itemRow = document.querySelector('tr.woocommerce-cart-form__cart-item[data-cart_item_key="' + cartKey + '"]');
+				var itemRow = null;
+
+				// Method 1: data-cart_item_key attribute on <tr>
+				itemRow = document.querySelector('tr.woocommerce-cart-form__cart-item[data-cart_item_key="' + cartKey + '"]');
+
+				// Method 2: find by quantity input name (always present in WooCommerce cart)
 				if (!itemRow) {
-					// Fallback: try finding by cart key in remove link
-					var removeLink = document.querySelector('a.remove[data-cart_item_key="' + cartKey + '"]');
-					if (removeLink) {
-						itemRow = removeLink.closest('tr');
+					var qtyInput = document.querySelector('input[name="cart[' + cartKey + '][qty]"]');
+					if (qtyInput) {
+						itemRow = qtyInput.closest('tr.woocommerce-cart-form__cart-item');
 					}
 				}
+
+				// Method 3: find by remove URL containing the cart key
+				if (!itemRow) {
+					var removeLink = document.querySelector('a.remove[href*="' + cartKey + '"]');
+					if (removeLink) {
+						itemRow = removeLink.closest('tr.woocommerce-cart-form__cart-item');
+					}
+				}
+
 				if (itemRow) {
 					itemRow.parentNode.insertBefore(footerRow, itemRow.nextSibling);
 				}

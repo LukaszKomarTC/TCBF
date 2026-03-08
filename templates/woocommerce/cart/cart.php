@@ -330,10 +330,6 @@ do_action( 'woocommerce_before_cart' ); ?>
 							</td>
 						</tr>
 						<?php
-						// Render inline EB summary directly after each rental/participation row
-						if ( $item_scope !== 'transport' ) {
-							tcbf_render_inline_eb_row( $cart_item, $group_id );
-						}
 					}
 				endforeach;
 			endforeach;
