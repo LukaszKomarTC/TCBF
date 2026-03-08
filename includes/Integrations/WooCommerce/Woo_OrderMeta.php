@@ -1486,7 +1486,7 @@ class Woo_OrderMeta {
 	 * @param string $key The meta key to look for
 	 * @return string The meta value or empty string
 	 */
-	private static function get_item_meta_ci( \WC_Order_Item_Product $item, string $key ) : string {
+	public static function get_item_meta_ci( \WC_Order_Item_Product $item, string $key ) : string {
 		// Try exact key
 		$value = $item->get_meta( $key, true );
 		if ( $value !== '' ) {
@@ -1590,13 +1590,91 @@ class Woo_OrderMeta {
 			self::render_group( $order, $group_items );
 		}
 
-		// Render standalone items (non-booking products) - each wrapped in container for visual consistency
+		// Sub-group standalone items: place transport items under their parent rental.
+		// Match transports to rentals using (event_id, participant_name).
+		$rental_records    = [];
+		$transport_records = [];
+		$other_records     = [];
+
 		foreach ( $standalone as $record ) {
+			if ( $record['is_transport'] ) {
+				$transport_records[] = $record;
+			} elseif ( $record['scope'] === 'rental' || $record['scope'] === '' ) {
+				$rental_records[] = $record;
+			} else {
+				$other_records[] = $record;
+			}
+		}
+
+		// Build sub-groups: each rental + its transport children
+		$rental_subgroups = []; // [ ['rental' => record, 'transports' => [...]], ... ]
+		$claimed_transport_ids = [];
+
+		foreach ( $rental_records as $rental ) {
+			$subgroup = [ 'rental' => $rental, 'transports' => [] ];
+
+			foreach ( $transport_records as $ti => $transport ) {
+				if ( isset( $claimed_transport_ids[ $ti ] ) ) {
+					continue;
+				}
+
+				// Match by event_id + participant (both copied from rental to transport)
+				$match = false;
+				if ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id'] ) {
+					// Same event — if participant also matches (or both empty), it's a match
+					if ( $transport['participant'] === $rental['participant'] ) {
+						$match = true;
+					}
+				}
+
+				if ( $match ) {
+					$subgroup['transports'][] = $transport;
+					$claimed_transport_ids[ $ti ] = true;
+				}
+			}
+
+			$rental_subgroups[] = $subgroup;
+		}
+
+		// Collect unclaimed transports into other_records
+		foreach ( $transport_records as $ti => $transport ) {
+			if ( ! isset( $claimed_transport_ids[ $ti ] ) ) {
+				$other_records[] = $transport;
+			}
+		}
+
+		// Render rental sub-groups
+		foreach ( $rental_subgroups as $subgroup ) {
+			$record = $subgroup['rental'];
+
 			echo '<div class="tcbf-standalone-group">';
 
 			self::render_standalone_row( $order, $record );
 
 			// Add summary footer for standalone booking items with EB discount
+			if ( $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0 ) {
+				$qty = $record['item']->get_quantity();
+				$base_total = $record['eb_base'] * $qty;
+				$eb_total = $record['eb_amount'] * $qty;
+				$final_total = $base_total - $eb_total;
+
+				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total );
+			}
+
+			// Transport children immediately after their parent rental
+			foreach ( $subgroup['transports'] as $transport ) {
+				self::render_standalone_row( $order, $transport );
+			}
+
+			echo '</div>';
+		}
+
+		// Render remaining standalone items (unclaimed transports, other products)
+		foreach ( $other_records as $record ) {
+			echo '<div class="tcbf-standalone-group">';
+
+			self::render_standalone_row( $order, $record );
+
 			if ( $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0 ) {
 				$qty = $record['item']->get_quantity();
 				$base_total = $record['eb_base'] * $qty;
@@ -1636,6 +1714,11 @@ class Woo_OrderMeta {
 		// Get event data
 		$event_id    = (int) self::get_item_meta_ci( $item, '_event_id' );
 		$event_title = self::get_item_meta_ci( $item, '_event_title' );
+
+		// Fallback: transport items store event as _tcbf_event_id
+		if ( $event_id <= 0 ) {
+			$event_id = (int) self::get_item_meta_ci( $item, '_tcbf_event_id' );
+		}
 
 		// Fallback event title
 		if ( $event_title === '' && $event_id > 0 ) {

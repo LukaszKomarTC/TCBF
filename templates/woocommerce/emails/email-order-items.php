@@ -21,6 +21,80 @@ $email_improvements_enabled = class_exists( FeaturesUtil::class )
 	&& FeaturesUtil::feature_is_enabled( 'email_improvements' );
 $price_text_align           = $email_improvements_enabled ? 'right' : 'left';
 
+// TCBF: Reorder items so transport items follow their parent rental.
+// Uses (event_id, participant) matching since cart keys don't persist to orders.
+if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
+	$reordered    = [];
+	$transport_items = [];
+	$rental_items = [];
+	$other_items  = [];
+
+	foreach ( $items as $item_id => $item ) {
+		$scope = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, 'tcbf_scope' );
+		if ( $scope === '' ) {
+			$scope = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_scope' );
+		}
+
+		if ( $scope === 'transport' || \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_type' ) !== '' ) {
+			$event_id = (int) \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_event_id' );
+			if ( $event_id <= 0 ) {
+				$event_id = (int) \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_event_id' );
+			}
+			$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_participant_name' );
+			if ( $participant === '' ) {
+				$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_participant' );
+			}
+			$transport_items[ $item_id ] = [
+				'item'        => $item,
+				'event_id'    => $event_id,
+				'participant' => $participant,
+			];
+		} elseif ( $scope === 'rental' || $scope === '' ) {
+			$event_id = (int) \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_event_id' );
+			$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_participant_name' );
+			if ( $participant === '' ) {
+				$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_participant' );
+			}
+			$rental_items[ $item_id ] = [
+				'item'        => $item,
+				'event_id'    => $event_id,
+				'participant' => $participant,
+			];
+		} else {
+			$other_items[ $item_id ] = $item;
+		}
+	}
+
+	// Build reordered: each rental followed by its transport children
+	$claimed = [];
+	foreach ( $rental_items as $r_id => $r_data ) {
+		$reordered[ $r_id ] = $r_data['item'];
+
+		foreach ( $transport_items as $t_id => $t_data ) {
+			if ( isset( $claimed[ $t_id ] ) ) {
+				continue;
+			}
+			if ( $r_data['event_id'] > 0 && $t_data['event_id'] === $r_data['event_id']
+				&& $t_data['participant'] === $r_data['participant'] ) {
+				$reordered[ $t_id ] = $t_data['item'];
+				$claimed[ $t_id ] = true;
+			}
+		}
+	}
+
+	// Unclaimed transports + other items at the end
+	foreach ( $transport_items as $t_id => $t_data ) {
+		if ( ! isset( $claimed[ $t_id ] ) ) {
+			$reordered[ $t_id ] = $t_data['item'];
+		}
+	}
+	foreach ( $other_items as $o_id => $o_item ) {
+		$reordered[ $o_id ] = $o_item;
+	}
+
+	$items = $reordered;
+}
+
 foreach ( $items as $item_id => $item ) :
 	$product       = $item->get_product();
 	$sku           = '';
