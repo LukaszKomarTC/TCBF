@@ -769,6 +769,13 @@ class Woo_BookingLedger {
 	 * Uses JavaScript to position them after their booking item.
 	 */
 	public static function render_booking_footer_rows() : void {
+		// When the TCBF cart template is active, it renders EB footers inline
+		// after each rental row — skip the hook-based rendering + JS repositioning.
+		global $tcbf_cart_template_loaded;
+		if ( ! empty( $tcbf_cart_template_loaded ) ) {
+			return;
+		}
+
 		$cart = WC()->cart;
 		if ( ! $cart ) {
 			return;
