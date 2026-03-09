@@ -1783,16 +1783,9 @@ class Woo_OrderMeta {
 		// Get event URL
 		$event_url = $event_id > 0 ? get_permalink( $event_id ) : '';
 
-		// Get booking date, end date, and duration
-		$booking_date = '';
-		$end_date     = '';
-		$duration     = 0;
-		$booking_dates = self::get_booking_dates_from_item( $item_id );
-		if ( $booking_dates ) {
-			$booking_date = $booking_dates['start'];
-			$end_date     = $booking_dates['end'];
-			$duration     = $booking_dates['duration'];
-		}
+		// Get booking date and duration
+		$booking_date  = self::get_booking_date_from_item( $item_id );
+		$duration_data = self::get_booking_duration_from_item( $item_id );
 
 		// Get EB (Early Booking) meta - check Event Form keys first
 		$eb_eligible = (int) self::get_item_meta_ci( $item, '_eb_eligible' );
@@ -1829,8 +1822,8 @@ class Woo_OrderMeta {
 		// Fallback: standalone WC Bookings use _tcbf_notify_participant
 		if ( $confirmation === '' ) {
 			$notify = self::get_item_meta_ci( $item, '_tcbf_notify_participant' );
-			if ( $notify === '1' ) {
-				$confirmation = '1';
+			if ( $notify === '1' || $notify === '0' ) {
+				$confirmation = $notify;
 			}
 		}
 
@@ -1842,9 +1835,27 @@ class Woo_OrderMeta {
 		$transport_date     = self::get_item_meta_ci( $item, '_tcbf_transport_service_date' );
 		$is_transport       = ( $transport_type !== '' );
 
-		// Equipment choices (GF Product Add-ons stored as formatted meta)
-		$pedals = self::get_item_display_meta( $item, [ 'type of pedals', 'tipo de pedales', 'pedals', 'pedales' ] );
-		$helmet = self::get_item_display_meta( $item, [ 'helmet (obligatory)', 'casco (obligatorio)', 'helmet', 'casco' ] );
+		// Equipment choices from GF lead stored by WC GF Product Addon
+		$gf_lead = self::get_gf_lead_from_item( $item );
+		$pedals  = trim( (string) ( $gf_lead['60'] ?? '' ) );
+		$helmet  = trim( (string) ( $gf_lead['61'] ?? '' ) );
+
+		// Fallback: pack items are added programmatically (no _gravity_forms_history),
+		// but _gf_entry_id is persisted to order items by woo_checkout_create_order_line_item().
+		if ( ( $pedals === '' || $helmet === '' ) && class_exists( '\GFAPI' ) ) {
+			$gf_entry_id = (int) self::get_item_meta_ci( $item, '_gf_entry_id' );
+			if ( $gf_entry_id > 0 ) {
+				$gf_entry = \GFAPI::get_entry( $gf_entry_id );
+				if ( is_array( $gf_entry ) ) {
+					if ( $pedals === '' ) {
+						$pedals = trim( (string) ( $gf_entry['60'] ?? '' ) );
+					}
+					if ( $helmet === '' ) {
+						$helmet = trim( (string) ( $gf_entry['61'] ?? '' ) );
+					}
+				}
+			}
+		}
 
 		return [
 			'item_id'           => $item_id,
@@ -1859,8 +1870,8 @@ class Woo_OrderMeta {
 			'bicycle'           => $bicycle,
 			'size'              => $size,
 			'booking_date'      => $booking_date,
-			'end_date'          => $end_date,
-			'duration'          => $duration,
+			'end_date'          => $duration_data['end_date'],
+			'duration'          => $duration_data['duration'],
 			'product_name'      => $product_name,
 			'product_url'       => $product_url,
 			'product_thumb_url' => $product_thumb_url ?: '',
@@ -1913,54 +1924,83 @@ class Woo_OrderMeta {
 	}
 
 	/**
-	 * Get booking start date, end date, and duration from order item.
-	 *
-	 * @param int $item_id Order item ID
-	 * @return array|null ['start' => string, 'end' => string, 'duration' => int] or null
-	 */
-	private static function get_booking_dates_from_item( int $item_id ) : ?array {
-		if ( ! class_exists( 'WC_Booking_Data_Store' ) ) {
-			return null;
-		}
-
-		$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
-		if ( empty( $booking_ids ) ) {
-			return null;
-		}
-
-		$booking = new \WC_Booking( (int) $booking_ids[0] );
-		if ( ! $booking || ! $booking->get_start() ) {
-			return null;
-		}
-
-		$date_format = get_option( 'date_format' );
-		$start_ts    = $booking->get_start();
-		$end_ts      = $booking->get_end();
-
-		$start = date_i18n( $date_format, $start_ts );
-		$end   = $end_ts ? date_i18n( $date_format, $end_ts ) : '';
-
-		$duration = 0;
-		if ( $start_ts && $end_ts && $end_ts > $start_ts ) {
-			$duration = (int) round( ( $end_ts - $start_ts ) / DAY_IN_SECONDS );
-		}
-
-		return [
-			'start'    => $start,
-			'end'      => $end,
-			'duration' => $duration,
-		];
-	}
-
-	/**
-	 * Get booking date from order item (compat wrapper).
+	 * Get booking date from order item.
 	 *
 	 * @param int $item_id Order item ID
 	 * @return string Formatted date or empty
 	 */
 	private static function get_booking_date_from_item( int $item_id ) : string {
-		$dates = self::get_booking_dates_from_item( $item_id );
-		return $dates ? $dates['start'] : '';
+		if ( ! class_exists( 'WC_Booking_Data_Store' ) ) {
+			return '';
+		}
+
+		$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+		if ( empty( $booking_ids ) ) {
+			return '';
+		}
+
+		$booking = new \WC_Booking( (int) $booking_ids[0] );
+		if ( $booking && $booking->get_start() ) {
+			return date_i18n( get_option( 'date_format' ), $booking->get_start() );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Get booking duration (in days) and end date from order item.
+	 *
+	 * @param int $item_id Order item ID
+	 * @return array{duration: int, end_date: string} Duration in days and formatted end date
+	 */
+	private static function get_booking_duration_from_item( int $item_id ) : array {
+		$result = [ 'duration' => 0, 'end_date' => '' ];
+
+		if ( ! class_exists( 'WC_Booking_Data_Store' ) ) {
+			return $result;
+		}
+
+		$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+		if ( empty( $booking_ids ) ) {
+			return $result;
+		}
+
+		try {
+			$booking = new \WC_Booking( (int) $booking_ids[0] );
+
+			if ( ! $booking || $booking->get_product_id() <= 0 ) {
+				return $result;
+			}
+
+			$start_ts = $booking->get_start();
+			$end_ts   = $booking->get_end();
+
+			if ( $start_ts > 0 && $end_ts > 0 && $end_ts > $start_ts ) {
+				$result['duration'] = (int) ceil( ( $end_ts - $start_ts ) / DAY_IN_SECONDS );
+
+				if ( $result['duration'] > 1 ) {
+					$result['end_date'] = date_i18n( get_option( 'date_format' ), $start_ts + ( $result['duration'] - 1 ) * DAY_IN_SECONDS );
+				}
+			}
+		} catch ( \Exception $e ) {
+			// Booking may be corrupted - return empty
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Get GF lead data stored by WC GF Product Add-on.
+	 *
+	 * @param \WC_Order_Item_Product $item The order item
+	 * @return array GF lead field data or empty array
+	 */
+	private static function get_gf_lead_from_item( \WC_Order_Item_Product $item ) : array {
+		$history = $item->get_meta( '_gravity_forms_history', true );
+		if ( is_array( $history ) && ! empty( $history['_gravity_form_lead'] ) && is_array( $history['_gravity_form_lead'] ) ) {
+			return $history['_gravity_form_lead'];
+		}
+		return [];
 	}
 
 	/**
