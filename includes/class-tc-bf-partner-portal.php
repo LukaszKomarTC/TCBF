@@ -397,10 +397,17 @@ final class Partner_Portal {
             if ( class_exists( 'WC_Booking_Data_Store' ) ) {
                 $booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
                 if ( ! empty( $booking_ids ) ) {
-                    $b = new \WC_Booking( (int) $booking_ids[0] );
-                    $start = $b ? $b->get_start_date() : '';
-                    if ( $start ) {
-                        $line .= ' (Start: ' . date_i18n( 'd/m/Y', strtotime( $start ) ) . ')';
+                    try {
+                        $b = new \WC_Booking( (int) $booking_ids[0] );
+                        // Validate booking was loaded properly (product_id > 0 means valid)
+                        if ( $b && $b->get_product_id() > 0 ) {
+                            $start = $b->get_start_date();
+                            if ( $start ) {
+                                $line .= ' (Start: ' . date_i18n( 'd/m/Y', strtotime( $start ) ) . ')';
+                            }
+                        }
+                    } catch ( \Exception $e ) {
+                        // Booking may be deleted or corrupted - skip silently
                     }
                 }
             }

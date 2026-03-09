@@ -566,7 +566,6 @@ final class Sc_Event_Extras {
         if ( $cat_array2 && ! is_wp_error($cat_array2) ) {
             foreach ( $cat_array2 as $cat_id_obj ) {
                 $slug = (string) $cat_id_obj->slug;
-                echo "<script>console.log('" . esc_js($slug) . "-X');</script>";
                 ${"fill_field_{$slug}"} = function() { return "X"; };
                 add_filter('gform_field_value_' . $slug, ${"fill_field_{$slug}"} );
             }
@@ -727,11 +726,12 @@ final class Sc_Event_Extras {
             // - 50 = MTB rental flag
             // - 56 = E-bike rental flag
             // - 170 = Gravel rental flag
+            // NOTE: check non-empty string (meta exists), NOT > 0, so that price "0" (rental included) still shows.
             var tcBfAvailFlags = {
-                55: (tcBfToFloat(tcBfMetaPrices.road)   > 0) ? 'X' : '',
-                50: (tcBfToFloat(tcBfMetaPrices.mtb)    > 0) ? 'X' : '',
-                56: (tcBfToFloat(tcBfMetaPrices.ebike)  > 0) ? 'X' : '',
-                170:(tcBfToFloat(tcBfMetaPrices.gravel) > 0) ? 'X' : ''
+                55: (tcBfMetaPrices.road   !== '') ? 'X' : '',
+                50: (tcBfMetaPrices.mtb    !== '') ? 'X' : '',
+                56: (tcBfMetaPrices.ebike  !== '') ? 'X' : '',
+                170:(tcBfMetaPrices.gravel !== '') ? 'X' : ''
             };
 
             // Apply GF conditional-logic driver flags (X / empty) and schedule ONE logic+total refresh.
@@ -1131,10 +1131,12 @@ final class Sc_Event_Extras {
                 $sel.find('option').eq(3).addClass('ebike');
                 $sel.find('option').eq(4).addClass('gravel');
 
-                if (tcBfToFloat(tcBfMetaPrices.road)   <= 0) $sel.find('.road').remove();
-                if (tcBfToFloat(tcBfMetaPrices.mtb)    <= 0) $sel.find('.mtb').remove();
-                if (tcBfToFloat(tcBfMetaPrices.ebike)  <= 0) $sel.find('.ebike').remove();
-                if (tcBfToFloat(tcBfMetaPrices.gravel) <= 0) $sel.find('.gravel').remove();
+                // Remove rental type options that have NO price configured (empty meta = not available).
+                // A price of "0" means rental is included — keep the option visible.
+                if (tcBfMetaPrices.road   === '') $sel.find('.road').remove();
+                if (tcBfMetaPrices.mtb    === '') $sel.find('.mtb').remove();
+                if (tcBfMetaPrices.ebike  === '') $sel.find('.ebike').remove();
+                if (tcBfMetaPrices.gravel === '') $sel.find('.gravel').remove();
 
                 // Auto-select rental type and reveal the corresponding bike-choice field
                 var defaultRentalClass = "<?php echo esc_js((string)$default_rental_class); ?>";

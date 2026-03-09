@@ -21,6 +21,7 @@ require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notifications_L
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Config.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Templates.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Field_Population.php';
+require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_MergeTagCurrency.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderMeta.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Notifications.php';
@@ -30,6 +31,8 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OfflineGateway.
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Pack_Grouping.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Transport.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_MyAccount.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_PartnerCheckout.php';
 
 /**
  * TC Booking Flow Plugin Main Class (Orchestrator)
@@ -131,6 +134,11 @@ final class Plugin {
 		// ---- GF: partners enabled flag for booking products (field 30)
 		add_filter('gform_field_value_partners_enabled', [ $this, 'gf_populate_partners_enabled' ]);
 
+		// ---- GF: participant language (field 206) - auto-populate with current qTranslate language
+		add_filter('gform_field_value_participant_language', function() {
+			return \TC_BF\Domain\NotificationLanguage::get_current_language();
+		});
+
 		// ---- GF: server-side validation (tamper-proof + self-heal)
 		add_filter('gform_validation', [ $this, 'gf_validation' ], 10, 1);
 
@@ -164,6 +172,11 @@ final class Plugin {
 			\TC_BF\Integrations\GravityForms\GF_Field_Population::init();
 		}
 
+		// GF Merge Tag Currency: :tcbf_eur modifier for Euro formatting in notifications
+		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_MergeTagCurrency') ) {
+			\TC_BF\Integrations\GravityForms\GF_MergeTagCurrency::init();
+		}
+
 		add_filter('gform_pre_submission_filter',  [ $this, 'gf_partner_prepare_form' ], 10, 1);
 		add_action('wp_head',                      [ $this, 'output_form_field_css' ], 100); // CSS for enhanced fields
 		add_action('wp_head',                      [ $this, 'gf_output_partner_css' ], 101); // Partner UI CSS (unified)
@@ -191,6 +204,10 @@ final class Plugin {
 
 		// ---- Cart display: show booking meta to the customer
 		add_filter('woocommerce_get_item_data', [ $this, 'woo_cart_item_data' ], 20, 2);
+
+		// ---- Cart display: lock quantity for booking products and specific categories
+		add_filter('woocommerce_cart_item_quantity', [ Integrations\WooCommerce\Woo::class, 'lock_cart_item_quantity' ], 20, 3);
+		add_filter('woocommerce_widget_cart_item_quantity', [ Integrations\WooCommerce\Woo::class, 'lock_cart_item_quantity' ], 20, 3);
 
 		// ---- Cart display: hide WooCommerce Bookings meta fields we don't want to show
 		add_filter('woocommerce_order_item_display_meta_key', [ $this, 'woo_filter_cart_meta_labels' ], 10, 3);
@@ -236,6 +253,9 @@ final class Plugin {
 			\TC_BF\Integrations\WooCommerce\Template_Loader::init();
 		}
 
+		// ---- Product Brief: booking rules & price table above short description
+		\TC_BF\Integrations\WooCommerce\Woo_ProductBrief::init();
+
 		// ---- Order Status: register custom order statuses (invoiced, settled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderStatus') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_OrderStatus::init();
@@ -244,6 +264,16 @@ final class Plugin {
 		// ---- Offline Gateway: partner/admin invoice gateway (requires WooCommerce)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OfflineGateway') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_OfflineGateway::init();
+		}
+
+		// ---- My Account: enhanced orders table for hotel partners
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_MyAccount') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_MyAccount::init();
+		}
+
+		// ---- Partner Checkout: simplified checkout for hotel partners
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_PartnerCheckout') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_PartnerCheckout::init();
 		}
 
 		// ---- Notification Language: user profile fields (admin + My Account)
@@ -266,17 +296,12 @@ final class Plugin {
 			\TC_BF\Domain\NotificationLanguage::save_my_account_field( (int) $user_id );
 		} );
 
-		// ---- Cart/checkout: show original price with strikethrough for EB, bold for non-EB
-		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
-		add_filter('woocommerce_cart_item_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_subtotal' ], 10, 3);
-
 		// ---- Cart display: render participant and pack badges after item name (priority 10 = shows first)
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_render_pack_badges' ], 10, 2);
 
-		// ---- Cart display: show EB discount badge after item name (priority 15 = shows after participant badge)
-		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
-		add_action('woocommerce_after_mini_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
-		add_action('woocommerce_checkout_cart_item_product_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
+		// ---- Cart/checkout: show original price with strikethrough for EB, bold for non-EB
+		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
+		add_filter('woocommerce_cart_item_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_subtotal' ], 10, 3);
 
 		// ---- Cart display: show per-item EB summary block (base price, discount, total) after item name
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_summary' ], 20, 2);
@@ -1327,6 +1352,33 @@ final class Plugin {
 			echo "  padding-right: 0 !important;\n";
 			echo "}\n";
 
+			echo "\n/* Cart/checkout price styling: strikethrough EB, bold non-EB */\n";
+			echo ".tcbf-price-original {\n";
+			echo "  text-decoration: line-through;\n";
+			echo "  color: #1a1a1a;\n";
+			echo "  font-weight: 400;\n";
+			echo "}\n";
+			echo ".product-subtotal .tcbf-price-final,\n";
+			echo ".product-price .tcbf-price-final,\n";
+			echo ".product-total .tcbf-price-final {\n";
+			echo "  font-weight: 800;\n";
+			echo "  color: #1a1a1a;\n";
+			echo "}\n";
+
+			echo "\n/* EB row with gradient badge + bold total in cart/checkout footers */\n";
+			echo ".tcbf-pack-footer-eb-row,\n";
+			echo ".tcbf-summary-eb-row {\n";
+			echo "  display: flex;\n";
+			echo "  justify-content: space-between;\n";
+			echo "  align-items: center;\n";
+			echo "  padding: 4px 0;\n";
+			echo "  margin-top: 4px;\n";
+			echo "}\n";
+			echo ".tcbf-pack-footer-total-value {\n";
+			echo "  font-weight: 800 !important;\n";
+			echo "  font-size: 16px !important;\n";
+			echo "}\n";
+
 			echo "\n/* Inline Pack Badge (in product title) */\n";
 			echo ".tcbf-pack-badge-inline {\n";
 			echo "  background: rgba(107, 114, 128, 0.12);\n";
@@ -2291,6 +2343,10 @@ final class Plugin {
 	}
 
 	// Woo_Notifications delegation
+	public function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		Integrations\WooCommerce\Woo_Notifications::bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data );
+	}
+
 	public function gf_register_notification_events( array $events ) : array {
 		return Integrations\WooCommerce\Woo_Notifications::gf_register_notification_events($events);
 	}
@@ -2301,10 +2357,6 @@ final class Plugin {
 
 	public function woo_fire_gf_settled_notifications( $order_id, $maybe_order = null ) : void {
 		Integrations\WooCommerce\Woo_Notifications::woo_fire_gf_settled_notifications($order_id, $maybe_order);
-	}
-
-	public function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
-		Integrations\WooCommerce\Woo_Notifications::bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data );
 	}
 
 	// Woo_OrderMeta delegation

@@ -59,34 +59,42 @@ final class GF_JS {
 		// Primary calculation is now via PHP AJAX endpoint for consistency
 		$eb_rules = [];
 		$product_id = 0;
+		$product_max_price = 0;
 		if ( $is_booking_form && function_exists('is_product') && is_product() ) {
 			$product_id = (int) get_queried_object_id();
-			if ( $product_id > 0 && class_exists( '\\TC_BF\\Domain\\ProductEBConfig' ) ) {
-				$eb_cfg = \TC_BF\Domain\ProductEBConfig::get_product_config( $product_id );
-				if ( ! empty( $eb_cfg['enabled'] ) && ! empty( $eb_cfg['steps'] ) ) {
-					$eb_rules = [
-						'enabled'    => true,
-						'steps'      => $eb_cfg['steps'],
-						'global_cap' => $eb_cfg['global_cap'] ?? [],
-					];
+			if ( $product_id > 0 ) {
+				$product = wc_get_product( $product_id );
+				if ( $product ) {
+					$product_max_price = (float) $product->get_price();
+				}
+				if ( class_exists( '\\TC_BF\\Domain\\ProductEBConfig' ) ) {
+					$eb_cfg = \TC_BF\Domain\ProductEBConfig::get_product_config( $product_id );
+					if ( ! empty( $eb_cfg['enabled'] ) && ! empty( $eb_cfg['steps'] ) ) {
+						$eb_rules = [
+							'enabled'    => true,
+							'steps'      => $eb_cfg['steps'],
+							'global_cap' => $eb_cfg['global_cap'] ?? [],
+						];
+					}
 				}
 			}
 		}
 
 		// Cache payload for footer output.
 		self::$partner_js_payload[ $form_id ] = [
-			'partners'     => $partners,
-			'initial_code' => $initial_code,
-			'i18n'         => $i18n,
-			'field_ids'    => $field_ids,
-			'eb_rules'     => $eb_rules,
-			'is_booking'   => $is_booking_form,
-			'product_id'   => $product_id,
-			'ajax_url'     => admin_url( 'admin-ajax.php' ),
+			'partners'          => $partners,
+			'initial_code'      => $initial_code,
+			'i18n'              => $i18n,
+			'field_ids'         => $field_ids,
+			'eb_rules'          => $eb_rules,
+			'is_booking'        => $is_booking_form,
+			'product_id'        => $product_id,
+			'product_max_price' => $product_max_price,
+			'ajax_url'          => admin_url( 'admin-ajax.php' ),
 		];
 
 		// Also register an init script so this works even when GF renders via AJAX.
-		self::register_partner_init_script( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking_form, $product_id );
+		self::register_partner_init_script( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking_form, $product_id, $product_max_price );
 
 		// Inject partner banner HTML field if it doesn't exist in the form
 		$form = self::maybe_inject_partner_banner( $form, $form_id );
@@ -375,11 +383,11 @@ final class GF_JS {
 		];
 	}
 
-	private static function register_partner_init_script( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0 ) : void {
+	private static function register_partner_init_script( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0, float $product_max_price = 0 ) : void {
 		if ( $form_id <= 0 ) return;
 		if ( ! class_exists('\GFFormDisplay') ) return;
 
-		$script = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id );
+		$script = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id, $product_max_price );
 		if ( $script === '' ) return;
 
 		\GFFormDisplay::add_init_script(
@@ -395,7 +403,7 @@ final class GF_JS {
 	 *
 	 * Uses semantic field IDs passed from PHP - no hardcoded field numbers in JS.
 	 */
-	private static function build_partner_override_js( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0 ) : string {
+	private static function build_partner_override_js( int $form_id, array $partners, string $initial_code, array $i18n, array $field_ids, array $eb_rules = [], bool $is_booking = false, int $product_id = 0, float $product_max_price = 0 ) : string {
 		$json = wp_json_encode( $partners );
 		$field_ids_json = wp_json_encode( $field_ids );
 		$eb_rules_json = wp_json_encode( $eb_rules );
@@ -421,6 +429,7 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
   var ebRules = {$eb_rules_json};
   var isBookingForm = {$is_booking_js};
   var productId = {$product_id};
+  var productMaxPrice = {$product_max_price};
   var ajaxUrl = '{$ajax_url}';
 
   // i18n
@@ -595,38 +604,49 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     // - total_after_partner = total_after_eb - partnerAmt (preview only)
     var totalAfterEb = base - ebAmt;
 
+    // Only build the summary when there are actual discounts to show.
+    // If it's just base + total with no discounts, the WC Bookings
+    // cost display already shows the price — the summary adds nothing.
+    var hasDiscounts = (ebAmt > 0) || (partnerAmt > 0 && partnerCode);
     var html = '';
-    // Base price row
-    if(base > 0){
+    if(hasDiscounts && base > 0){
+      // Base price row
       html += '<div class="tcbf-ledger-row tcbf-ledger-base">';
       html += '<span class="tcbf-ledger-label">' + i18n.base + '</span>';
       html += '<span class="tcbf-ledger-value">' + fmtCurrency(base) + '</span>';
       html += '</div>';
-    }
-    // EB discount row
-    if(ebAmt > 0){
-      html += '<div class="tcbf-ledger-row tcbf-ledger-eb">';
-      html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">⏰</span><span class="tcbf-ledger-text">' + i18n.eb + '</span></div>';
-      html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(ebPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(ebAmt) + '</span></div>';
-      html += '</div>';
-    }
-    // Partner discount row (preview - applied via coupon at checkout)
-    if(partnerAmt > 0 && partnerCode){
-      html += '<div class="tcbf-ledger-row tcbf-ledger-partner tcbf-ledger-partner-preview">';
-      html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">✓</span><span class="tcbf-ledger-text">' + partnerCode + '</span></div>';
-      html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(partnerPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(partnerAmt) + '</span><span class="tcbf-ledger-coupon-note">(via coupon)</span></div>';
-      html += '</div>';
-    }
-    // Total row - show the preview total (after partner discount)
-    // Note: Cart price will be total_after_eb; partner discount comes from WC coupon
-    if(total > 0){
-      html += '<div class="tcbf-ledger-row tcbf-ledger-total">';
-      html += '<span class="tcbf-ledger-label">' + i18n.total + '</span>';
-      html += '<span class="tcbf-ledger-value">' + fmtCurrency(total) + '</span>';
-      html += '</div>';
+      // EB discount row
+      if(ebAmt > 0){
+        html += '<div class="tcbf-ledger-row tcbf-ledger-eb">';
+        html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">⏰</span><span class="tcbf-ledger-text">' + i18n.eb + '</span></div>';
+        html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(ebPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(ebAmt) + '</span></div>';
+        html += '</div>';
+      }
+      // Partner discount row (preview - applied via coupon at checkout)
+      if(partnerAmt > 0 && partnerCode){
+        html += '<div class="tcbf-ledger-row tcbf-ledger-partner tcbf-ledger-partner-preview">';
+        html += '<div class="tcbf-ledger-badge"><span class="tcbf-ledger-icon">✓</span><span class="tcbf-ledger-text">' + partnerCode + '</span></div>';
+        html += '<div class="tcbf-ledger-info"><span class="tcbf-ledger-pct">' + fmtPct(partnerPct) + '% ' + i18n.discount + '</span><span class="tcbf-ledger-amt">-' + fmtCurrency(partnerAmt) + '</span><span class="tcbf-ledger-coupon-note">(via coupon)</span></div>';
+        html += '</div>';
+      }
+      // Total row
+      if(total > 0){
+        html += '<div class="tcbf-ledger-row tcbf-ledger-total">';
+        html += '<span class="tcbf-ledger-label">' + i18n.total + '</span>';
+        html += '<span class="tcbf-ledger-value">' + fmtCurrency(total) + '</span>';
+        html += '</div>';
+      }
     }
     container.innerHTML = html;
     container.style.display = html ? 'block' : 'none';
+
+    // Also show/hide the GF field wrapper (#field_{fid}_204)
+    // GF conditional logic can't evaluate hidden-type fields, so we
+    // drive the wrapper visibility directly from JS instead.
+    var wrapper = container.closest('.gfield');
+    if(wrapper){
+      wrapper.style.display = html ? '' : 'none';
+    }
   }
 
   // ===== Partners Enabled Check =====
@@ -662,6 +682,9 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
         changed = setValIfChanged(F.partner_commission,'',true) || changed;
         changed = setValIfChanged(F.partner_email,'',false) || changed;
         changed = setValIfChanged(F.partner_user_id,'',false) || changed;
+        if(changed && F.partner_discount_pct > 0 && typeof window.gf_apply_rules === 'function'){
+          try{ window.gf_apply_rules(fid, [F.partner_discount_pct]); }catch(e){}
+        }
         updatePartnerBanner(null, '');
         enhancePartnerDisplay(null, '');
         setTimeout(function(){ updateEBBanner(); enhanceEBDisplay(); }, 50);
@@ -710,6 +733,12 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
         changed = setValIfChanged(F.partner_user_id, (data.id||''), false) || changed;
       }
 
+      // Trigger GF conditional logic re-evaluation for partner_discount_pct
+      // so fields depending on it (e.g. Pricing summary) can show/hide
+      if(changed && F.partner_discount_pct > 0 && typeof window.gf_apply_rules === 'function'){
+        try{ window.gf_apply_rules(fid, [F.partner_discount_pct]); }catch(e){}
+      }
+
       updatePartnerBanner(data, code);
       enhancePartnerDisplay(data, code);
 
@@ -729,7 +758,6 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
   }
 
   // ===== WC Bookings Live Ledger Calculation (Booking forms only) =====
-  var lastBookingCost = 0;
   var ledgerCalcTimer = null;
 
   function getWcBookingsCost(){
@@ -791,6 +819,7 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
 
   // Track pending AJAX to avoid multiple concurrent requests
   var __ledgerAjaxPending = false;
+  var __ledgerRecalcNeeded = false;
 
   /**
    * Apply ledger values to GF fields and update UI
@@ -804,16 +833,23 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     setValIfChanged(F.ledger_partner_amt, partnerAmount.toFixed(2), false);
     setValIfChanged(F.ledger_total, total.toFixed(2), false);
 
-    // Update EB% field for conditional logic
-    var ebPctChanged = setValIfChanged(F.eb_discount_pct, String(ebPct), true);
-    if(ebPctChanged && typeof window.gf_apply_rules === 'function'){
-      try{ window.gf_apply_rules(fid, [F.eb_discount_pct]); }catch(e){}
+    // Update discount % fields and trigger GF conditional logic
+    // so fields depending on them (e.g. Pricing summary) can show/hide
+    var rulesChanged = [];
+    if(setValIfChanged(F.eb_discount_pct, String(ebPct), true)){
+      rulesChanged.push(F.eb_discount_pct);
     }
 
     // Update partner fields if returned from PHP
     if(partnerCode){
       setValIfChanged(F.coupon_code, partnerCode, false);
-      setValIfChanged(F.partner_discount_pct, String(partnerPct), false);
+      if(setValIfChanged(F.partner_discount_pct, String(partnerPct), true)){
+        rulesChanged.push(F.partner_discount_pct);
+      }
+    }
+
+    if(rulesChanged.length > 0 && typeof window.gf_apply_rules === 'function'){
+      try{ window.gf_apply_rules(fid, rulesChanged); }catch(e){}
     }
 
     // Update displays
@@ -836,10 +872,18 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     setValIfChanged(F.ledger_eb_amount, '0', false);
     setValIfChanged(F.ledger_partner_amt, '0', false);
     setValIfChanged(F.ledger_total, '0', false);
-    var cleared = setValIfChanged(F.eb_discount_pct, '0', true);
-    if(cleared && typeof window.gf_apply_rules === 'function'){
-      try{ window.gf_apply_rules(fid, [F.eb_discount_pct]); }catch(e){}
+    var rulesChanged = [];
+    if(setValIfChanged(F.eb_discount_pct, '0', true)){
+      rulesChanged.push(F.eb_discount_pct);
     }
+    if(setValIfChanged(F.partner_discount_pct, '0', true)){
+      rulesChanged.push(F.partner_discount_pct);
+    }
+    if(rulesChanged.length > 0 && typeof window.gf_apply_rules === 'function'){
+      try{ window.gf_apply_rules(fid, rulesChanged); }catch(e){}
+    }
+    // Clear the visual summary and hide its wrapper
+    updateLedgerSummary(null, '');
   }
 
   /**
@@ -907,15 +951,27 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
       return;
     }
 
+    // Sanity check: reject hallucinated prices from WC Bookings
+    // (can happen when date range spans unavailable dates)
+    if(productMaxPrice > 0 && basePrice > productMaxPrice * 366){
+      console.warn('[TCBF] Booking cost rejected (exceeds sanity cap):', basePrice, 'max:', productMaxPrice * 366);
+      clearLedgerFields();
+      return;
+    }
+
     // If no productId or ajaxUrl, use client-side fallback
     if(!productId || productId <= 0 || !ajaxUrl){
       calculateLedgerClientSide(basePrice, startDate);
       return;
     }
 
-    // Skip if AJAX already pending (debounce)
-    if(__ledgerAjaxPending) return;
+    // If AJAX already pending, flag for retry when it finishes
+    if(__ledgerAjaxPending){
+      __ledgerRecalcNeeded = true;
+      return;
+    }
     __ledgerAjaxPending = true;
+    __ledgerRecalcNeeded = false;
 
     // Format date as Y-m-d for PHP
     var y = startDate.getFullYear();
@@ -963,12 +1019,22 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
         // PHP returned error, use client-side fallback
         calculateLedgerClientSide(basePrice, startDate);
       }
+      // Retry if another calculation was requested while AJAX was in flight
+      if(__ledgerRecalcNeeded){
+        __ledgerRecalcNeeded = false;
+        requestLedgerCalc();
+      }
     })
     .catch(function(err){
       __ledgerAjaxPending = false;
       // AJAX failed, use client-side fallback
       console.warn('[TCBF] Ledger AJAX failed, using client-side fallback:', err);
       calculateLedgerClientSide(basePrice, startDate);
+      // Retry if another calculation was requested while AJAX was in flight
+      if(__ledgerRecalcNeeded){
+        __ledgerRecalcNeeded = false;
+        requestLedgerCalc();
+      }
     });
   }
 
@@ -990,15 +1056,15 @@ window.tcBfPartnerMap[{$form_id}] = {$json};
     if(__tcBfBookingsWatcherBound) return;
     __tcBfBookingsWatcherBound = true;
 
-    // Watch for WC Bookings cost changes using MutationObserver
+    // Watch for WC Bookings cost element mutations using MutationObserver.
+    // Always trigger recalculation on ANY DOM mutation (not just cost changes)
+    // because the date may have changed while the cost stayed the same,
+    // which changes EB eligibility. The 100ms debounce in requestLedgerCalc
+    // prevents excessive calls from rapid DOM updates.
     var costContainer = document.querySelector('.wc-bookings-booking-cost');
     if(costContainer){
-      var observer = new MutationObserver(function(mutations){
-        var newCost = getWcBookingsCost();
-        if(newCost !== lastBookingCost){
-          lastBookingCost = newCost;
-          requestLedgerCalc();
-        }
+      var observer = new MutationObserver(function(){
+        requestLedgerCalc();
       });
       observer.observe(costContainer, { childList: true, subtree: true, characterData: true });
     }
@@ -1075,8 +1141,9 @@ JS;
 			$eb_rules = (is_array($payload) && isset($payload['eb_rules']) && is_array($payload['eb_rules'])) ? $payload['eb_rules'] : [];
 			$is_booking = (is_array($payload) && isset($payload['is_booking'])) ? (bool) $payload['is_booking'] : false;
 			$product_id = (is_array($payload) && isset($payload['product_id'])) ? (int) $payload['product_id'] : 0;
+			$product_max_price = (is_array($payload) && isset($payload['product_max_price'])) ? (float) $payload['product_max_price'] : 0;
 
-			$js = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id );
+			$js = self::build_partner_override_js( $form_id, $partners, $initial_code, $i18n, $field_ids, $eb_rules, $is_booking, $product_id, $product_max_price );
 			if ( $js === '' ) continue;
 
 			echo "\n<script id=\"tc-bf-partner-override-{$form_id}\">\n";
@@ -1223,7 +1290,7 @@ JS;
 .tcbf-ledger-eb .tcbf-ledger-badge { display: flex; align-items: center; gap: 8px; }
 .tcbf-ledger-eb .tcbf-ledger-icon { font-size: 20px; }
 .tcbf-ledger-eb .tcbf-ledger-text { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
-.tcbf-ledger-eb .tcbf-ledger-info { text-align: right; }
+.tcbf-ledger-eb .tcbf-ledger-info { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .tcbf-ledger-eb .tcbf-ledger-pct { font-size: 13px; color: #fff; opacity: 0.9; }
 .tcbf-ledger-eb .tcbf-ledger-amt { font-size: 18px; font-weight: 700; color: #fff; }
 .tcbf-ledger-partner {
@@ -1236,10 +1303,10 @@ JS;
 .tcbf-ledger-partner .tcbf-ledger-badge { display: flex; align-items: center; gap: 8px; }
 .tcbf-ledger-partner .tcbf-ledger-icon { font-size: 20px; color: #22c55e; }
 .tcbf-ledger-partner .tcbf-ledger-text { font-size: 16px; font-weight: 700; color: #14532d; letter-spacing: 0.5px; }
-.tcbf-ledger-partner .tcbf-ledger-info { text-align: right; }
+.tcbf-ledger-partner .tcbf-ledger-info { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .tcbf-ledger-partner .tcbf-ledger-pct { font-size: 13px; color: #14532d; }
 .tcbf-ledger-partner .tcbf-ledger-amt { font-size: 18px; font-weight: 700; color: #14532d; }
-.tcbf-ledger-partner .tcbf-ledger-coupon-note { display: block; font-size: 11px; color: #64748b; font-weight: 400; font-style: italic; margin-top: 2px; }
+.tcbf-ledger-partner .tcbf-ledger-coupon-note { font-size: 11px; color: #64748b; font-weight: 400; font-style: italic; }
 .tcbf-ledger-total {
   padding-top: 12px;
   margin-top: 8px;

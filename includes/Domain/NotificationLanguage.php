@@ -823,3 +823,4 @@ class NotificationLanguage {
 		return self::get_default_language();
 	}
 }
+

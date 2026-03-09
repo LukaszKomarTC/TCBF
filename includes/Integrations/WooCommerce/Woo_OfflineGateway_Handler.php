@@ -131,10 +131,17 @@ class Woo_OfflineGateway_Handler extends \WC_Payment_Gateway {
 		$order->update_meta_data( Woo_OfflineGateway::META_LEGACY_MIRRORED, '1' );
 
 		// Set order status to invoiced (NOT pending, NOT processing)
-		// Do NOT call payment_complete() - we don't want to pretend money was received
-		// Note: WooCommerce expects status without 'wc-' prefix in set_status()
+		// We manually replicate payment_complete() side effects instead of calling it,
+		// because invoiced orders have deferred payment (money not yet received).
+		// Note: date_paid is intentionally NOT set - reserved for settled status.
 		$order->set_status( 'invoiced', __( 'Order placed via offline/partner invoice.', TC_BF_TEXTDOMAIN ) );
 		$order->save();
+
+		// Reduce stock levels (same as payment_complete() does)
+		wc_maybe_reduce_stock_levels( $order_id );
+
+		// Mark customer as a paying customer (for reports/segments)
+		wc_paying_customer( $order );
 
 		// Confirm bookings immediately
 		Woo_OfflineGateway::confirm_order_bookings( $order );

@@ -29,7 +29,7 @@ final class GF_Notification_Templates {
 	/**
 	 * Template version (increment when templates change)
 	 */
-	const TEMPLATE_VERSION = '1.0.0';
+	const TEMPLATE_VERSION = '1.1.0';
 
 	/**
 	 * Available notification templates
@@ -84,6 +84,11 @@ final class GF_Notification_Templates {
 				$result['success'] = false;
 				$result['errors'] = array_merge( $result['errors'], $form_result['errors'] );
 			}
+		}
+
+		// Patch missing inputName on form fields (converts fallback → inputName)
+		if ( ! $dry_run ) {
+			$result['input_name_patches'] = GF_FormValidator::patch_all_input_names();
 		}
 
 		return $result;

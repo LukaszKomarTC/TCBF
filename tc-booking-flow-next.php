@@ -32,8 +32,12 @@ require_once TC_BF_PATH . 'includes/Admin/Admin_Event_Meta.php';
 // TCBF-13: Product EB Configuration (category-based EB rules for booking products)
 require_once TC_BF_PATH . 'includes/Domain/ProductEBConfig.php';
 require_once TC_BF_PATH . 'includes/Domain/BookingLedger.php';
+
+// Notification language resolver (determines customer/partner/admin notification language)
+require_once TC_BF_PATH . 'includes/Domain/NotificationLanguage.php';
 require_once TC_BF_PATH . 'includes/Admin/Admin_Product_Category_EB.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_BookingLedger.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_ProductBrief.php';
 
 // TCBF-14: Product Partner Configuration (category-based partner enable/disable)
 require_once TC_BF_PATH . 'includes/Domain/ProductPartnerConfig.php';

@@ -23,6 +23,20 @@ if ( ! defined('ABSPATH') ) exit;
 final class GF_FieldMap {
 
 	/**
+	 * Canonical semantic key aliases
+	 *
+	 * Maps semantic keys to known alternative inputName values used in
+	 * legacy form exports. When a direct lookup fails, the alias is tried.
+	 * This avoids having to rename inputNames on live forms.
+	 *
+	 * Format: canonical_key => alternative_inputName
+	 */
+	private const ALIASES = [
+		'event_title' => 'product_title',
+		'start_date'  => 'booking_start_str',
+	];
+
+	/**
 	 * In-memory cache of form maps (per-request)
 	 * @var array<int, self>
 	 */
@@ -98,12 +112,22 @@ final class GF_FieldMap {
 	/**
 	 * Get field ID for a semantic key
 	 *
+	 * Checks the direct map first, then falls back to ALIASES.
+	 *
 	 * @param string $key Semantic key (e.g., 'coupon_code')
 	 * @return int|null Field ID or null if not found
 	 */
 	public function get( string $key ) : ?int {
 		$key = trim( $key );
-		return $this->map[ $key ] ?? null;
+		if ( isset( $this->map[ $key ] ) ) {
+			return $this->map[ $key ];
+		}
+		// Try alias (canonical semantic key → legacy inputName)
+		$alias = self::ALIASES[ $key ] ?? null;
+		if ( $alias !== null && isset( $this->map[ $alias ] ) ) {
+			return $this->map[ $alias ];
+		}
+		return null;
 	}
 
 	/**
@@ -131,7 +155,7 @@ final class GF_FieldMap {
 	 * @return bool
 	 */
 	public function has( string $key ) : bool {
-		return isset( $this->map[ trim( $key ) ] );
+		return $this->get( $key ) !== null;
 	}
 
 	/**

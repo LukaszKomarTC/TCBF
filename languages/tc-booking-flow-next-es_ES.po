@@ -155,6 +155,18 @@ msgstr "Tour"
 msgid "Size"
 msgstr "Talla"
 
+msgid "Pedals"
+msgstr "Pedales"
+
+msgid "Type of pedals"
+msgstr "Tipo de pedales"
+
+msgid "Helmet"
+msgstr "Casco"
+
+msgid "Helmet (obligatory)"
+msgstr "Casco (obligatorio)"
+
 # TCBF Pack Totals
 msgid "Pack price before EB"
 msgstr "Precio del pack antes de EB"
@@ -173,6 +185,13 @@ msgstr "Fecha de la reserva"
 
 msgid "Own bike"
 msgstr "Propia"
+
+# EB Standalone footer
+msgid "Price before EB"
+msgstr "Precio antes de EB"
+
+msgid "Combined EB discount"
+msgstr "Descuento EB combinado"
 
 # EB Badge (short form)
 msgid "EB discount"

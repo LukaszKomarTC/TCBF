@@ -120,10 +120,11 @@ class BookingLedger {
 		$result['total_discount'] = round( $total_discount, 2 );
 		$result['total_client']   = $result['total_after_partner']; // Alias for backward compat
 
-		// Calculate partner commission (based on amount after partner discount)
+		// Calculate partner commission (based on amount BEFORE partner discount)
+		// Commission rewards the value the partner brought, not what client paid after discount
 		if ( ! empty( $partner_ctx['active'] ) && $partner_ctx['commission_pct'] > 0 ) {
 			$result['partner_commission'] = round(
-				$result['total_after_partner'] * ( $partner_ctx['commission_pct'] / 100 ),
+				$result['total_after_eb'] * ( $partner_ctx['commission_pct'] / 100 ),
 				2
 			);
 		}
@@ -209,10 +210,11 @@ class BookingLedger {
 		$result['total_discount'] = round( $total_discount, 2 );
 		$result['total_client']   = $result['total_after_partner']; // Alias for backward compat
 
-		// Calculate partner commission (based on amount after partner discount)
+		// Calculate partner commission (based on amount BEFORE partner discount)
+		// Commission rewards the value the partner brought, not what client paid after discount
 		if ( ! empty( $partner_ctx['active'] ) && $partner_ctx['commission_pct'] > 0 ) {
 			$result['partner_commission'] = round(
-				$result['total_after_partner'] * ( $partner_ctx['commission_pct'] / 100 ),
+				$result['total_after_eb'] * ( $partner_ctx['commission_pct'] / 100 ),
 				2
 			);
 		}

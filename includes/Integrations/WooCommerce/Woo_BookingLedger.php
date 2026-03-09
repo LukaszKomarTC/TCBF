@@ -86,20 +86,8 @@ class Woo_BookingLedger {
 		add_action( 'woocommerce_after_mini_cart_item_name', [ __CLASS__, 'render_cart_notify_badge' ], 12, 2 );
 		add_action( 'woocommerce_checkout_cart_item_product_name', [ __CLASS__, 'render_cart_notify_badge' ], 12, 2 );
 
-		// Display small EB badge after cart item name (priority 15 = shows after participant badge)
-		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_cart_eb_badge' ], 15, 2 );
-		add_action( 'woocommerce_after_mini_cart_item_name', [ __CLASS__, 'render_cart_eb_badge' ], 15, 2 );
-		add_action( 'woocommerce_checkout_cart_item_product_name', [ __CLASS__, 'render_cart_eb_badge' ], 15, 2 );
-
-		// Render booking footer rows (price breakdown) as separate table rows
-		// Same pattern as event pack footers
-		add_action( 'woocommerce_cart_contents', [ __CLASS__, 'render_booking_footer_rows' ], 15 );
-
 		// Persist ledger to order
 		add_action( 'woocommerce_checkout_create_order_line_item', [ __CLASS__, 'persist_ledger_to_order' ], 25, 4 );
-
-		// Display EB breakdown in order items (thank you page, order emails, admin)
-		add_action( 'woocommerce_order_item_meta_end', [ __CLASS__, 'render_order_item_eb_breakdown' ], 15, 4 );
 
 		// AJAX endpoint for live ledger calculation (same logic as cart)
 		add_action( 'wp_ajax_tcbf_calc_ledger', [ __CLASS__, 'ajax_calc_ledger' ] );
@@ -136,6 +124,17 @@ class Woo_BookingLedger {
 		if ( $base_price <= 0 ) {
 			wp_send_json_success( self::get_empty_ledger_response() );
 			return;
+		}
+
+		// Sanity check: reject hallucinated prices from WC Bookings
+		// (can happen when date range spans unavailable dates)
+		$product = wc_get_product( $product_id );
+		if ( $product ) {
+			$unit_price = (float) $product->get_price();
+			if ( $unit_price > 0 && $base_price > $unit_price * 366 ) {
+				wp_send_json_success( self::get_empty_ledger_response() );
+				return;
+			}
 		}
 
 		// Parse start date to timestamp
@@ -262,6 +261,22 @@ class Woo_BookingLedger {
 			return $cart_item_data;
 		}
 
+		// Sanity check: reject hallucinated prices from WC Bookings
+		// (can happen when date range spans unavailable dates)
+		$product = wc_get_product( $product_id );
+		if ( $product ) {
+			$unit_price = (float) $product->get_price();
+			if ( $unit_price > 0 && $base_price > $unit_price * 366 ) {
+				Logger::log( 'woo.booking_ledger.price_rejected', [
+					'product_id'  => $product_id,
+					'base_price'  => $base_price,
+					'unit_price'  => $unit_price,
+					'reason'      => 'exceeds sanity cap (unit_price * 366)',
+				], 'warning' );
+				return $cart_item_data;
+			}
+		}
+
 		// Resolve partner context from the lead data
 		$partner_ctx = self::resolve_partner_from_lead( $lead );
 
@@ -305,6 +320,10 @@ class Woo_BookingLedger {
 
 		// Populate GF lead with ledger data
 		BookingLedger::populate_lead_with_ledger( $lead, $ledger, $form_id );
+
+		// Populate event context (title, date) and user context (ID, role)
+		self::populate_lead_with_event_context( $lead, $form_id, $product_id, $start_ts, $booking );
+
 		$cart_item_data['_gravity_form_lead'] = $lead;
 
 		// Log the calculation
@@ -472,6 +491,223 @@ class Woo_BookingLedger {
 	}
 
 	/**
+	 * Populate GF lead with event context and user context for notifications.
+	 *
+	 * Sets fields that are needed in notification templates but not part of the ledger:
+	 * - Event title (from WC product name)
+	 * - Start date (human-readable and timestamp, from booking data)
+	 * - Event ID (WC product ID)
+	 * - User ID and role (from current WP user)
+	 * - Bike model and size (from GF fields or WC booking resource)
+	 *
+	 * @param array &$lead      GF lead data (by reference)
+	 * @param int   $form_id    GF form ID
+	 * @param int   $product_id WC product ID
+	 * @param int   $start_ts   Booking start timestamp
+	 * @param array $booking    WC Bookings data (optional, used for resource extraction)
+	 */
+	private static function populate_lead_with_event_context( array &$lead, int $form_id, int $product_id, int $start_ts, array $booking = [] ) : void {
+
+		$set_field = function( string $key, string $value ) use ( &$lead, $form_id ) {
+			if ( $value === '' ) return;
+			$field_id = GF_SemanticFields::field_id( $form_id, $key );
+			if ( $field_id !== null && $field_id > 0 ) {
+				$lead[ (string) $field_id ] = $value;
+			}
+		};
+
+		// Event title: WC product name (represents the tour/event)
+		$product_title = get_the_title( $product_id );
+		$set_field( GF_SemanticFields::KEY_EVENT_TITLE, $product_title );
+
+		// Start date
+		if ( $start_ts > 0 ) {
+			$set_field( GF_SemanticFields::KEY_START_DATE, wp_date( 'j M Y', $start_ts ) );
+			$set_field( GF_SemanticFields::KEY_START_DATE_STAMP, (string) $start_ts );
+		}
+
+		// End date: derive from booking data
+		$end_ts = 0;
+		if ( isset( $booking['_end_date'] ) ) {
+			$end_ts = (int) $booking['_end_date'];
+		} elseif ( isset( $booking['end_date'] ) ) {
+			$end_ts = (int) $booking['end_date'];
+		}
+		// Fallback: calculate from start + duration (WC Bookings stores duration in days)
+		if ( $end_ts <= 0 && $start_ts > 0 ) {
+			$duration = 0;
+			if ( isset( $booking['_duration'] ) ) {
+				$duration = (int) $booking['_duration'];
+			} elseif ( isset( $booking['duration'] ) ) {
+				$duration = (int) $booking['duration'];
+			} elseif ( isset( $_POST['wc_bookings_field_duration'] ) ) {
+				$duration = (int) $_POST['wc_bookings_field_duration'];
+			}
+			if ( $duration > 0 ) {
+				$end_ts = $start_ts + ( $duration * DAY_IN_SECONDS );
+			}
+		}
+		if ( $end_ts > 0 ) {
+			// Human-readable: last day of booking (end_ts is exclusive/checkout date)
+			$set_field( GF_SemanticFields::KEY_END_DATE, wp_date( 'j M Y', $end_ts - DAY_IN_SECONDS ) );
+			// Raw stamp kept as-is for accurate duration calculation
+			$set_field( GF_SemanticFields::KEY_END_DATE_STAMP, (string) $end_ts );
+		}
+
+		// Event ID: use WC product ID as event reference for booking products
+		$set_field( GF_SemanticFields::KEY_EVENT_ID, (string) $product_id );
+
+		// User context
+		$user_id = get_current_user_id();
+		if ( $user_id > 0 ) {
+			$set_field( GF_SemanticFields::KEY_USER_ID, (string) $user_id );
+			$user = wp_get_current_user();
+			if ( $user && ! empty( $user->roles ) ) {
+				$set_field( GF_SemanticFields::KEY_USER_ROLE, (string) $user->roles[0] );
+			}
+		}
+
+		// Bike model and size (field 146) — compose from rental selection in the lead,
+		// falling back to the WC booking product + resource when GF fields are empty.
+		// GF_Field_Population handles this for standard GF submissions, but for the
+		// WC add-to-cart path the lead may already exist without field 146 populated.
+		self::maybe_populate_bike_model_size( $lead, $product_id, $booking );
+	}
+
+	/**
+	 * Populate bike model and size in GF lead if not already present.
+	 *
+	 * Two strategies (tried in order):
+	 *  1. GF fields: rental type (106) → bike selection field (130/142/143/169)
+	 *     → parse productId_resourceId token.
+	 *  2. WC Booking fallback: use the booking's own product_id + resource_id.
+	 *     This covers standalone bike bookings where GF field 106 is empty.
+	 *
+	 * Writes "Product Name — Size: Resource" to field 146.
+	 *
+	 * @param array &$lead      GF lead data (by reference)
+	 * @param int   $product_id WC product ID (fallback for bike name)
+	 * @param array $booking    WC Bookings data (fallback for resource_id)
+	 */
+	private static function maybe_populate_bike_model_size( array &$lead, int $product_id = 0, array $booking = [] ) : void {
+
+		// Field 146 = bike_model_size (unified contract)
+		$target_field = '146';
+
+		// Skip if already populated (e.g. by GF_Field_Population during form submission)
+		if ( ! empty( trim( (string) ( $lead[ $target_field ] ?? '' ) ) ) ) {
+			return;
+		}
+
+		$bike_product_id  = 0;
+		$bike_resource_id = 0;
+
+		// --- Strategy 1: GF fields (rental type → bike selection field) ---
+		$rental_type = strtoupper( trim( (string) ( $lead['106'] ?? '' ) ) );
+		if ( $rental_type !== '' ) {
+			$bike_field_map = [
+				'ROAD'   => '130',
+				'MTB'    => '142',
+				'EMTB'   => '143',
+				'GRAVEL' => '169',
+			];
+
+			$bike_field = $bike_field_map[ $rental_type ] ?? null;
+			if ( $bike_field !== null ) {
+				$bike_value = trim( (string) ( $lead[ $bike_field ] ?? '' ) );
+				if ( $bike_value !== '' && strpos( $bike_value, 'not_avail' ) !== 0 ) {
+					$parts = explode( '_', $bike_value, 2 );
+					if ( count( $parts ) === 2 ) {
+						$bike_product_id  = (int) $parts[0];
+						$bike_resource_id = (int) $parts[1];
+					}
+				}
+			}
+		}
+
+		// --- Strategy 2: WC Booking fallback (product_id + resource from booking data) ---
+		if ( $bike_product_id <= 0 && $product_id > 0 ) {
+			$bike_product_id = $product_id;
+			$resource_name   = '';
+
+			// 2A) Best: WC Bookings normalised key (set by wc_bookings_get_posted_data)
+			if ( isset( $booking['_resource_id'] ) ) {
+				$bike_resource_id = (int) $booking['_resource_id'];
+			}
+
+			// 2B) Human-readable resource label already provided by WC Bookings
+			if ( isset( $booking['type'] ) && trim( (string) $booking['type'] ) !== '' ) {
+				$resource_name = trim( (string) $booking['type'] );
+			}
+
+			// 2C) Other possible keys (legacy / other flows)
+			if ( $bike_resource_id <= 0 && isset( $booking['wc_bookings_field_resource'] ) ) {
+				$bike_resource_id = (int) $booking['wc_bookings_field_resource'];
+			} elseif ( $bike_resource_id <= 0 && isset( $booking['resource_id'] ) ) {
+				$bike_resource_id = (int) $booking['resource_id'];
+			}
+
+			// 2D) Strong fallback: load in-cart WC Booking object
+			if ( ( $bike_resource_id <= 0 || $resource_name === '' ) && ! empty( $booking['_booking_id'] ) && function_exists( 'get_wc_booking' ) ) {
+				$wc_booking = get_wc_booking( (int) $booking['_booking_id'] );
+				if ( $wc_booking ) {
+					if ( $bike_resource_id <= 0 && method_exists( $wc_booking, 'get_resource_id' ) ) {
+						$bike_resource_id = (int) $wc_booking->get_resource_id();
+					}
+					if ( $resource_name === '' && method_exists( $wc_booking, 'get_resource' ) ) {
+						$res = $wc_booking->get_resource();
+						if ( $res && method_exists( $res, 'get_name' ) ) {
+							$resource_name = (string) $res->get_name();
+						}
+					}
+				}
+			}
+
+			// 2E) Last resort: $_POST (only available during add-to-cart request)
+			if ( $bike_resource_id <= 0 && isset( $_POST['wc_bookings_field_resource'] ) ) {
+				$bike_resource_id = absint( $_POST['wc_bookings_field_resource'] );
+			}
+		}
+
+		if ( $bike_product_id <= 0 ) {
+			return;
+		}
+
+		// Build composite string: "Product Name — Size: Resource"
+		$product_name = get_the_title( $bike_product_id );
+		if ( empty( $product_name ) ) {
+			return;
+		}
+
+		// Resolve resource name if not already set by Strategy 2
+		if ( ! isset( $resource_name ) ) {
+			$resource_name = '';
+		}
+		if ( $resource_name === '' && $bike_resource_id > 0 ) {
+			if ( class_exists( 'WC_Product_Booking_Resource' ) ) {
+				try {
+					$resource = new \WC_Product_Booking_Resource( $bike_resource_id );
+					$resource_name = method_exists( $resource, 'get_name' )
+						? (string) $resource->get_name()
+						: get_the_title( $bike_resource_id );
+				} catch ( \Exception $e ) {
+					$resource_name = get_the_title( $bike_resource_id );
+				}
+			} else {
+				$resource_name = get_the_title( $bike_resource_id );
+			}
+		}
+
+		$bike_model_size = $product_name;
+		if ( ! empty( $resource_name ) ) {
+			$size_label = function_exists( '__' ) ? __( 'Size', 'tc-booking-flow-next' ) : 'Size';
+			$bike_model_size .= ' — ' . $size_label . ': ' . $resource_name;
+		}
+
+		$lead[ $target_field ] = $bike_model_size;
+	}
+
+	/**
 	 * Check if reservation was made by partner or admin
 	 *
 	 * Returns true if:
@@ -571,10 +807,13 @@ class Woo_BookingLedger {
 		// Fields to hide (case-insensitive partial match)
 		$hidden_fields = [
 			'client',           // Client name - shown as participant badge
+			'cliente',          // (ES) Client name
 			'email',            // Email address - internal
 			'confirmation',     // Email confirmation - shown as notify badge
+			'confirmacion',     // (ES) Email confirmation
 			'partner',          // Partner info - internal
 			'booking source',   // Booking source - internal
+			'fuente de reserva', // (ES) Booking source
 		];
 
 		$filtered = [];
@@ -896,6 +1135,11 @@ class Woo_BookingLedger {
 			return;
 		}
 
+		// Skip in email context — Woo_OrderMeta handles email rendering with inline styles
+		if ( Woo_OrderMeta::is_rendering_email() ) {
+			return;
+		}
+
 		// Check for our ledger meta
 		$base            = (float) $item->get_meta( '_tcbf_ledger_base' );
 		$eb_amount       = (float) $item->get_meta( '_tcbf_ledger_eb_amount' );
@@ -927,34 +1171,39 @@ class Woo_BookingLedger {
 			echo esc_html( $eb_label ) . ': -' . wp_strip_all_tags( wc_price( $eb_amount ) ) . "\n";
 			echo esc_html( $total_label ) . ': ' . wp_strip_all_tags( wc_price( $total ) ) . "\n";
 		} else {
-			// HTML breakdown with pack footer styling
+			// HTML breakdown with inline styles for email compatibility
+			// Uses table layout for maximum email client support (flex doesn't work everywhere)
 
-			// Participant badge (same style as cart)
+			// Participant badge
 			if ( ! empty( $participant_name ) ) {
-				echo '<div class="tcbf-pack-participant-badge">';
-				echo '<span class="tcbf-pack-participant-badge__icon">👤</span>';
-				echo '<span class="tcbf-pack-participant-badge__text">' . esc_html( $participant_name ) . '</span>';
+				echo '<div style="margin: 8px 0 6px 0; padding: 4px 8px; background-color: #f5f5f5; border-radius: 4px; display: inline-block; font-size: 12px;">';
+				echo '<span style="margin-right: 4px;">👤</span>';
+				echo '<span style="font-weight: 500;">' . esc_html( $participant_name ) . '</span>';
 				echo '</div>';
 			}
 
-			echo '<div class="tcbf-pack-footer tcbf-pack-footer--booking">';
+			// Price breakdown using table for email compatibility
+			echo '<table cellpadding="0" cellspacing="0" border="0" style="margin-top: 8px; padding: 8px; background-color: #fafafa; border-left: 3px solid #ccc; font-size: 12px; width: auto;">';
 
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-base">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html( $base_label ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $base ) ) . '</span>';
-			echo '</div>';
+			// Base price row
+			echo '<tr>';
+			echo '<td style="color: #666; padding: 2px 12px 2px 8px;">' . esc_html( $base_label ) . ':</td>';
+			echo '<td style="color: #666; padding: 2px 8px 2px 0; text-align: right;">' . wp_kses_post( wc_price( $base ) ) . '</td>';
+			echo '</tr>';
 
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html( $eb_label ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-' . wp_kses_post( wc_price( $eb_amount ) ) . '</span>';
-			echo '</div>';
+			// EB discount row (green)
+			echo '<tr>';
+			echo '<td style="color: #2e7d32; padding: 2px 12px 2px 8px;">' . esc_html( $eb_label ) . ':</td>';
+			echo '<td style="color: #2e7d32; font-weight: 500; padding: 2px 8px 2px 0; text-align: right;">-' . wp_kses_post( wc_price( $eb_amount ) ) . '</td>';
+			echo '</tr>';
 
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-total">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html( $total_label ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $total ) ) . '</span>';
-			echo '</div>';
+			// Total row (bold, with top border)
+			echo '<tr>';
+			echo '<td style="font-weight: 600; padding: 6px 12px 2px 8px; border-top: 1px solid #ddd;">' . esc_html( $total_label ) . ':</td>';
+			echo '<td style="font-weight: 600; padding: 6px 8px 2px 0; text-align: right; border-top: 1px solid #ddd;">' . wp_kses_post( wc_price( $total ) ) . '</td>';
+			echo '</tr>';
 
-			echo '</div>';
+			echo '</table>';
 		}
 	}
 

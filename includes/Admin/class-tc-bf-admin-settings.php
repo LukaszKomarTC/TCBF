@@ -341,8 +341,30 @@ final class Settings {
 			</form>
 
 			<?php
-			if ( empty($logs) ) {
-				echo '<p><em>' . esc_html__('No logs yet.', 'tc-booking-flow-next') . '</em> ' . esc_html__('Submit the configured Gravity Form once, then return here.', 'tc-booking-flow-next') . '</p>';
+			// Process sync POST BEFORE rendering health check, so patched inputName is visible
+			$sync_result = null;
+			if ( isset( $_POST['tcbf_sync_notifications'] ) && check_admin_referer( 'tcbf_sync_notifications' ) ) {
+				$dry_run = isset( $_POST['tcbf_dry_run'] );
+				$sync_result = \TC_BF\Integrations\GravityForms\GF_Notification_Templates::sync_all( $dry_run );
+			}
+
+			if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_FormValidator' ) ) {
+				\TC_BF\Integrations\GravityForms\GF_FormValidator::render_health_section();
+			}
+			?>
+
+			<hr/>
+			<h2><?php echo esc_html__('Tools', 'tc-booking-flow-next'); ?></h2>
+
+			<?php self::render_notification_tools( $sync_result ); ?>
+
+			<hr/>
+			<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
+
+			<?php
+			$debug = self::is_debug();
+			if ( ! $debug ) {
+				echo '<p><em>' . esc_html__('Debug mode is currently off. Enable it above to collect logs.', 'tc-booking-flow-next') . '</em></p>';
 			} else {
 				echo '<table class="widefat striped" style="max-width: 1200px;">';
 				echo '<thead><tr><th>' . esc_html__('Log Entry', 'tc-booking-flow-next') . '</th></tr></thead><tbody>';
@@ -431,6 +453,54 @@ final class Settings {
 		return $v > 0 ? $v : 55;
 	}
 
+	/**
+	 * Get the global fallback participation product ID.
+	 *
+	 * Used by Admin_Event_Meta (event edit screen) when displaying
+	 * the participation product selector.
+	 *
+	 * @return int Product ID or 0 if none set.
+	 */
+	public static function get_default_participation_product_id() : int {
+		return (int) get_option( self::OPT_DEFAULT_PARTICIPATION_PRODUCT_ID, 0 );
+	}
+
+	/**
+	 * Return bookable (WooCommerce Bookings) products as [product_id => label].
+	 *
+	 * Label format: "Title (#ID)".
+	 * Used by Admin_Event_Meta for the participation product dropdown.
+	 *
+	 * @return array<int, string> Array of product_id => label pairs.
+	 */
+	public static function get_bookable_products_for_select() : array {
+		if ( ! function_exists( 'get_posts' ) ) {
+			return [];
+		}
+
+		$products = get_posts([
+			'post_type'      => 'product',
+			'post_status'    => 'publish',
+			'posts_per_page' => 500,
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+			'tax_query'      => [[
+				'taxonomy' => 'product_type',
+				'field'    => 'slug',
+				'terms'    => ['booking'],
+			]],
+		]);
+
+		$out = [];
+		foreach ( $products as $p ) {
+			if ( empty( $p->ID ) ) {
+				continue;
+			}
+			$out[(int) $p->ID] = $p->post_title . ' (#' . $p->ID . ')';
+		}
+		return $out;
+	}
+
 	public static function is_debug() : bool {
 		return (int) get_option(self::OPT_DEBUG, 0) === 1;
 	}
@@ -447,11 +517,10 @@ final class Settings {
 	/**
 	 * Render notification sync tools section
 	 */
-	private static function render_notification_tools(): void {
-		// Handle sync action
-		if ( isset( $_POST['tcbf_sync_notifications'] ) && check_admin_referer( 'tcbf_sync_notifications' ) ) {
+	private static function render_notification_tools( ?array $result = null ): void {
+		// Display sync result (POST was already processed before health check)
+		if ( $result !== null ) {
 			$dry_run = isset( $_POST['tcbf_dry_run'] );
-			$result = GF_Notification_Templates::sync_all( $dry_run );
 
 			if ( $result['success'] ) {
 				$msg = $dry_run

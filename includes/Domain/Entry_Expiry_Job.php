@@ -205,40 +205,57 @@ final class Entry_Expiry_Job {
 	/**
 	 * Acquire job lock
 	 *
-	 * Uses transient to prevent concurrent execution.
+	 * Uses wp_options with autoload=no for an atomic lock.
+	 * add_option() fails if the row already exists, making it a true mutex.
 	 *
 	 * @return bool Lock acquired
 	 */
 	private static function acquire_lock() : bool {
+		global $wpdb;
 
-		// Try to set lock
-		$locked = set_transient( self::LOCK_KEY, time(), self::LOCK_TIMEOUT );
+		$now = time();
 
-		if ( ! $locked ) {
-			// Lock already exists, check if stale
-			$lock_time = (int) get_transient( self::LOCK_KEY );
-			$now = time();
+		// Attempt atomic insert — fails if lock row already exists.
+		$inserted = $wpdb->query( $wpdb->prepare(
+			"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+			self::LOCK_KEY,
+			(string) $now
+		) );
 
-			// If lock is older than timeout, force release and retry
-			if ( $lock_time > 0 && ( $now - $lock_time ) > self::LOCK_TIMEOUT ) {
-				delete_transient( self::LOCK_KEY );
-				$locked = set_transient( self::LOCK_KEY, time(), self::LOCK_TIMEOUT );
+		if ( $inserted ) {
+			return true;
+		}
 
+		// Lock exists — check if it's stale (older than LOCK_TIMEOUT).
+		$lock_time = (int) get_option( self::LOCK_KEY, 0 );
+
+		if ( $lock_time > 0 && ( $now - $lock_time ) > self::LOCK_TIMEOUT ) {
+			// Stale lock: attempt atomic replacement (only if value hasn't changed).
+			$updated = $wpdb->update(
+				$wpdb->options,
+				[ 'option_value' => (string) $now ],
+				[ 'option_name' => self::LOCK_KEY, 'option_value' => (string) $lock_time ],
+				[ '%s' ],
+				[ '%s', '%s' ]
+			);
+
+			if ( $updated ) {
 				\TC_BF\Support\Logger::log( 'expiry_job.lock_forced', [
-					'reason' => 'Stale lock detected and cleared',
+					'reason'           => 'Stale lock detected and claimed',
 					'lock_age_seconds' => $now - $lock_time,
 				] );
+				return true;
 			}
 		}
 
-		return (bool) $locked;
+		return false;
 	}
 
 	/**
 	 * Release job lock
 	 */
 	private static function release_lock() : void {
-		delete_transient( self::LOCK_KEY );
+		delete_option( self::LOCK_KEY );
 	}
 
 	/**

@@ -64,6 +64,13 @@ if ( $show_downloads ) {
  */
 $is_tcbf_booking_order = class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
 	&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::is_booking_order( $order );
+
+// Remove "Order again" for booking orders — bookings require dates and cannot be re-added to cart.
+// Uses order_has_bookings() which checks both TCBF meta (newer) and WC Bookings product type (older).
+if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
+	&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::order_has_bookings( $order ) ) {
+	unset( $actions['order-again'] );
+}
 ?>
 <section class="woocommerce-order-details">
 	<?php
@@ -224,7 +231,14 @@ $is_tcbf_booking_order = class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_
 		</table>
 	<?php endif; ?>
 
-	<?php do_action( 'woocommerce_order_details_after_order_table', $order ); ?>
+	<?php
+	// Remove WC core "Order Again" button for booking orders — bookings require date/resource selection.
+	if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' )
+		&& \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::order_has_bookings( $order ) ) {
+		remove_action( 'woocommerce_order_details_after_order_table', 'woocommerce_order_again_button' );
+	}
+	do_action( 'woocommerce_order_details_after_order_table', $order );
+	?>
 </section>
 
 <?php

@@ -47,11 +47,18 @@ final class GF_SemanticFields {
 	// Event fields (Form 44)
 	const KEY_EVENT_ID              = 'event_id';               // Event post ID
 	const KEY_EVENT_UID             = 'event_uid';              // Event unique identifier
+	const KEY_EVENT_TITLE           = 'event_title';            // Event/tour title
+	const KEY_START_DATE            = 'start_date';             // Event start date (human-readable)
+	const KEY_START_DATE_STAMP      = 'start_date_stamp';       // Event start date (Unix timestamp)
+	const KEY_END_DATE              = 'end_date';               // Event end date (human-readable)
+	const KEY_END_DATE_STAMP        = 'end_date_stamp';         // Event end date (Unix timestamp)
 
 	// User fields
 	const KEY_USER_ROLE             = 'user_role';              // WordPress user role
 	const KEY_USER_EMAIL            = 'user_email';             // User email
 	const KEY_USER_NAME             = 'user_name';              // User full name
+	const KEY_USER_ID               = 'user_id';                // WordPress user ID
+	const KEY_PARTICIPANT_PHONE     = 'participant_phone';      // Participant phone number
 
 	// Ledger fields (booking products)
 	const KEY_LEDGER_BASE           = 'ledger_base';            // Base price before discounts
@@ -60,6 +67,10 @@ final class GF_SemanticFields {
 	const KEY_LEDGER_PARTNER_AMOUNT = 'ledger_partner_amount';  // Partner discount amount
 	const KEY_LEDGER_TOTAL          = 'ledger_total';           // Final total after discounts
 	const KEY_LEDGER_COMMISSION     = 'ledger_commission';      // Partner commission amount
+
+	// Notification language fields
+	const KEY_PARTICIPANT_LANGUAGE           = 'participant_language';                    // Submission language (hidden, auto-populated)
+	const KEY_NOTIFICATION_LANGUAGE_OVERRIDE = 'participant_notification_language_override'; // Admin/partner override (select)
 
 	// =========================================================================
 	// LEGACY FALLBACK MAPS (temporary - to be removed once forms use inputName)
@@ -73,23 +84,46 @@ final class GF_SemanticFields {
 	 * These are used when inputName is not set on the form.
 	 * Log a warning when fallback is used to track migration progress.
 	 */
-	private const LEGACY_FALLBACKS = [
-		// Form 44 - Events (may also be deployed as form 48)
-		44 => [
-			self::KEY_PARTNER_OVERRIDE_CODE    => 63,
-			self::KEY_COUPON_CODE              => 154,
-			self::KEY_PARTNER_USER_ID          => 166,
-			self::KEY_PARTNER_DISCOUNT_PCT     => 152,
-			self::KEY_PARTNER_COMMISSION_PCT   => 161,
-			self::KEY_PARTNER_EMAIL            => 153,
-			self::KEY_EVENT_ID                 => 20,
-			self::KEY_EVENT_UID                => 145,
-			self::KEY_PARTNERS_ENABLED         => 181,
-			self::KEY_EB_DISCOUNT_PCT          => 172,
-			self::KEY_DISPLAY_EB_DISCOUNT      => 179,
-			self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
-			self::KEY_USER_ROLE                => 6,
-		],
+	private const LEGACY_FALLBACKS = [];
+
+	/**
+	 * Default fallback for the configured Event form (dynamic — works for any form ID)
+	 *
+	 * Unified contract: same field IDs as Booking Form v3.
+	 * Matched against the configured event form ID from admin settings.
+	 */
+	private const EVENT_FORM_FALLBACKS = [
+		self::KEY_PARTNER_OVERRIDE_CODE    => 63,
+		self::KEY_COUPON_CODE              => 154,
+		self::KEY_PARTNER_COUPON_CODE      => 154,
+		self::KEY_PARTNER_USER_ID          => 166,
+		self::KEY_PARTNER_DISCOUNT_PCT     => 152,
+		self::KEY_PARTNER_COMMISSION_PCT   => 161,
+		self::KEY_PARTNER_EMAIL            => 153,
+		self::KEY_EVENT_ID                 => 20,
+		self::KEY_EVENT_UID                => 145,
+		self::KEY_EVENT_TITLE              => 1,
+		self::KEY_START_DATE               => 131,
+		self::KEY_START_DATE_STAMP         => 132,
+		self::KEY_END_DATE                 => 133,
+		self::KEY_END_DATE_STAMP           => 134,
+		self::KEY_PARTNERS_ENABLED         => 181,
+		self::KEY_EB_DISCOUNT_PCT          => 172,
+		self::KEY_DISPLAY_EB_DISCOUNT      => 179,
+		self::KEY_DISPLAY_PARTNER_DISCOUNT => 180,
+		self::KEY_USER_ROLE                => 6,
+		self::KEY_USER_EMAIL               => 21,
+		self::KEY_USER_NAME                => 2,
+		self::KEY_USER_ID                  => 167,
+		self::KEY_PARTICIPANT_PHONE        => 123,
+		self::KEY_LEDGER_BASE              => 173,
+		self::KEY_LEDGER_EB_PCT            => 172,
+		self::KEY_LEDGER_EB_AMOUNT         => 175,
+		self::KEY_LEDGER_PARTNER_AMOUNT    => 176,
+		self::KEY_LEDGER_TOTAL             => 168,
+		self::KEY_LEDGER_COMMISSION        => 165,
+		self::KEY_PARTICIPANT_LANGUAGE           => 206,
+		self::KEY_NOTIFICATION_LANGUAGE_OVERRIDE => 207,
 	];
 
 	/**
@@ -106,9 +140,17 @@ final class GF_SemanticFields {
 		self::KEY_PARTNER_DISCOUNT_PCT     => 152,
 		self::KEY_PARTNER_COMMISSION_PCT   => 161,
 		self::KEY_PARTNER_EMAIL            => 153,
+		self::KEY_EVENT_ID                 => 20,
+		self::KEY_EVENT_TITLE              => 1,
+		self::KEY_START_DATE               => 131,
+		self::KEY_START_DATE_STAMP         => 132,
+		self::KEY_END_DATE                 => 133,
+		self::KEY_END_DATE_STAMP           => 134,
 		self::KEY_USER_ROLE                => 6,
 		self::KEY_USER_EMAIL               => 21,
 		self::KEY_USER_NAME                => 2,
+		self::KEY_USER_ID                  => 167,
+		self::KEY_PARTICIPANT_PHONE        => 123,
 		self::KEY_LEDGER_BASE              => 173,
 		self::KEY_LEDGER_EB_PCT            => 172,
 		self::KEY_LEDGER_EB_AMOUNT         => 175,
@@ -117,7 +159,8 @@ final class GF_SemanticFields {
 		self::KEY_LEDGER_COMMISSION        => 165,
 		self::KEY_PARTNERS_ENABLED         => 181,
 		self::KEY_EB_DISCOUNT_PCT          => 172,
-		self::KEY_EVENT_ID                 => 20,
+		self::KEY_PARTICIPANT_LANGUAGE           => 206,
+		self::KEY_NOTIFICATION_LANGUAGE_OVERRIDE => 207,
 	];
 
 	/**
@@ -263,6 +306,12 @@ final class GF_SemanticFields {
 			return self::LEGACY_FALLBACKS[ $form_id ][ $key ];
 		}
 
+		// Check if this is the configured event form
+		$event_form_id = self::get_event_form_id();
+		if ( $form_id === $event_form_id && isset( self::EVENT_FORM_FALLBACKS[ $key ] ) ) {
+			return self::EVENT_FORM_FALLBACKS[ $key ];
+		}
+
 		// Check if this is the configured booking form
 		$booking_form_id = self::get_booking_form_id();
 		if ( $form_id === $booking_form_id && isset( self::BOOKING_FORM_FALLBACKS[ $key ] ) ) {
@@ -270,6 +319,18 @@ final class GF_SemanticFields {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Get the configured event form ID (from admin settings)
+	 *
+	 * @return int
+	 */
+	private static function get_event_form_id() : int {
+		if ( class_exists( '\\TC_BF\\Admin\\Settings' ) && method_exists( '\\TC_BF\\Admin\\Settings', 'get_form_id' ) ) {
+			return \TC_BF\Admin\Settings::get_form_id();
+		}
+		return 44; // Default fallback
 	}
 
 	/**
@@ -396,9 +457,14 @@ final class GF_SemanticFields {
 			self::KEY_PARTNER_EMAIL,
 			self::KEY_EVENT_ID,
 			self::KEY_EVENT_UID,
+			self::KEY_EVENT_TITLE,
+			self::KEY_START_DATE,
+			self::KEY_START_DATE_STAMP,
 			self::KEY_USER_ROLE,
 			self::KEY_USER_EMAIL,
 			self::KEY_USER_NAME,
+			self::KEY_USER_ID,
+			self::KEY_PARTICIPANT_PHONE,
 			self::KEY_LEDGER_BASE,
 			self::KEY_LEDGER_EB_PCT,
 			self::KEY_LEDGER_EB_AMOUNT,
