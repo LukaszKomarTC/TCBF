@@ -3390,6 +3390,19 @@ class Woo_OrderMeta {
 			font-size: 14px;
 		}
 
+		/* Price display - EB original (strikethrough) and final */
+		.tcbf-price-original {
+			text-decoration: line-through;
+			color: #1a1a1a;
+			font-weight: 400;
+			font-size: 14px;
+		}
+		.tcbf-price-final {
+			font-size: 16px;
+			font-weight: 800;
+			color: #1a1a1a;
+		}
+
 		/* Pack footer (totals) - uses design tokens */
 		.tcbf-pack-footer {
 			padding: 12px 16px;
@@ -3426,6 +3439,19 @@ class Woo_OrderMeta {
 			font-weight: 700;
 			color: #111827;
 			font-size: 14px;
+		}
+		.tcbf-pack-footer-total-value {
+			font-weight: 800 !important;
+			font-size: 16px !important;
+			color: #1a1a1a !important;
+		}
+		.tcbf-pack-footer-eb-row,
+		.tcbf-summary-eb-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 6px 0;
+			margin-top: 4px;
 		}
 
 		/* Responsive - tablet */
