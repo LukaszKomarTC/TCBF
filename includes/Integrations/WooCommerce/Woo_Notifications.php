@@ -34,6 +34,37 @@ class Woo_Notifications {
 	const META_SETTLED_NOTIFS_SENT_AT = '_tcbf_settled_notifs_sent_at';
 
 	/* =========================================================
+	 * Bridge: write _gf_entry_id when GF WC Add-on creates entry
+	 * ========================================================= */
+
+	/**
+	 * Bridge _gf_entry_id onto the order item when the GF WC Product Add-ons
+	 * plugin creates the real GF entry at checkout time.
+	 *
+	 * Hook: woocommerce_gravityforms_entry_created (fired by Lucas Stark's plugin)
+	 *
+	 * @param int|mixed $entry_id   GF entry ID just created.
+	 * @param int|mixed $order_id   WC order ID.
+	 * @param mixed     $order_item WC_Order_Item_Product instance.
+	 * @param mixed     $form_data  Form config array.
+	 * @param mixed     $lead_data  Raw field values.
+	 */
+	public static function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		$entry_id = (int) $entry_id;
+		if ( $entry_id <= 0 ) return;
+
+		if ( ! is_object( $order_item ) || ! method_exists( $order_item, 'update_meta_data' ) ) return;
+
+		$order_item->update_meta_data( '_gf_entry_id', (string) $entry_id );
+		$order_item->save();
+
+		\TC_BF\Support\Logger::log( 'gf.notif.bridge_entry_id', [
+			'entry_id' => $entry_id,
+			'order_id' => (int) $order_id,
+		]);
+	}
+
+	/* =========================================================
 	 * GF notifications (parity with legacy snippets)
 	 * ========================================================= */
 
@@ -47,6 +78,37 @@ class Woo_Notifications {
 		$events['WC___paid']    = __( 'WooCommerce order paid (includes invoiced)', TC_BF_TEXTDOMAIN );
 		$events['WC___settled'] = __( 'Invoice settled (future use)', TC_BF_TEXTDOMAIN );
 		return $events;
+	}
+
+	/**
+	 * Collect GF entry IDs from order line items.
+	 *
+	 * Resolution order per item:
+	 * 1. _gf_entry_id (written by TCBF or bridge_gf_entry_id_to_order_item)
+	 * 2. _gravity_forms_history['_gravity_form_linked_entry_id'] (written by WC GF Product Add-ons)
+	 *
+	 * @param \WC_Order $order
+	 * @return int[] Unique entry IDs.
+	 */
+	private static function collect_entry_ids( \WC_Order $order ) : array {
+		$entry_ids = [];
+		foreach ( $order->get_items() as $item ) {
+			if ( ! is_object( $item ) || ! method_exists( $item, 'get_meta' ) ) continue;
+
+			// Primary: _gf_entry_id (TCBF event packs + bridge hook for booking products)
+			$eid = (int) $item->get_meta( '_gf_entry_id', true );
+
+			// Fallback: WC GF Product Add-ons stores the linked entry ID in _gravity_forms_history
+			if ( $eid <= 0 ) {
+				$history = $item->get_meta( '_gravity_forms_history', true );
+				if ( is_array( $history ) && ! empty( $history['_gravity_form_linked_entry_id'] ) ) {
+					$eid = (int) $history['_gravity_form_linked_entry_id'];
+				}
+			}
+
+			if ( $eid > 0 ) $entry_ids[] = $eid;
+		}
+		return array_values( array_unique( $entry_ids ) );
 	}
 
 	/**
@@ -85,17 +147,13 @@ class Woo_Notifications {
 			$trigger = $order->get_status();
 		}
 
-		// Gather GF entry ids from line items (pack parent items have _gf_entry_id)
-		$entry_ids = [];
-		foreach ( $order->get_items() as $item ) {
-			if ( ! is_object($item) || ! method_exists($item, 'get_meta') ) continue;
-			$eid = (int) $item->get_meta( '_gf_entry_id', true );
-			if ( $eid > 0 ) $entry_ids[] = $eid;
-		}
-		$entry_ids = array_values( array_unique( array_filter( $entry_ids ) ) );
+		$entry_ids = self::collect_entry_ids( $order );
 
 		// No GF entries found - skip silently (may be non-pack order)
 		if ( ! $entry_ids ) return;
+
+		// Get customer language for notifications
+		$customer_lang = \TC_BF\Domain\NotificationLanguage::for_customer( $order );
 
 		$did_any = false;
 		foreach ( $entry_ids as $entry_id ) {
@@ -112,8 +170,11 @@ class Woo_Notifications {
 				$form = \GFAPI::get_form( $form_id );
 				if ( ! is_array($form) || empty($form['id']) ) continue;
 
-				// Fire WC___paid event - GF conditional logic handles recipient decisions
-				\GFAPI::send_notifications( $form, $entry, 'WC___paid' );
+				// Fire WC___paid event with locale switching for customer language
+				// GF conditional logic handles recipient decisions
+				\TC_BF\Domain\NotificationLanguage::with_locale( $customer_lang, function() use ( $form, $entry ) {
+					\GFAPI::send_notifications( $form, $entry, 'WC___paid' );
+				} );
 				$did_any = true;
 			} catch ( \Throwable $e ) {
 				\TC_BF\Support\Logger::log('gf.notif.wc_paid.exception', [
@@ -138,6 +199,73 @@ class Woo_Notifications {
 		}
 	}
 
+	/* =========================================================
+	 * WooCommerce Email Subject Localization
+	 * ========================================================= */
+
+	/**
+	 * Filter customer completed order email subject with multilingual support.
+	 *
+	 * Hook: woocommerce_email_subject_customer_completed_order
+	 *
+	 * @param string    $subject Original subject.
+	 * @param \WC_Order $order   Order object.
+	 * @return string Localized subject.
+	 */
+	public static function filter_completed_order_subject( $subject, $order ) : string {
+		$order_id = $order->get_id();
+		$text = sprintf(
+			'[:es]Tu pedido [ #%d ] ha sido completado[:en]Your order [ #%d ] has been completed[:]',
+			$order_id,
+			$order_id
+		);
+		return Woo::translate( $text );
+	}
+
+	/**
+	 * Filter new order (admin) email subject with multilingual support.
+	 *
+	 * Hook: woocommerce_email_subject_new_order
+	 *
+	 * @param string    $subject Original subject.
+	 * @param \WC_Order $order   Order object.
+	 * @return string Localized subject.
+	 */
+	public static function filter_new_order_subject( $subject, $order ) : string {
+		$order_id = $order->get_id();
+		$text = sprintf(
+			'[:es]Nuevo pedido [ #%d ][:en]New order [ #%d ][:]',
+			$order_id,
+			$order_id
+		);
+		return Woo::translate( $text );
+	}
+
+	/**
+	 * Filter booking reminder email subject with multilingual support.
+	 *
+	 * Hook: woocommerce_email_subject_booking_reminder
+	 *
+	 * @param string $subject Original subject.
+	 * @param mixed  $booking Booking object.
+	 * @return string Localized subject.
+	 */
+	public static function filter_booking_reminder_subject( $subject, $booking ) : string {
+		$booking_id = is_object( $booking ) && method_exists( $booking, 'get_id' )
+			? $booking->get_id()
+			: 0;
+		$text = sprintf(
+			'[:es]Reserva #%d: ¡Recordatorio![:en]Booking #%d: Reminder![:]',
+			$booking_id,
+			$booking_id
+		);
+		return Woo::translate( $text );
+	}
+
+	/* =========================================================
+	 * GF Invoice Settlement Notifications
+	 * ========================================================= */
+
 	/**
 	 * Fire GF notifications when an invoice is settled.
 	 *
@@ -160,14 +288,7 @@ class Woo_Notifications {
 		}
 		if ( ! $order ) return;
 
-		// Gather GF entry ids from line items
-		$entry_ids = [];
-		foreach ( $order->get_items() as $item ) {
-			if ( ! is_object($item) || ! method_exists($item, 'get_meta') ) continue;
-			$eid = (int) $item->get_meta( '_gf_entry_id', true );
-			if ( $eid > 0 ) $entry_ids[] = $eid;
-		}
-		$entry_ids = array_values( array_unique( array_filter( $entry_ids ) ) );
+		$entry_ids = self::collect_entry_ids( $order );
 		if ( empty( $entry_ids ) ) return;
 
 		if ( ! class_exists('GFAPI') ) return;
@@ -202,6 +323,139 @@ class Woo_Notifications {
 				'entry_ids' => $entry_ids,
 			]);
 		}
+	}
+
+	/* =========================================================
+	 * WooCommerce Email Locale Switching
+	 *
+	 * Ensures WC emails render in the correct language based on recipient:
+	 * - Customer emails: Use customer's captured language
+	 * - Admin emails: Use admin's preferred language
+	 * ========================================================= */
+
+	/**
+	 * Previous qTranslate language (for restoration)
+	 *
+	 * @var string|null
+	 */
+	private static $prev_qtx_lang = null;
+
+	/**
+	 * Whether WP locale was switched
+	 *
+	 * @var bool
+	 */
+	private static $wp_locale_switched = false;
+
+	/**
+	 * Setup locale before WC email rendering.
+	 *
+	 * Hook: woocommerce_email_setup_locale
+	 *
+	 * @param \WC_Email $email Email object
+	 */
+	public static function setup_email_locale( $email ) : void {
+		if ( ! $email || ! is_object( $email ) ) {
+			return;
+		}
+
+		// Determine target language based on email type
+		$target_lang = self::get_email_target_language( $email );
+		if ( ! $target_lang ) {
+			return;
+		}
+
+		// Switch qTranslate language
+		if ( function_exists( 'qtranxf_getLanguage' ) ) {
+			self::$prev_qtx_lang = qtranxf_getLanguage();
+			if ( self::$prev_qtx_lang !== $target_lang ) {
+				global $q_config;
+				if ( isset( $q_config ) ) {
+					$q_config['language'] = $target_lang;
+				}
+			}
+		}
+
+		// Switch WordPress locale
+		$target_locale = \TC_BF\Domain\NotificationLanguage::lang_to_locale( $target_lang );
+		if ( function_exists( 'switch_to_locale' ) && $target_locale !== get_locale() ) {
+			switch_to_locale( $target_locale );
+			self::$wp_locale_switched = true;
+		}
+	}
+
+	/**
+	 * Restore locale after WC email rendering.
+	 *
+	 * Hook: woocommerce_email_restore_locale
+	 *
+	 * @param \WC_Email $email Email object
+	 */
+	public static function restore_email_locale( $email ) : void {
+		// Restore qTranslate language
+		if ( self::$prev_qtx_lang !== null && function_exists( 'qtranxf_getLanguage' ) ) {
+			global $q_config;
+			if ( isset( $q_config ) ) {
+				$q_config['language'] = self::$prev_qtx_lang;
+			}
+			self::$prev_qtx_lang = null;
+		}
+
+		// Restore WordPress locale
+		if ( self::$wp_locale_switched && function_exists( 'restore_previous_locale' ) ) {
+			restore_previous_locale();
+			self::$wp_locale_switched = false;
+		}
+	}
+
+	/**
+	 * Determine target language for an email.
+	 *
+	 * @param \WC_Email $email Email object
+	 * @return string|null Language code or null if cannot determine
+	 */
+	private static function get_email_target_language( $email ) : ?string {
+		// Get email ID
+		$email_id = '';
+		if ( property_exists( $email, 'id' ) ) {
+			$email_id = (string) $email->id;
+		}
+
+		// Admin emails: use admin's preferred language
+		$admin_email_ids = [
+			'new_order',
+			'cancelled_order',
+			'failed_order',
+			'new_booking',
+		];
+		if ( strpos( $email_id, 'admin_' ) === 0 || in_array( $email_id, $admin_email_ids, true ) ) {
+			return \TC_BF\Domain\NotificationLanguage::for_admin();
+		}
+
+		// Customer emails: try to get order and customer language
+		$order = null;
+		if ( property_exists( $email, 'object' ) && $email->object instanceof \WC_Order ) {
+			$order = $email->object;
+		}
+
+		if ( $order ) {
+			return \TC_BF\Domain\NotificationLanguage::for_customer( $order );
+		}
+
+		// Booking-related emails: try to get order from booking
+		if ( property_exists( $email, 'object' ) && class_exists( 'WC_Booking' ) && $email->object instanceof \WC_Booking ) {
+			$booking = $email->object;
+			$order_id = $booking->get_order_id();
+			if ( $order_id > 0 ) {
+				$order = wc_get_order( $order_id );
+				if ( $order ) {
+					return \TC_BF\Domain\NotificationLanguage::for_customer( $order );
+				}
+			}
+		}
+
+		// Fallback to site default
+		return \TC_BF\Domain\NotificationLanguage::get_default_language();
 	}
 
 }

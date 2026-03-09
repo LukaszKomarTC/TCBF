@@ -175,6 +175,11 @@ final class Plugin {
 		// ---- GF: submission to cart (single source of truth)
 		add_action('gform_after_submission', [ $this, 'gf_after_submission_add_to_cart' ], 10, 2);
 
+		// ---- Notification Language: capture submission language on GF entry
+		add_action('gform_after_submission', function( $entry, $form ) {
+			\TC_BF\Domain\NotificationLanguage::on_gf_submission( $entry, $form );
+		}, 5, 2);
+
 		// ---- Woo Bookings: override booking cost when we pass _custom_cost (existing behavior)
 		add_filter('woocommerce_bookings_calculated_booking_cost', [ $this, 'woo_override_booking_cost' ], 11, 3);
 
@@ -217,6 +222,15 @@ final class Plugin {
 		// ---- Email: render enhanced discount/commission blocks after order table (with visibility rules)
 		add_action('woocommerce_email_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_enhanced_blocks' ], 10, 4);
 
+		// ---- Email subjects: localize WooCommerce email subjects with qTranslate support
+		add_filter('woocommerce_email_subject_customer_completed_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_completed_order_subject' ], 10, 2);
+		add_filter('woocommerce_email_subject_new_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_new_order_subject' ], 10, 2);
+		add_filter('woocommerce_email_subject_booking_reminder', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_booking_reminder_subject' ], 10, 2);
+
+		// ---- Email locale switching: switch WP locale and qTranslate language based on recipient
+		add_action('woocommerce_email_setup_locale', [ Integrations\WooCommerce\Woo_Notifications::class, 'setup_email_locale' ], 10, 1);
+		add_action('woocommerce_email_restore_locale', [ Integrations\WooCommerce\Woo_Notifications::class, 'restore_email_locale' ], 10, 1);
+
 		// ---- Template Loader: WooCommerce + Bookings template overrides (theme wins, can be disabled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Template_Loader') ) {
 			\TC_BF\Integrations\WooCommerce\Template_Loader::init();
@@ -231,6 +245,26 @@ final class Plugin {
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OfflineGateway') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_OfflineGateway::init();
 		}
+
+		// ---- Notification Language: user profile fields (admin + My Account)
+		add_action( 'show_user_profile', function( $user ) {
+			\TC_BF\Domain\NotificationLanguage::render_user_profile_field( $user );
+		} );
+		add_action( 'edit_user_profile', function( $user ) {
+			\TC_BF\Domain\NotificationLanguage::render_user_profile_field( $user );
+		} );
+		add_action( 'personal_options_update', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_user_profile_field( (int) $user_id );
+		} );
+		add_action( 'edit_user_profile_update', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_user_profile_field( (int) $user_id );
+		} );
+		add_action( 'woocommerce_edit_account_form', function() {
+			\TC_BF\Domain\NotificationLanguage::render_my_account_field();
+		} );
+		add_action( 'woocommerce_save_account_details', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_my_account_field( (int) $user_id );
+		} );
 
 		// ---- Cart/checkout: show original price with strikethrough for EB, bold for non-EB
 		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
@@ -289,6 +323,11 @@ final class Plugin {
 		// ---- Entry State: set checkout guard when order is being created
 		add_action('woocommerce_checkout_order_processed', [ $this, 'entry_state_set_checkout_guard' ], 5, 3);
 
+		// ---- Notification Language: capture customer language on order
+		add_action('woocommerce_checkout_order_processed', function( $order_id, $posted_data, $order ) {
+			\TC_BF\Domain\NotificationLanguage::on_checkout_order_processed( (int) $order_id, $posted_data, $order );
+		}, 6, 3);
+
 		// ---- Entry State: mark entries as paid when payment succeeds
 		add_action('woocommerce_payment_complete', [ $this, 'entry_state_mark_paid' ], 25, 1);
 		add_action('woocommerce_order_status_processing', [ $this, 'entry_state_mark_paid' ], 25, 2);
@@ -303,6 +342,14 @@ final class Plugin {
 		// ---- GF notifications: custom event + fire on paid-equivalent statuses
 		// Paid-equivalent: processing, completed, invoiced (see Woo_StatusPolicy)
 		add_filter('gform_notification_events', [ $this, 'gf_register_notification_events' ], 10, 1);
+		// Per-notification language switching (participant, partner, admin get different languages)
+		add_filter('gform_notification', function( $notification, $form, $entry ) {
+			return \TC_BF\Domain\NotificationLanguage::filter_notification_language( $notification, $form, $entry );
+		}, 5, 3);
+		add_action('woocommerce_gravityforms_entry_created', [ $this, 'bridge_gf_entry_id_to_order_item' ], 10, 5);
+		add_action('woocommerce_gravityforms_entry_created', function( $entry_id, $order_id, $order_item, $form_data, $lead_data ) {
+			\TC_BF\Domain\NotificationLanguage::on_gf_entry_linked_to_order( $entry_id, $order_id, $order_item, $form_data, $lead_data );
+		}, 15, 5);
 		add_action('woocommerce_payment_complete', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 1);
 		// All paid-equivalent statuses fire WC___paid event
 		add_action('woocommerce_order_status_processing', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 2);
@@ -2254,6 +2301,10 @@ final class Plugin {
 
 	public function woo_fire_gf_settled_notifications( $order_id, $maybe_order = null ) : void {
 		Integrations\WooCommerce\Woo_Notifications::woo_fire_gf_settled_notifications($order_id, $maybe_order);
+	}
+
+	public function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		Integrations\WooCommerce\Woo_Notifications::bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data );
 	}
 
 	// Woo_OrderMeta delegation
