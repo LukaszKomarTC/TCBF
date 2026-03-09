@@ -199,6 +199,9 @@ final class Plugin {
 		// ---- Order view: render enhanced discount/commission blocks after order table
 		add_action('woocommerce_order_details_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_enhanced_blocks' ], 10, 1);
 
+		// ---- My Account orders list: remove "Order again" for booking orders
+		add_filter('woocommerce_my_account_my_orders_actions', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'filter_order_again_action' ], 10, 2);
+
 		// ---- Order view: hide Woo's generic Discount row (we show partner discount in enhanced blocks)
 		add_filter('woocommerce_get_order_item_totals', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'filter_order_totals_hide_discount' ], 10, 3);
 
@@ -228,6 +231,10 @@ final class Plugin {
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OfflineGateway') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_OfflineGateway::init();
 		}
+
+		// ---- Cart/checkout: show original price with strikethrough for EB, bold for non-EB
+		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
+		add_filter('woocommerce_cart_item_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_subtotal' ], 10, 3);
 
 		// ---- Cart display: render participant and pack badges after item name (priority 10 = shows first)
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_render_pack_badges' ], 10, 2);

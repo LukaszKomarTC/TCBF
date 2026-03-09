@@ -1480,6 +1480,52 @@ class Woo_OrderMeta {
 	}
 
 	/**
+	 * Filter "Order again" action from My Account orders list for booking orders.
+	 *
+	 * @param array     $actions Order actions
+	 * @param \WC_Order $order   The order
+	 * @return array Filtered actions
+	 */
+	public static function filter_order_again_action( array $actions, \WC_Order $order ) : array {
+		if ( self::order_has_bookings( $order ) ) {
+			unset( $actions['order-again'] );
+		}
+		return $actions;
+	}
+
+	/**
+	 * Check if an order contains any booking products.
+	 *
+	 * Broader than is_booking_order(): uses layered detection so even
+	 * older orders (without TCBF meta) are caught.
+	 *
+	 * Tiers (OR logic):
+	 *  1. TCBF meta markers (_event_id, tc_group_id, _tcbf_ledger_base)
+	 *  2. WC Bookings item meta (_booking_id)
+	 *  3. WC Bookings product type (product->is_type('booking'))
+	 */
+	public static function order_has_bookings( \WC_Order $order ) : bool {
+		if ( self::is_booking_order( $order ) ) {
+			return true;
+		}
+		foreach ( $order->get_items( 'line_item' ) as $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+			// Tier 2: WC Bookings meta on the order item
+			if ( $item->get_meta( '_booking_id' ) ) {
+				return true;
+			}
+			// Tier 3: product type
+			$product = $item->get_product();
+			if ( $product && $product->is_type( 'booking' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Get item meta case-insensitively (tries with/without underscore, upper/lower).
 	 *
 	 * @param \WC_Order_Item_Product $item The order item
@@ -1542,6 +1588,79 @@ class Woo_OrderMeta {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Override cart item price display (strikethrough for EB, bold for non-EB).
+	 *
+	 * @param string $price         Formatted price HTML
+	 * @param array  $cart_item     Cart item data
+	 * @param string $cart_item_key Cart item key
+	 * @return string Modified price HTML
+	 */
+	public static function override_cart_item_price( $price, $cart_item, $cart_item_key ) {
+		$eb_base = self::get_cart_item_eb_base( $cart_item );
+		if ( $eb_base > 0 ) {
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base ) ) . '</del>';
+		}
+		return '<span class="tcbf-price-final">' . wp_kses_post( $price ) . '</span>';
+	}
+
+	/**
+	 * Override cart item subtotal display (price * qty).
+	 *
+	 * @param string $subtotal      Formatted subtotal HTML
+	 * @param array  $cart_item     Cart item data
+	 * @param string $cart_item_key Cart item key
+	 * @return string Modified subtotal HTML
+	 */
+	public static function override_cart_item_subtotal( $subtotal, $cart_item, $cart_item_key ) {
+		$eb_base = self::get_cart_item_eb_base( $cart_item );
+		if ( $eb_base > 0 ) {
+			$qty = max( 1, (int) $cart_item['quantity'] );
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del>';
+		}
+		return '<span class="tcbf-price-final">' . wp_kses_post( $subtotal ) . '</span>';
+	}
+
+	/**
+	 * Public accessor for get_cart_item_eb_base (used by templates).
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Base price (>0 if EB applied, 0 otherwise)
+	 */
+	public static function get_cart_item_eb_base_public( array $cart_item ) : float {
+		return self::get_cart_item_eb_base( $cart_item );
+	}
+
+	/**
+	 * Get the original EB base price from a cart item (before discount).
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Base price (>0 if EB applied, 0 otherwise)
+	 */
+	private static function get_cart_item_eb_base( array $cart_item ) : float {
+		// Event Form packs: booking meta has _eb_base_price
+		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
+			$booking = $cart_item['booking'];
+			$eligible = ! empty( $booking[ \TC_BF\Plugin::BK_EB_ELIGIBLE ] );
+			if ( $eligible ) {
+				$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
+				if ( $base > 0 ) {
+					return $base;
+				}
+			}
+		}
+
+		// WC Bookings: ledger meta
+		if ( ! empty( $cart_item['_tcbf_ledger_processed'] ) ) {
+			$eb_amount = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+			if ( $eb_amount > 0 ) {
+				return (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+			}
+		}
+
+		return 0.0;
 	}
 
 	/**
@@ -1684,7 +1803,7 @@ class Woo_OrderMeta {
 				$eb_total = $record['eb_amount'] * $qty;
 				$final_total = $base_total - $eb_total;
 
-				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total );
+				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total, $record['eb_pct'] );
 			}
 
 			// Transport children immediately after their parent rental
@@ -1707,7 +1826,7 @@ class Woo_OrderMeta {
 				$eb_total = $record['eb_amount'] * $qty;
 				$final_total = $base_total - $eb_total;
 
-				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total );
+				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total, $record['eb_pct'] );
 			}
 
 			echo '</div>';
@@ -2366,6 +2485,29 @@ class Woo_OrderMeta {
 	}
 
 	/**
+	 * Build price HTML for an order item record.
+	 *
+	 * Returns strikethrough original price for EB items, or bold final price otherwise.
+	 *
+	 * @param \WC_Order $order  The order
+	 * @param array     $record Item record from build_item_record()
+	 * @return string Price HTML
+	 */
+	private static function build_order_price_html( \WC_Order $order, array $record ) : string {
+		$item = $record['item'];
+		$has_eb = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+
+		if ( $has_eb ) {
+			$qty        = max( 1, (int) $item->get_quantity() );
+			$base_total = $record['eb_base'] * $qty;
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $base_total ) ) . '</del>';
+		}
+
+		$price_html = $order->get_formatted_line_subtotal( $item );
+		return '<span class="tcbf-price-final">' . wp_kses_post( $price_html ) . '</span>';
+	}
+
+	/**
 	 * Render a parent (tour/participation) row.
 	 *
 	 * @param \WC_Order $order The order
@@ -2388,8 +2530,9 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = $record['event_url'] ?: $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		// Check if viewer can see participant status badge (admin or partner-owner)
 		$show_participant_badge = self::can_viewer_see_participant_badge( $order );
@@ -2550,8 +2693,8 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = ! empty( $record['is_transport'] ) ? '' : $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
 
 		echo '<div class="tcbf-order-row tcbf-order-row--child">';
 
@@ -2635,8 +2778,8 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = ! empty( $record['is_transport'] ) ? '' : ( $record['event_url'] ?: $record['product_url'] );
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
 
 		// Quantity
 		$qty = $item->get_quantity();
@@ -2816,20 +2959,24 @@ class Woo_OrderMeta {
 	 * @param float $eb_total EB discount amount
 	 * @param float $final_total Final total after discount
 	 */
-	private static function render_standalone_summary_footer( float $base_total, float $eb_total, float $final_total ) : void {
+	private static function render_standalone_summary_footer( float $base_total, float $eb_total, float $final_total, float $eb_pct = 0 ) : void {
 		?>
 		<div class="tcbf-standalone-summary">
 			<div class="tcbf-standalone-summary-line tcbf-summary-base">
 				<span class="tcbf-summary-label"><?php esc_html_e( 'Price before EB', TC_BF_TEXTDOMAIN ); ?></span>
 				<span class="tcbf-summary-value"><?php echo wp_kses_post( wc_price( $base_total ) ); ?></span>
 			</div>
-			<div class="tcbf-standalone-summary-line tcbf-summary-eb">
-				<span class="tcbf-summary-label"><?php esc_html_e( 'Early booking discount', TC_BF_TEXTDOMAIN ); ?></span>
-				<span class="tcbf-summary-value tcbf-summary-discount">-<?php echo wp_kses_post( wc_price( $eb_total ) ); ?></span>
-			</div>
-			<div class="tcbf-standalone-summary-line tcbf-summary-total">
-				<span class="tcbf-summary-label"><?php esc_html_e( 'Total', TC_BF_TEXTDOMAIN ); ?></span>
-				<span class="tcbf-summary-value"><?php echo wp_kses_post( wc_price( $final_total ) ); ?></span>
+			<div class="tcbf-standalone-summary-line tcbf-summary-eb-row">
+				<span class="tcbf-eb-badge">
+					<?php
+					if ( $eb_pct > 0 ) {
+						echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+					}
+					echo '-' . wp_kses_post( strip_tags( wc_price( $eb_total ) ) );
+					echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+					?>
+				</span>
+				<span class="tcbf-summary-value tcbf-pack-footer-total-value"><?php echo wp_kses_post( wc_price( $final_total ) ); ?></span>
 			</div>
 		</div>
 		<?php
