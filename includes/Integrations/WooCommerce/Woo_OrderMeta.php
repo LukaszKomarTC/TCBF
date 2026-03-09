@@ -2437,9 +2437,9 @@ class Woo_OrderMeta {
 		// Thumbnail: rental product thumb (NOT event image for child)
 		$thumb_url = $record['product_thumb_url'];
 
-		// Title: product name linked to product
+		// Title: product name linked to product (not for transport items)
 		$title = $record['product_name'];
-		$title_url = $record['product_url'];
+		$title_url = ! empty( $record['is_transport'] ) ? '' : $record['product_url'];
 
 		// Price: use Woo formatted line subtotal
 		$price_html = $order->get_formatted_line_subtotal( $item );
@@ -2522,9 +2522,9 @@ class Woo_OrderMeta {
 			$thumb_url = $record['product_thumb_url'];
 		}
 
-		// Title: product name linked to event or product
+		// Title: product name linked to event or product (not for transport items)
 		$title = $record['product_name'];
-		$title_url = $record['event_url'] ?: $record['product_url'];
+		$title_url = ! empty( $record['is_transport'] ) ? '' : ( $record['event_url'] ?: $record['product_url'] );
 
 		// Price: use Woo formatted line subtotal
 		$price_html = $order->get_formatted_line_subtotal( $item );

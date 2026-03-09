@@ -247,6 +247,12 @@ function tcbf_render_ungrouped_item_row( $cart_item_key, $cart_item, $row_extra_
 	$custom_thumb_url = '';
 	$scope = $cart_item['tcbf_scope']
 		?? ( isset( $cart_item['booking'] ) ? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) : '' );
+
+	// Transport products are not standalone — suppress their product link
+	if ( $scope === 'transport' ) {
+		$product_permalink = '';
+	}
+
 	if ( $scope !== 'transport' && $event_id > 0 ) {
 		$custom_thumb_url = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_event_image_url( $event_id );
 	}
@@ -429,6 +435,11 @@ do_action( 'woocommerce_before_cart' ); ?>
 						$item_scope = class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping' )
 							? \TC_BF\Integrations\WooCommerce\Pack_Grouping::get_scope( $cart_item )
 							: ( $cart_item['tcbf_scope'] ?? ( $cart_item['booking'][ \TC_BF\Plugin::BK_SCOPE ] ?? '' ) );
+
+						// Transport products are not standalone — suppress their product link
+						if ( $item_scope === 'transport' ) {
+							$product_permalink = '';
+						}
 
 						// Get event image for parent items
 						$event_id = isset( $cart_item['_event_id'] ) ? (int) $cart_item['_event_id'] : 0;

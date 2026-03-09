@@ -61,6 +61,10 @@ final class Woo_Transport {
 		// Cart display
 		add_filter( 'woocommerce_get_item_data', [ __CLASS__, 'display_transport_cart_item_data' ], 25, 2 );
 
+		// Transport product is not standalone — suppress its permalink in cart and order views
+		add_filter( 'woocommerce_cart_item_permalink', [ __CLASS__, 'suppress_transport_permalink' ], 10, 3 );
+		add_filter( 'woocommerce_order_item_permalink', [ __CLASS__, 'suppress_transport_order_permalink' ], 10, 3 );
+
 		// Cart pricing
 		add_action( 'woocommerce_before_calculate_totals', [ __CLASS__, 'set_transport_prices' ], 25, 1 );
 
@@ -899,6 +903,33 @@ final class Woo_Transport {
 	/* ================================================================
 	 * Cart display
 	 * ================================================================ */
+
+	/**
+	 * Suppress product permalink for transport items in cart.
+	 */
+	public static function suppress_transport_permalink( string $permalink, array $cart_item, string $cart_item_key ) : string {
+		if ( self::is_transport_item( $cart_item ) ) {
+			return '';
+		}
+		return $permalink;
+	}
+
+	/**
+	 * Suppress product permalink for transport order items (emails, order details).
+	 */
+	public static function suppress_transport_order_permalink( string $permalink, $item, $order ) : string {
+		if ( $item instanceof \WC_Order_Item_Product ) {
+			$scope = $item->get_meta( '_tcbf_scope' );
+			if ( $scope === '' ) {
+				$scope = $item->get_meta( 'tcbf_scope' );
+			}
+			$transport_type = $item->get_meta( '_tcbf_transport_type' );
+			if ( $scope === 'transport' || $transport_type !== '' ) {
+				return '';
+			}
+		}
+		return $permalink;
+	}
 
 	public static function display_transport_cart_item_data( array $item_data, array $cart_item ) : array {
 
