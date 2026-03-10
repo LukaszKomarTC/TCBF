@@ -723,9 +723,16 @@ final class Plugin {
 		$start_month = (int) gmdate('n', $start_ts);
 		$start_day   = (int) gmdate('j', $start_ts);
 
-		// participant
+		// participant — GF name fields may be hidden for non-admin users via
+		// conditional logic, so fall back to the logged-in user's WP profile name.
 		$first = (string) rgar($entry, (string) self::GF_FIELD_FIRST_NAME);
 		$last  = (string) rgar($entry, (string) self::GF_FIELD_LAST_NAME);
+
+		if ( trim( $first . $last ) === '' && is_user_logged_in() ) {
+			$current_user = wp_get_current_user();
+			$first = (string) $current_user->first_name;
+			$last  = (string) $current_user->last_name;
+		}
 
 		$this->log('gf.participant_fields', [
 			'entry_id' => $entry_id,
