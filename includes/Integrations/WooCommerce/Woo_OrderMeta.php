@@ -2377,13 +2377,24 @@ class Woo_OrderMeta {
 					continue;
 				}
 
-				// Match by event_id + participant (both copied from rental to transport)
+				// Match transport to its parent rental.
+				// Strategy 1: event_id + participant (tour-linked rentals)
+				// Strategy 2: parent_product_id + participant (standalone rentals, no event)
+				// Strategy 3: participant only (legacy orders without parent_product_id)
 				$match = false;
-				if ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id'] ) {
-					// Same event — if participant also matches (or both empty), it's a match
-					if ( $transport['participant'] === $rental['participant'] ) {
-						$match = true;
-					}
+				if ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id']
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] <= 0
+					&& $rental['event_id'] <= 0
+					&& $transport['participant'] !== ''
+					&& $transport['participant'] === $rental['participant'] ) {
+					// Legacy fallback: match by participant alone when no event and no parent product ID
+					$match = true;
 				}
 
 				if ( $match ) {
@@ -2420,9 +2431,9 @@ class Woo_OrderMeta {
 				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total, $record['eb_pct'] );
 			}
 
-			// Transport children immediately after their parent rental
+			// Transport children immediately after their parent rental (indented as children)
 			foreach ( $subgroup['transports'] as $transport ) {
-				self::render_standalone_row( $order, $transport );
+				self::render_transport_child_row( $order, $transport );
 			}
 
 			echo '</div>';
@@ -2589,6 +2600,10 @@ class Woo_OrderMeta {
 		$transport_window   = self::get_item_meta_ci( $item, '_tcbf_transport_window' );
 		$transport_date     = self::get_item_meta_ci( $item, '_tcbf_transport_service_date' );
 		$is_transport       = ( $transport_type !== '' );
+		$transport_parent_product_id = (int) self::get_item_meta_ci( $item, '_tcbf_transport_parent_product_id' );
+
+		// Product ID for matching (used to link transport children to rental parents)
+		$product_id = $product ? $product->get_id() : 0;
 
 		return [
 			'item_id'           => $item_id,
@@ -2608,6 +2623,7 @@ class Woo_OrderMeta {
 			'pedals'            => $pedals,
 			'helmet'            => $helmet,
 			'product_name'      => $product_name,
+			'product_id'        => $product_id,
 			'product_url'       => $product_url,
 			'product_thumb_url' => $product_thumb_url ?: '',
 			'product'           => $product,
@@ -2622,6 +2638,7 @@ class Woo_OrderMeta {
 			'transport_zone'    => $transport_zone,
 			'transport_window'  => $transport_window,
 			'transport_date'    => $transport_date,
+			'transport_parent_product_id' => $transport_parent_product_id,
 			'pedals'            => $pedals,
 			'helmet'            => $helmet,
 		];
@@ -3138,9 +3155,13 @@ class Woo_OrderMeta {
 			self::render_parent_row( $order, $parent, $has_rental );
 		}
 
-		// Render child rows
+		// Render child rows (transport children get transport-specific layout)
 		foreach ( $children as $child ) {
-			self::render_child_row( $order, $child );
+			if ( ! empty( $child['is_transport'] ) ) {
+				self::render_transport_child_row( $order, $child );
+			} else {
+				self::render_child_row( $order, $child );
+			}
 		}
 
 		// Calculate and render pack totals footer
@@ -3412,6 +3433,95 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
+		echo '</div>'; // .tcbf-order-content
+
+		// Price
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
+
+		echo '</div>'; // .tcbf-order-row
+	}
+
+	/**
+	 * Render a transport child row (indented under parent rental).
+	 *
+	 * Uses the same --child indentation as rental children in tour packs,
+	 * but shows transport-specific meta (service, date, window, address).
+	 *
+	 * @param \WC_Order $order The order
+	 * @param array $record Item record (transport)
+	 */
+	private static function render_transport_child_row( \WC_Order $order, array $record ) : void {
+		$item = $record['item'];
+
+		$thumb_url = $record['product_thumb_url'];
+		$title = $record['product_name'];
+
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+
+		echo '<div class="tcbf-order-row tcbf-order-row--child tcbf-order-row--transport-child">';
+
+		// Thumbnail
+		echo '<div class="tcbf-order-thumb">';
+		if ( $thumb_url ) {
+			echo '<img src="' . esc_url( $thumb_url ) . '" alt="' . esc_attr( $title ) . '" />';
+		} else {
+			echo '<span class="tcbf-order-thumb--placeholder"></span>';
+		}
+		echo '</div>';
+
+		// Content
+		echo '<div class="tcbf-order-content">';
+
+		// Title
+		echo '<div class="tcbf-order-title">' . esc_html( $title ) . '</div>';
+
+		// Transport-specific meta
+		echo '<div class="tcbf-order-meta-lines">';
+
+		// Service type (Delivery / Return pickup)
+		if ( $record['transport_type'] !== '' ) {
+			$dir_label = ( $record['transport_type'] === 'pickup' )
+				? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
+				: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Service[:es]Servicio[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $dir_label ) . '</span>';
+			echo '</div>';
+		}
+
+		// Service date
+		if ( $record['transport_date'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['transport_date'] ) . '</span>';
+			echo '</div>';
+		}
+
+		// Time window
+		if ( $record['transport_window'] !== '' ) {
+			$window_label = ( $record['transport_window'] === 'morning' )
+				? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
+				: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $window_label ) . '</span>';
+			echo '</div>';
+		}
+
+		// Address
+		if ( $record['transport_address'] !== '' ) {
+			$display_address = mb_strlen( $record['transport_address'] ) > 60
+				? mb_substr( $record['transport_address'], 0, 57 ) . '...'
+				: $record['transport_address'];
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Address[:es]Dirección[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $display_address ) . '</span>';
+			echo '</div>';
+		}
+
+		echo '</div>'; // .tcbf-order-meta-lines
 		echo '</div>'; // .tcbf-order-content
 
 		// Price

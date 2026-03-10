@@ -21,75 +21,180 @@ $email_improvements_enabled = class_exists( FeaturesUtil::class )
 	&& FeaturesUtil::feature_is_enabled( 'email_improvements' );
 $price_text_align           = $email_improvements_enabled ? 'right' : 'left';
 
-// TCBF: Reorder items so transport items follow their parent rental.
-// Uses (event_id, participant) matching since cart keys don't persist to orders.
+// TCBF: Reorder items with full grouping awareness.
+// 1. Tour pack groups (tc_group_id): participation → rental child → transport children
+// 2. Standalone rentals followed by their transport children
+// 3. Remaining items
+// Also builds a map of which items are "children" for ↳ arrow display.
+$tcbf_child_item_ids = []; // item_id => true for items that should show ↳ prefix
+
 if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
-	$reordered    = [];
-	$transport_items = [];
-	$rental_items = [];
-	$other_items  = [];
+	$meta = '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta';
+
+	// Categorize all items
+	$grouped       = []; // group_id => [ item_id => [ 'item' => ..., 'scope' => ..., ... ] ]
+	$standalone    = []; // item_id => [ 'item' => ..., 'scope' => ..., ... ]
 
 	foreach ( $items as $item_id => $item ) {
-		$scope = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, 'tcbf_scope' );
+		$scope = $meta::get_item_meta_ci( $item, 'tcbf_scope' );
 		if ( $scope === '' ) {
-			$scope = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_scope' );
+			$scope = $meta::get_item_meta_ci( $item, '_tcbf_scope' );
+		}
+		if ( $scope === '' ) {
+			$scope = $meta::get_item_meta_ci( $item, '_tc_scope' );
 		}
 
-		if ( $scope === 'transport' || \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_type' ) !== '' ) {
-			$event_id = (int) \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_event_id' );
-			if ( $event_id <= 0 ) {
-				$event_id = (int) \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_event_id' );
-			}
-			$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_participant_name' );
-			if ( $participant === '' ) {
-				$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_participant' );
-			}
-			$transport_items[ $item_id ] = [
-				'item'        => $item,
-				'event_id'    => $event_id,
-				'participant' => $participant,
-			];
-		} elseif ( $scope === 'rental' || $scope === '' ) {
-			$event_id = (int) \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_event_id' );
-			$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_participant_name' );
-			if ( $participant === '' ) {
-				$participant = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_participant' );
-			}
-			$rental_items[ $item_id ] = [
-				'item'        => $item,
-				'event_id'    => $event_id,
-				'participant' => $participant,
-			];
+		$group_id    = (int) $meta::get_item_meta_ci( $item, 'tc_group_id' );
+		$group_role  = $meta::get_item_meta_ci( $item, 'tc_group_role' );
+		$event_id    = (int) $meta::get_item_meta_ci( $item, '_event_id' );
+		if ( $event_id <= 0 ) {
+			$event_id = (int) $meta::get_item_meta_ci( $item, '_tcbf_event_id' );
+		}
+		$participant = $meta::get_item_meta_ci( $item, '_tcbf_participant_name' );
+		if ( $participant === '' ) {
+			$participant = $meta::get_item_meta_ci( $item, '_participant' );
+		}
+		// Fallback: check the 'participant' meta (set by woo_checkout_create_order_line_item)
+		if ( $participant === '' ) {
+			$participant = $meta::get_item_meta_ci( $item, 'participant' );
+		}
+
+		$is_transport = ( $scope === 'transport' || $meta::get_item_meta_ci( $item, '_tcbf_transport_type' ) !== '' );
+		$transport_parent_product_id = (int) $meta::get_item_meta_ci( $item, '_tcbf_transport_parent_product_id' );
+
+		$product    = $item->get_product();
+		$product_id = $product ? $product->get_id() : 0;
+
+		$record = [
+			'item'                        => $item,
+			'scope'                       => $scope,
+			'group_id'                    => $group_id,
+			'group_role'                  => $group_role,
+			'event_id'                    => $event_id,
+			'participant'                 => $participant,
+			'is_transport'                => $is_transport,
+			'transport_parent_product_id' => $transport_parent_product_id,
+			'product_id'                  => $product_id,
+		];
+
+		if ( $group_id > 0 ) {
+			$grouped[ $group_id ][ $item_id ] = $record;
 		} else {
-			$other_items[ $item_id ] = $item;
+			$standalone[ $item_id ] = $record;
 		}
 	}
 
-	// Build reordered: each rental followed by its transport children
-	$claimed = [];
-	foreach ( $rental_items as $r_id => $r_data ) {
-		$reordered[ $r_id ] = $r_data['item'];
+	// Process grouped items: sort within each group (participation → rental → transport)
+	$reordered = [];
 
-		foreach ( $transport_items as $t_id => $t_data ) {
+	foreach ( $grouped as $gid => $group_items ) {
+		$parent_ids    = [];
+		$child_ids     = [];
+		$transport_ids = [];
+
+		foreach ( $group_items as $gitem_id => $grecord ) {
+			if ( $grecord['is_transport'] ) {
+				$transport_ids[] = $gitem_id;
+			} elseif ( $grecord['group_role'] === 'parent' || $grecord['scope'] === 'participation'
+				|| ( $grecord['event_id'] > 0 && $grecord['scope'] !== 'rental' ) ) {
+				$parent_ids[] = $gitem_id;
+			} else {
+				$child_ids[] = $gitem_id;
+			}
+		}
+
+		// If no parent found, first non-transport item is parent
+		if ( empty( $parent_ids ) ) {
+			$all_non_transport = array_merge( $child_ids );
+			if ( ! empty( $all_non_transport ) ) {
+				$parent_ids[] = array_shift( $all_non_transport );
+				$child_ids = $all_non_transport;
+			}
+		}
+
+		// Add in order: parents, then rental children (↳), then transport children (↳)
+		foreach ( $parent_ids as $pid ) {
+			$reordered[ $pid ] = $group_items[ $pid ]['item'];
+		}
+		foreach ( $child_ids as $cid ) {
+			$reordered[ $cid ] = $group_items[ $cid ]['item'];
+			$tcbf_child_item_ids[ $cid ] = true;
+		}
+		foreach ( $transport_ids as $tid ) {
+			$reordered[ $tid ] = $group_items[ $tid ]['item'];
+			$tcbf_child_item_ids[ $tid ] = true;
+		}
+	}
+
+	// Process standalone items: rentals with their transport children, then the rest
+	$st_transport = [];
+	$st_rental    = [];
+	$st_other     = [];
+
+	foreach ( $standalone as $sid => $srecord ) {
+		if ( $srecord['is_transport'] ) {
+			$st_transport[ $sid ] = $srecord;
+		} elseif ( $srecord['scope'] === 'rental' || $srecord['scope'] === '' ) {
+			$st_rental[ $sid ] = $srecord;
+		} else {
+			$st_other[ $sid ] = $srecord;
+		}
+	}
+
+	// Match transports to rentals (same logic as order summary)
+	$claimed = [];
+	$rental_subgroups = []; // rental_item_id => [ transport_item_ids ]
+
+	foreach ( $st_rental as $r_id => $r_data ) {
+		$rental_subgroups[ $r_id ] = [];
+
+		foreach ( $st_transport as $t_id => $t_data ) {
 			if ( isset( $claimed[ $t_id ] ) ) {
 				continue;
 			}
+
+			$match = false;
 			if ( $r_data['event_id'] > 0 && $t_data['event_id'] === $r_data['event_id']
 				&& $t_data['participant'] === $r_data['participant'] ) {
-				$reordered[ $t_id ] = $t_data['item'];
+				$match = true;
+			} elseif ( $t_data['transport_parent_product_id'] > 0
+				&& $t_data['transport_parent_product_id'] === $r_data['product_id']
+				&& $t_data['participant'] === $r_data['participant'] ) {
+				$match = true;
+			} elseif ( $t_data['transport_parent_product_id'] <= 0
+				&& $r_data['event_id'] <= 0
+				&& $t_data['participant'] !== ''
+				&& $t_data['participant'] === $r_data['participant'] ) {
+				$match = true;
+			}
+
+			if ( $match ) {
+				$rental_subgroups[ $r_id ][] = $t_id;
 				$claimed[ $t_id ] = true;
 			}
 		}
 	}
 
-	// Unclaimed transports + other items at the end
-	foreach ( $transport_items as $t_id => $t_data ) {
+	// Add standalone rentals + their transport children
+	foreach ( $st_rental as $r_id => $r_data ) {
+		$reordered[ $r_id ] = $r_data['item'];
+
+		foreach ( $rental_subgroups[ $r_id ] as $t_id ) {
+			$reordered[ $t_id ] = $st_transport[ $t_id ]['item'];
+			$tcbf_child_item_ids[ $t_id ] = true;
+		}
+	}
+
+	// Unclaimed transports
+	foreach ( $st_transport as $t_id => $t_data ) {
 		if ( ! isset( $claimed[ $t_id ] ) ) {
 			$reordered[ $t_id ] = $t_data['item'];
 		}
 	}
-	foreach ( $other_items as $o_id => $o_item ) {
-		$reordered[ $o_id ] = $o_item;
+
+	// Other items (e.g. standalone participation without group, shop products, etc.)
+	foreach ( $st_other as $o_id => $o_data ) {
+		$reordered[ $o_id ] = $o_data['item'];
 	}
 
 	$items = $reordered;
@@ -111,9 +216,14 @@ foreach ( $items as $item_id => $item ) :
 		$image         = $product->get_image( $image_size );
 	}
 
+	// Determine if this item is a child (should show ↳ prefix)
+	$is_child_item = isset( $tcbf_child_item_ids[ $item_id ] );
+	$child_arrow   = $is_child_item ? '<span style="color:#9ca3af; font-size:14px; margin-right:4px;">&#8627;</span>' : '';
+	$child_padding = $is_child_item ? 'padding-left:18px;' : '';
+
 	?>
 	<tr class="<?php echo esc_attr( apply_filters( 'woocommerce_order_item_class', 'order_item', $item, $order ) ); ?>">
-		<td class="td font-family text-align-left" style="vertical-align: middle; word-wrap:break-word;">
+		<td class="td font-family text-align-left" style="vertical-align: middle; word-wrap:break-word; <?php echo $child_padding; ?>">
 			<?php if ( $email_improvements_enabled ) { ?>
 				<table class="order-item-data" role="presentation">
 					<tr>
@@ -126,7 +236,7 @@ foreach ( $items as $item_id => $item ) :
 						<td>
 							<?php
 							$order_item_name = apply_filters( 'woocommerce_order_item_name', $item->get_name(), $item, false );
-							echo wp_kses_post( "<h3 style='font-size: inherit;font-weight: inherit;'>{$order_item_name}</h3>" );
+							echo wp_kses_post( "<h3 style='font-size: inherit;font-weight: inherit;'>{$child_arrow}{$order_item_name}</h3>" );
 
 							// SKU.
 							if ( $show_sku && $sku ) {
@@ -176,7 +286,9 @@ foreach ( $items as $item_id => $item ) :
 					echo wp_kses_post( apply_filters( 'woocommerce_order_item_thumbnail', $image, $item ) );
 				}
 
-				echo wp_kses_post( apply_filters( 'woocommerce_order_item_name', $item->get_name(), $item, false ) );
+				// Child arrow prefix + product name
+				$order_item_name = apply_filters( 'woocommerce_order_item_name', $item->get_name(), $item, false );
+				echo wp_kses_post( $child_arrow . $order_item_name );
 
 				// SKU.
 				if ( $show_sku && $sku ) {

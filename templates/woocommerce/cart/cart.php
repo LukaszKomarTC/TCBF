@@ -698,6 +698,9 @@ do_action( 'woocommerce_before_cart' ); ?>
 .tcbf-cart-row--child {
 	border-left: 3px solid color-mix(in srgb, var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00))) 50%, transparent) !important;
 }
+.tcbf-cart-row--child td {
+	padding-left: 20px !important;
+}
 .tcbf-product-link {
 	color: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
 }

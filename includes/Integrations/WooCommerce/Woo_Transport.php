@@ -589,6 +589,11 @@ final class Woo_Transport {
 			$cart_item_meta['_tcbf_participant_name'] = $rental_item['_tcbf_participant_name'];
 		}
 
+		// Store parent rental's product ID for order-level matching (cart keys don't persist to orders)
+		if ( isset( $rental_item['product_id'] ) && (int) $rental_item['product_id'] > 0 ) {
+			$cart_item_meta['_tcbf_transport_parent_product_id'] = (int) $rental_item['product_id'];
+		}
+
 		$added = $cart->add_to_cart( $transport_product_id, 1, 0, [], $cart_item_meta );
 
 		if ( ! $added ) {
@@ -1186,6 +1191,7 @@ final class Woo_Transport {
 			'_tcbf_transport_zone_name',
 			'_tcbf_transport_price',
 			'_tcbf_transport_parent_key',
+			'_tcbf_transport_parent_product_id',
 			'_tcbf_transport_type',
 			'_tcbf_transport_service_date',
 			'_tcbf_transport_window',
