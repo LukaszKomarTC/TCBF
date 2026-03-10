@@ -1196,6 +1196,7 @@ final class Woo_Transport {
 			'_tcbf_transport_service_date',
 			'_tcbf_transport_window',
 			'_tcbf_transport_quote_json',
+			'_tcbf_participant_name',
 		];
 
 		foreach ( $meta_keys as $key ) {
