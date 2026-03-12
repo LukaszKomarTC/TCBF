@@ -200,11 +200,41 @@ class Woo_Notifications {
 	}
 
 	/* =========================================================
-	 * Suppress WC Processing Email for Booking Orders
+	 * Order Flow: Skip Processing for Booking Products
 	 *
-	 * When a card payment succeeds and bookings are confirmed,
-	 * the "Booking Confirmed" email is sufficient. The WC
-	 * "Customer Processing Order" email is redundant noise.
+	 * WC Bookings products return true for needs_processing(),
+	 * forcing orders through "processing" status even though
+	 * all items are virtual/services. This makes payment_complete()
+	 * transition directly to "completed", sending the Customer
+	 * Completed Order email instead of the Processing one.
+	 * ========================================================= */
+
+	/**
+	 * Tell WC that booking line items don't need processing.
+	 *
+	 * When all items return false, payment_complete() sets the order
+	 * to "completed" directly, skipping "processing" entirely.
+	 *
+	 * Hook: woocommerce_order_item_needs_processing
+	 *
+	 * @param bool        $needs     Whether the item needs processing.
+	 * @param \WC_Product $product   Product object.
+	 * @param int         $order_id  Order ID.
+	 * @return bool False for booking products, original value otherwise.
+	 */
+	public static function booking_item_skip_processing( $needs, $product, $order_id ) : bool {
+		if ( $product && is_callable( [ $product, 'is_type' ] ) && $product->is_type( 'booking' ) ) {
+			return false;
+		}
+		return (bool) $needs;
+	}
+
+	/* =========================================================
+	 * Suppress WC Processing Email for Booking Orders (safety net)
+	 *
+	 * Backup filter in case the order still reaches "processing"
+	 * status through a non-standard path (manual status change,
+	 * other plugins, etc.).
 	 * ========================================================= */
 
 	/**
