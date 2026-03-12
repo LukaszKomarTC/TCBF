@@ -210,22 +210,42 @@ class Woo_Notifications {
 	 * ========================================================= */
 
 	/**
-	 * Tell WC that booking line items don't need processing.
+	 * Tell WC that booking and TCBF transport line items don't need processing.
 	 *
 	 * When all items return false, payment_complete() sets the order
 	 * to "completed" directly, skipping "processing" entirely.
+	 *
+	 * Covers:
+	 * - WC Bookings products (participation + rental)
+	 * - TCBF transport addon products (bike delivery/pickup)
+	 *
+	 * Without this, orders with transport addons would go to "processing"
+	 * (transport is a simple product) while the processing email is
+	 * suppressed, leaving the customer with no order confirmation.
 	 *
 	 * Hook: woocommerce_order_item_needs_processing
 	 *
 	 * @param bool        $needs     Whether the item needs processing.
 	 * @param \WC_Product $product   Product object.
 	 * @param int         $order_id  Order ID.
-	 * @return bool False for booking products, original value otherwise.
+	 * @return bool False for booking/transport products, original value otherwise.
 	 */
 	public static function booking_item_skip_processing( $needs, $product, $order_id ) : bool {
-		if ( $product && is_callable( [ $product, 'is_type' ] ) && $product->is_type( 'booking' ) ) {
+		if ( ! $product ) {
+			return (bool) $needs;
+		}
+
+		// WC Bookings products (participation + rental items)
+		if ( is_callable( [ $product, 'is_type' ] ) && $product->is_type( 'booking' ) ) {
 			return false;
 		}
+
+		// TCBF transport addon product (bike delivery/pickup)
+		$transport_pid = \TC_BF\Domain\TransportPricing::get_transport_product_id();
+		if ( $transport_pid > 0 && (int) $product->get_id() === $transport_pid ) {
+			return false;
+		}
+
 		return (bool) $needs;
 	}
 
