@@ -71,13 +71,11 @@ class Woo_AdminOrder {
 
 		$currency = $order->get_currency();
 
-		// Build item records
-		$records      = [];
-		$participants = [];
-		$transport    = [];
-		$event_title  = '';
-		$event_date   = '';
-		$event_id     = 0;
+		// Build item records and categorize them
+		$records           = [];
+		$pack_groups       = []; // tc_group_id => [records]
+		$standalone_rental = []; // standalone WC Booking rentals (no tour pack)
+		$transport_records = [];
 
 		foreach ( $order->get_items( 'line_item' ) as $item_id => $item ) {
 			if ( ! $item instanceof \WC_Order_Item_Product ) {
@@ -86,93 +84,188 @@ class Woo_AdminOrder {
 			$rec = Woo_OrderMeta::build_item_record( $order, $item_id, $item );
 			$records[] = $rec;
 
-			if ( $event_title === '' && $rec['event_title'] !== '' ) {
-				$event_title = $rec['event_title'];
-				$event_id    = $rec['event_id'];
-			}
-			if ( $event_date === '' && ! empty( $rec['booking_date'] ) ) {
-				$event_date = $rec['booking_date'];
-			}
-
-			// Collect participants (skip transport items)
-			if ( ! $rec['is_transport'] && $rec['participant'] !== '' ) {
-				$key = strtolower( trim( $rec['participant'] ) );
-				if ( ! isset( $participants[ $key ] ) ) {
-					$participants[ $key ] = [
-						'name'    => $rec['participant'],
-						'email'   => Woo_OrderMeta::get_item_meta_ci( $item, 'email' ),
-						'bicycle' => $rec['bicycle'],
-						'size'    => $rec['size'],
-						'scope'   => $rec['scope'],
-						'pedals'  => $rec['pedals'],
-						'helmet'  => $rec['helmet'],
-					];
-				} else {
-					if ( $rec['scope'] === 'rental' ) {
-						$participants[ $key ]['bicycle'] = $rec['bicycle'] ?: $participants[ $key ]['bicycle'];
-						$participants[ $key ]['size']    = $rec['size'] ?: $participants[ $key ]['size'];
-					}
-				}
-			}
-
 			if ( $rec['is_transport'] ) {
-				$transport[] = $rec;
+				$transport_records[] = $rec;
+			} elseif ( $rec['group_id'] > 0 ) {
+				$pack_groups[ $rec['group_id'] ][] = $rec;
+			} else {
+				// Standalone item (no pack group) — could be a standalone rental or other
+				$standalone_rental[] = $rec;
+			}
+		}
+
+		// Match transports to standalone rentals (same logic as grouping map)
+		$rental_transport_map = []; // rental item_id => [transport records]
+		$claimed = [];
+		foreach ( $standalone_rental as $rental ) {
+			foreach ( $transport_records as $ti => $transport ) {
+				if ( isset( $claimed[ $ti ] ) ) continue;
+				$match = false;
+				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id']
+					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] <= 0
+					&& $rental['event_id'] <= 0
+					&& $transport['participant'] !== ''
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				}
+				if ( $match ) {
+					$rental_transport_map[ $rental['item_id'] ][] = $transport;
+					$claimed[ $ti ] = true;
+				}
 			}
 		}
 
 		echo '<div class="tcbf-admin-summary">';
 
-		// === Event Section ===
-		if ( $event_title !== '' ) {
-			echo '<div class="tcbf-admin-section">';
-			echo '<h4>Event</h4>';
-			echo '<table class="tcbf-admin-table">';
-			echo '<tr><td class="tcbf-label">Tour</td><td>';
-			if ( $event_id > 0 ) {
-				echo '<a href="' . esc_url( get_edit_post_link( $event_id ) ) . '">' . esc_html( $event_title ) . '</a>';
-			} else {
-				echo esc_html( $event_title );
+		// =============================================================
+		// SECTION: Tour Packs (participation + rental grouped by event)
+		// =============================================================
+		if ( ! empty( $pack_groups ) ) {
+			foreach ( $pack_groups as $gid => $pack_items ) {
+				// Find parent (participation) and children (rental)
+				$parent = null;
+				$children = [];
+				foreach ( $pack_items as $rec ) {
+					if ( $rec['role'] === 'parent' ) {
+						$parent = $rec;
+					} else {
+						$children[] = $rec;
+					}
+				}
+
+				// Use parent for event info, fall back to first item
+				$ref = $parent ?: $pack_items[0];
+				$event_title = $ref['event_title'];
+				$event_id    = $ref['event_id'];
+				$event_date  = $ref['booking_date'];
+
+				echo '<div class="tcbf-admin-section tcbf-section-tour">';
+				echo '<h4>Tour</h4>';
+				echo '<table class="tcbf-admin-table">';
+				if ( $event_title !== '' ) {
+					echo '<tr><td class="tcbf-label">Event</td><td>';
+					if ( $event_id > 0 ) {
+						echo '<a href="' . esc_url( get_edit_post_link( $event_id ) ) . '">' . esc_html( $event_title ) . '</a>';
+					} else {
+						echo esc_html( $event_title );
+					}
+					echo '</td></tr>';
+				}
+				if ( $event_date !== '' ) {
+					echo '<tr><td class="tcbf-label">Date</td><td>' . esc_html( $event_date ) . '</td></tr>';
+				}
+
+				// Participant from parent
+				if ( $ref['participant'] !== '' ) {
+					echo '<tr><td class="tcbf-label">Participant</td><td><strong>' . esc_html( $ref['participant'] ) . '</strong></td></tr>';
+				}
+
+				// Rental child details
+				foreach ( $children as $child ) {
+					if ( $child['scope'] === 'rental' ) {
+						echo '<tr><td class="tcbf-label">Rental bike</td><td>' . esc_html( $child['product_name'] );
+						if ( $child['size'] !== '' ) {
+							echo ' — Size ' . esc_html( $child['size'] );
+						}
+						echo '</td></tr>';
+						if ( $child['pedals'] !== '' ) {
+							echo '<tr><td class="tcbf-label">Pedals</td><td>' . esc_html( $child['pedals'] ) . '</td></tr>';
+						}
+						if ( $child['helmet'] !== '' ) {
+							echo '<tr><td class="tcbf-label">Helmet</td><td>' . esc_html( $child['helmet'] ) . '</td></tr>';
+						}
+					}
+				}
+				echo '</table>';
+				echo '</div>';
 			}
-			echo '</td></tr>';
-			if ( $event_date !== '' ) {
-				echo '<tr><td class="tcbf-label">Date</td><td>' . esc_html( $event_date ) . '</td></tr>';
-			}
-			echo '<tr><td class="tcbf-label">Participants</td><td>' . count( $participants ) . '</td></tr>';
-			echo '</table>';
-			echo '</div>';
 		}
 
-		// === Participants Section ===
-		if ( ! empty( $participants ) ) {
-			echo '<div class="tcbf-admin-section">';
-			echo '<h4>Participants</h4>';
-			echo '<table class="tcbf-admin-table tcbf-admin-table-full">';
-			echo '<thead><tr><th>Name</th><th>Email</th><th>Scope</th><th>Bicycle</th><th>Size</th><th>Pedals</th><th>Helmet</th></tr></thead>';
-			echo '<tbody>';
-			foreach ( $participants as $p ) {
-				$scope_label = ucfirst( $p['scope'] ?: '—' );
-				echo '<tr>';
-				echo '<td><strong>' . esc_html( $p['name'] ) . '</strong></td>';
-				echo '<td>' . esc_html( $p['email'] ?: '—' ) . '</td>';
-				echo '<td><span class="tcbf-scope-badge tcbf-scope-' . esc_attr( $p['scope'] ) . '">' . esc_html( $scope_label ) . '</span></td>';
-				echo '<td>' . esc_html( $p['bicycle'] ?: '—' ) . '</td>';
-				echo '<td>' . esc_html( $p['size'] ?: '—' ) . '</td>';
-				echo '<td>' . esc_html( $p['pedals'] ?: '—' ) . '</td>';
-				echo '<td>' . esc_html( $p['helmet'] ?: '—' ) . '</td>';
-				echo '</tr>';
+		// =============================================================
+		// SECTION: Standalone Rentals (WC Bookings, not part of a tour)
+		// =============================================================
+		if ( ! empty( $standalone_rental ) ) {
+			foreach ( $standalone_rental as $rental ) {
+				echo '<div class="tcbf-admin-section tcbf-section-rental">';
+				echo '<h4>Standalone Rental</h4>';
+				echo '<table class="tcbf-admin-table">';
+				echo '<tr><td class="tcbf-label">Product</td><td><strong>' . esc_html( $rental['product_name'] ) . '</strong></td></tr>';
+				if ( $rental['participant'] !== '' ) {
+					echo '<tr><td class="tcbf-label">Customer</td><td>' . esc_html( $rental['participant'] ) . '</td></tr>';
+				}
+				if ( $rental['booking_date'] !== '' ) {
+					$date_text = $rental['booking_date'];
+					if ( ! empty( $rental['end_date'] ) ) {
+						$date_text .= ' — ' . $rental['end_date'];
+					}
+					if ( ! empty( $rental['duration'] ) ) {
+						$date_text .= ' (' . $rental['duration'] . ')';
+					}
+					echo '<tr><td class="tcbf-label">Dates</td><td>' . esc_html( $date_text ) . '</td></tr>';
+				}
+				if ( $rental['size'] !== '' ) {
+					echo '<tr><td class="tcbf-label">Size</td><td>' . esc_html( $rental['size'] ) . '</td></tr>';
+				}
+				if ( $rental['pedals'] !== '' ) {
+					echo '<tr><td class="tcbf-label">Pedals</td><td>' . esc_html( $rental['pedals'] ) . '</td></tr>';
+				}
+				if ( $rental['helmet'] !== '' ) {
+					echo '<tr><td class="tcbf-label">Helmet</td><td>' . esc_html( $rental['helmet'] ) . '</td></tr>';
+				}
+
+				// Transport linked to this rental
+				$transports = $rental_transport_map[ $rental['item_id'] ] ?? [];
+				if ( ! empty( $transports ) ) {
+					echo '<tr><td class="tcbf-label" style="padding-top:8px">Transport</td><td style="padding-top:8px">';
+					foreach ( $transports as $t ) {
+						$type_label = $t['transport_type'] === 'delivery' ? 'Delivery' : 'Return';
+						$window_label = ucfirst( $t['transport_window'] ?: '' );
+						$price = Woo_OrderMeta::get_item_meta_ci( $t['item'], '_tcbf_transport_price' );
+						echo '<div style="margin-bottom:4px">';
+						echo '<strong>' . esc_html( $type_label ) . '</strong>';
+						if ( $t['transport_date'] !== '' ) echo ' · ' . esc_html( $t['transport_date'] );
+						if ( $window_label !== '' ) echo ' · ' . esc_html( $window_label );
+						if ( $t['transport_zone'] !== '' ) echo ' · ' . esc_html( $t['transport_zone'] );
+						if ( $t['transport_address'] !== '' ) {
+							$short_addr = mb_strlen( $t['transport_address'] ) > 50
+								? mb_substr( $t['transport_address'], 0, 47 ) . '...'
+								: $t['transport_address'];
+							echo '<br><span style="color:#666; font-size:12px">' . esc_html( $short_addr ) . '</span>';
+						}
+						if ( $price !== '' ) {
+							echo ' — ' . wc_price( (float) $price, [ 'currency' => $currency ] );
+						}
+						echo '</div>';
+					}
+					echo '</td></tr>';
+				}
+
+				echo '</table>';
+				echo '</div>';
 			}
-			echo '</tbody></table>';
-			echo '</div>';
 		}
 
-		// === Transport Section ===
-		if ( ! empty( $transport ) ) {
+		// =============================================================
+		// SECTION: Unmatched Transport (if any transport not linked above)
+		// =============================================================
+		$unmatched_transport = [];
+		foreach ( $transport_records as $ti => $t ) {
+			if ( ! isset( $claimed[ $ti ] ) ) {
+				$unmatched_transport[] = $t;
+			}
+		}
+		if ( ! empty( $unmatched_transport ) ) {
 			echo '<div class="tcbf-admin-section">';
 			echo '<h4>Transport</h4>';
 			echo '<table class="tcbf-admin-table tcbf-admin-table-full">';
 			echo '<thead><tr><th>Type</th><th>Date</th><th>Window</th><th>Zone</th><th>Address</th><th>Price</th></tr></thead>';
 			echo '<tbody>';
-			foreach ( $transport as $t ) {
+			foreach ( $unmatched_transport as $t ) {
 				$type_label = $t['transport_type'] === 'delivery' ? 'Delivery' : 'Return pickup';
 				$window_label = ucfirst( $t['transport_window'] ?: '—' );
 				$price = Woo_OrderMeta::get_item_meta_ci( $t['item'], '_tcbf_transport_price' );
@@ -702,9 +795,15 @@ class Woo_AdminOrder {
 		<style>
 			/* Booking Summary meta box */
 			#tcbf-booking-summary .tcbf-admin-summary { padding: 0; }
-			#tcbf-booking-summary .tcbf-admin-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #f0f0f0; }
-			#tcbf-booking-summary .tcbf-admin-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+			#tcbf-booking-summary .tcbf-admin-section { margin-bottom: 16px; padding: 12px; border-radius: 4px; border: 1px solid #e0e0e0; }
+			#tcbf-booking-summary .tcbf-admin-section:last-child { margin-bottom: 0; }
 			#tcbf-booking-summary h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #1d2327; text-transform: uppercase; letter-spacing: 0.5px; }
+
+			/* Section type colors */
+			#tcbf-booking-summary .tcbf-section-tour { border-left: 4px solid #00a32a; background: #f8fff8; }
+			#tcbf-booking-summary .tcbf-section-tour h4 { color: #1a6a1a; }
+			#tcbf-booking-summary .tcbf-section-rental { border-left: 4px solid #2271b1; background: #f6f9fd; }
+			#tcbf-booking-summary .tcbf-section-rental h4 { color: #174ea6; }
 
 			.tcbf-admin-table { border-collapse: collapse; width: auto; }
 			.tcbf-admin-table td, .tcbf-admin-table th { padding: 4px 12px 4px 0; font-size: 13px; vertical-align: top; }

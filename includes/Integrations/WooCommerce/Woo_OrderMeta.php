@@ -514,8 +514,9 @@ class Woo_OrderMeta {
 	public static function filter_order_item_meta( $formatted_meta, $item ) {
 		// Admin order edit: hide ALL meta on booking items.
 		// Admins get structured Booking Summary meta box + inline badges instead.
-		if ( is_admin() && ! wp_doing_ajax() && ! defined( 'DOING_CRON' )
-			&& ! doing_action( 'woocommerce_email_order_details' ) ) {
+		// Note: is_admin() is true even during WC AJAX calls in wp-admin context.
+		if ( is_admin() && ! doing_action( 'woocommerce_email_order_details' )
+			&& ! defined( 'DOING_CRON' ) ) {
 
 			// Check if this item belongs to a booking order
 			if ( $item instanceof \WC_Order_Item_Product ) {
@@ -1316,6 +1317,7 @@ class Woo_OrderMeta {
 				'duration'      => $duration,
 				'duration_text' => $duration_text,
 				'scope'         => $scope,
+				'is_tour'       => ( $event_id > 0 ), // true = tour event, false = standalone rental
 			];
 		}
 
@@ -1378,10 +1380,13 @@ class Woo_OrderMeta {
 	private static function render_single_booking_summary( array $item_data ) : void {
 		echo '<div class="tcbf-summary-card">';
 
-		// Event title (linked)
+		// Event/product title (linked) — use "Tour" for tour events, "Rental" for standalone bookings
 		if ( $item_data['event_title'] !== '' ) {
+			$is_tour = ! empty( $item_data['is_tour'] );
+			$title_label = $is_tour ? __( 'Tour', TC_BF_TEXTDOMAIN ) : __( 'Rental', TC_BF_TEXTDOMAIN );
+
 			echo '<div class="tcbf-summary-row tcbf-summary-event">';
-			echo '<span class="tcbf-summary-label">' . esc_html__( 'Tour', TC_BF_TEXTDOMAIN ) . '</span>';
+			echo '<span class="tcbf-summary-label">' . esc_html( $title_label ) . '</span>';
 			if ( $item_data['event_url'] ) {
 				echo '<a href="' . esc_url( $item_data['event_url'] ) . '" class="tcbf-summary-value tcbf-event-link">' . esc_html( $item_data['event_title'] ) . '</a>';
 			} else {
@@ -1436,10 +1441,12 @@ class Woo_OrderMeta {
 	private static function render_single_booking_summary_email( array $item_data ) : void {
 		echo '<table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">';
 
-		// Event title
+		// Event/product title — use "Tour" for events, "Rental" for standalone bookings
 		if ( $item_data['event_title'] !== '' ) {
+			$is_tour = ! empty( $item_data['is_tour'] );
+			$title_label = $is_tour ? Woo::translate( '[:en]Tour[:es]Tour[:]' ) : Woo::translate( '[:en]Rental[:es]Alquiler[:]' );
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">' . esc_html( Woo::translate( '[:en]Tour[:es]Tour[:]' ) ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">' . esc_html( $title_label ) . '</td>';
 			if ( $item_data['event_url'] ) {
 				echo '<td style="padding: 4px 0; font-weight: 600;"><a href="' . esc_url( $item_data['event_url'] ) . '" style="color: #3d61aa; text-decoration: none;">' . esc_html( $item_data['event_title'] ) . '</a></td>';
 			} else {
