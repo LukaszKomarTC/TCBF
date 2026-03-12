@@ -129,7 +129,7 @@ if ( $tcbf_event_title === '' && $product ) {
 <ul class="wc-booking-summary-list tcbf-booking-summary-list">
 	<?php if ( $tcbf_event_title !== '' ) : ?>
 	<li class="tcbf-summary-tour">
-		<strong><?php esc_html_e( 'Tour', 'tc-booking-flow-next' ); ?>:</strong>
+		<strong><?php echo $tcbf_event_id > 0 ? esc_html__( 'Tour', 'tc-booking-flow-next' ) : esc_html__( 'Rental', 'tc-booking-flow-next' ); ?>:</strong>
 		<?php if ( $tcbf_event_url ) : ?>
 			<a href="<?php echo esc_url( $tcbf_event_url ); ?>" class="tcbf-event-link"><?php echo esc_html( $tcbf_event_title ); ?></a>
 		<?php else : ?>
