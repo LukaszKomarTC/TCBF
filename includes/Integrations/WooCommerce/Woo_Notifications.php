@@ -200,6 +200,43 @@ class Woo_Notifications {
 	}
 
 	/* =========================================================
+	 * Suppress WC Processing Email for Booking Orders
+	 *
+	 * When a card payment succeeds and bookings are confirmed,
+	 * the "Booking Confirmed" email is sufficient. The WC
+	 * "Customer Processing Order" email is redundant noise.
+	 * ========================================================= */
+
+	/**
+	 * Disable WC "Customer Processing Order" email for orders containing bookable products.
+	 *
+	 * Hook: woocommerce_email_enabled_customer_processing_order
+	 *
+	 * @param bool      $enabled Whether the email is enabled.
+	 * @param \WC_Order $order   Order object (may be null during admin settings).
+	 * @return bool False if order contains bookings, original value otherwise.
+	 */
+	public static function suppress_processing_email_for_bookings( $enabled, $order ) : bool {
+		if ( ! $enabled || ! $order instanceof \WC_Order ) {
+			return (bool) $enabled;
+		}
+
+		// Check if any line item is a bookable product
+		foreach ( $order->get_items() as $item ) {
+			$product = $item->get_product();
+			if ( $product && is_callable( [ $product, 'is_type' ] ) && $product->is_type( 'booking' ) ) {
+				\TC_BF\Support\Logger::log( 'email.processing_suppressed', [
+					'order_id' => $order->get_id(),
+					'reason'   => 'order_has_bookings',
+				] );
+				return false;
+			}
+		}
+
+		return $enabled;
+	}
+
+	/* =========================================================
 	 * WooCommerce Email Subject Localization
 	 * ========================================================= */
 

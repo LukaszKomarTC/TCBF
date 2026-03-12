@@ -239,6 +239,9 @@ final class Plugin {
 		// ---- Email: render enhanced discount/commission blocks after order table (with visibility rules)
 		add_action('woocommerce_email_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_enhanced_blocks' ], 10, 4);
 
+		// ---- Email: suppress WC "Processing" email for orders with bookings (Booking Confirmed email suffices)
+		add_filter('woocommerce_email_enabled_customer_processing_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'suppress_processing_email_for_bookings' ], 10, 2);
+
 		// ---- Email subjects: localize WooCommerce email subjects with qTranslate support
 		add_filter('woocommerce_email_subject_customer_completed_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_completed_order_subject' ], 10, 2);
 		add_filter('woocommerce_email_subject_new_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_new_order_subject' ], 10, 2);
