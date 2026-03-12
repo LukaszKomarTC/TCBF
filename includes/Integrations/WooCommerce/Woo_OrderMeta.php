@@ -512,13 +512,8 @@ class Woo_OrderMeta {
 	 * @return array Filtered meta array
 	 */
 	public static function filter_order_item_meta( $formatted_meta, $item ) {
-		// Only affect frontend + emails (skip wp-admin order edit for debugging)
-		if ( is_admin() && ! wp_doing_ajax() && ! defined( 'DOING_CRON' ) ) {
-			// Allow in admin if it's email preview or AJAX
-			if ( ! doing_action( 'woocommerce_email_order_details' ) ) {
-				return $formatted_meta;
-			}
-		}
+		// Apply meta hiding everywhere: frontend, emails, AND wp-admin order edit.
+		// Admin gets a structured meta box (Woo_AdminOrder) instead of raw meta dump.
 
 		foreach ( $formatted_meta as $id => $meta ) {
 			$key = isset( $meta->key ) ? (string) $meta->key : '';
@@ -2479,7 +2474,7 @@ class Woo_OrderMeta {
 	 * @param \WC_Order_Item_Product $item The item
 	 * @return array Item record with normalized fields
 	 */
-	private static function build_item_record( \WC_Order $order, int $item_id, \WC_Order_Item_Product $item ) : array {
+	public static function build_item_record( \WC_Order $order, int $item_id, \WC_Order_Item_Product $item ) : array {
 		$product = $item->get_product();
 
 		// Get group metadata (case-insensitive)

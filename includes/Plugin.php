@@ -33,6 +33,7 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Transport.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_MyAccount.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_PartnerCheckout.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_AdminOrder.php';
 
 /**
  * TC Booking Flow Plugin Main Class (Orchestrator)
@@ -280,6 +281,11 @@ final class Plugin {
 		// ---- Partner Checkout: simplified checkout for hotel partners
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_PartnerCheckout') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_PartnerCheckout::init();
+		}
+
+		// ---- Admin Order: structured booking summary meta box + item badges + hidden custom fields
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_AdminOrder') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_AdminOrder::init();
 		}
 
 		// ---- Notification Language: user profile fields (admin + My Account)
