@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  * Replaces the raw meta dump on admin order edit screens with:
  * - A structured "Booking Summary" meta box (event, participants, transport, pricing)
  * - Compact inline badges on each order item (scope, participant, event)
+ * - Visual grouping of related items (tour pack, rental + transport)
  * - Hidden TCBF custom fields from the Custom Fields metabox
  */
 class Woo_AdminOrder {
@@ -27,8 +28,9 @@ class Woo_AdminOrder {
 		// Hide TCBF keys from Custom Fields metabox
 		add_filter( 'is_protected_meta', [ __CLASS__, 'protect_tcbf_meta' ], 10, 2 );
 
-		// Admin CSS
+		// Admin CSS + JS (grouping logic)
 		add_action( 'admin_head', [ __CLASS__, 'admin_css' ] );
+		add_action( 'admin_footer', [ __CLASS__, 'admin_grouping_js' ] );
 	}
 
 	/* =================================================================
@@ -41,7 +43,6 @@ class Woo_AdminOrder {
 			return;
 		}
 
-		// Only show on booking orders
 		$order = self::get_current_order();
 		if ( ! $order || ! Woo_OrderMeta::is_booking_order( $order ) ) {
 			return;
@@ -85,7 +86,6 @@ class Woo_AdminOrder {
 			$rec = Woo_OrderMeta::build_item_record( $order, $item_id, $item );
 			$records[] = $rec;
 
-			// Collect event info (first one found)
 			if ( $event_title === '' && $rec['event_title'] !== '' ) {
 				$event_title = $rec['event_title'];
 				$event_id    = $rec['event_id'];
@@ -108,7 +108,6 @@ class Woo_AdminOrder {
 						'helmet'  => $rec['helmet'],
 					];
 				} else {
-					// Merge: add rental scope info
 					if ( $rec['scope'] === 'rental' ) {
 						$participants[ $key ]['bicycle'] = $rec['bicycle'] ?: $participants[ $key ]['bicycle'];
 						$participants[ $key ]['size']    = $rec['size'] ?: $participants[ $key ]['size'];
@@ -116,15 +115,14 @@ class Woo_AdminOrder {
 				}
 			}
 
-			// Collect transport items
 			if ( $rec['is_transport'] ) {
 				$transport[] = $rec;
 			}
 		}
 
-		// === Event Section ===
 		echo '<div class="tcbf-admin-summary">';
 
+		// === Event Section ===
 		if ( $event_title !== '' ) {
 			echo '<div class="tcbf-admin-section">';
 			echo '<h4>Event</h4>';
@@ -283,16 +281,9 @@ class Woo_AdminOrder {
 	}
 
 	/* =================================================================
-	 * Phase 4: Inline Item Badges
+	 * Inline Item Badges
 	 * ================================================================= */
 
-	/**
-	 * Render compact badges on each order item row in admin.
-	 *
-	 * @param int $item_id Order item ID
-	 * @param \WC_Order_Item $item The order item
-	 * @param \WC_Product|false $product The product
-	 */
 	public static function render_item_badges( $item_id, $item, $product ) : void {
 		if ( ! $item instanceof \WC_Order_Item_Product ) {
 			return;
@@ -303,7 +294,6 @@ class Woo_AdminOrder {
 			return;
 		}
 
-		// Only for booking orders
 		if ( ! Woo_OrderMeta::is_booking_order( $order ) ) {
 			return;
 		}
@@ -330,8 +320,8 @@ class Woo_AdminOrder {
 		}
 
 		// Transport-specific info
-		$transport_type = Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_type' );
-		$transport_zone = Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_zone_name' );
+		$transport_type   = Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_type' );
+		$transport_zone   = Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_zone_name' );
 		$transport_window = Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_window' );
 
 		$badges = [];
@@ -349,8 +339,8 @@ class Woo_AdminOrder {
 			$badges[] = '<span class="tcbf-item-badge tcbf-badge-participant">' . esc_html( $participant ) . '</span>';
 		}
 
-		// Event (shortened)
-		if ( $event_title !== '' && $transport_type === '' ) {
+		// Event (shortened) — only for participation items
+		if ( $event_title !== '' && $scope === 'participation' ) {
 			$short = mb_strlen( $event_title ) > 40 ? mb_substr( $event_title, 0, 37 ) . '...' : $event_title;
 			$badges[] = '<span class="tcbf-item-badge tcbf-badge-event">' . esc_html( $short ) . '</span>';
 		}
@@ -370,22 +360,307 @@ class Woo_AdminOrder {
 	}
 
 	/* =================================================================
-	 * Phase 3: Protect TCBF Meta from Custom Fields
+	 * Visual Grouping: Server-side data + Client-side DOM manipulation
 	 * ================================================================= */
 
 	/**
-	 * Mark TCBF meta keys as protected so they don't appear in Custom Fields.
+	 * Build the grouping map for the current order.
+	 *
+	 * Returns an ordered array of groups. Each group has:
+	 * - 'items': ordered array of item_ids (parent first, then children)
+	 * - 'color': CSS color for left border
+	 * - 'roles': map of item_id => role ('parent'|'child')
+	 *
+	 * Reuses the same grouping logic as render_grouped_order_items_table().
 	 */
+	private static function build_grouping_map( \WC_Order $order ) : array {
+		$records = [];
+		foreach ( $order->get_items( 'line_item' ) as $item_id => $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+			$records[] = Woo_OrderMeta::build_item_record( $order, $item_id, $item );
+		}
+
+		if ( empty( $records ) ) {
+			return [];
+		}
+
+		// Separate into tc_group_id groups, standalone rentals, transports, other
+		$pack_groups       = []; // tc_group_id => [records]
+		$standalone        = [];
+
+		foreach ( $records as $rec ) {
+			if ( $rec['group_id'] > 0 ) {
+				$pack_groups[ $rec['group_id'] ][] = $rec;
+			} else {
+				$standalone[] = $rec;
+			}
+		}
+
+		// Sub-group standalone: rentals + their transport children
+		$rental_records    = [];
+		$transport_records = [];
+		$other_records     = [];
+
+		foreach ( $standalone as $rec ) {
+			if ( $rec['is_transport'] ) {
+				$transport_records[] = $rec;
+			} elseif ( $rec['scope'] === 'rental' || $rec['scope'] === '' ) {
+				$rental_records[] = $rec;
+			} else {
+				$other_records[] = $rec;
+			}
+		}
+
+		// Match transports to rentals (same logic as Woo_OrderMeta::render_grouped_order_items_table)
+		$rental_subgroups      = [];
+		$claimed_transport_ids = [];
+
+		foreach ( $rental_records as $rental ) {
+			$subgroup = [ 'rental' => $rental, 'transports' => [] ];
+
+			foreach ( $transport_records as $ti => $transport ) {
+				if ( isset( $claimed_transport_ids[ $ti ] ) ) {
+					continue;
+				}
+
+				$match = false;
+				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
+					$match = true;
+				} elseif ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
+					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id']
+					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] <= 0
+					&& $rental['event_id'] <= 0
+					&& $transport['participant'] !== ''
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				}
+
+				if ( $match ) {
+					$subgroup['transports'][] = $transport;
+					$claimed_transport_ids[ $ti ] = true;
+				}
+			}
+
+			$rental_subgroups[] = $subgroup;
+		}
+
+		// Unclaimed transports go to other
+		foreach ( $transport_records as $ti => $transport ) {
+			if ( ! isset( $claimed_transport_ids[ $ti ] ) ) {
+				$other_records[] = $transport;
+			}
+		}
+
+		// Build the final grouping map
+		$groups = [];
+		$colors = [ '#2271b1', '#d63638', '#00a32a', '#dba617', '#8c5e58', '#3858e9', '#b32d2e' ];
+		$ci     = 0;
+
+		// 1. Tour pack groups (participation parent + rental child)
+		foreach ( $pack_groups as $gid => $pack_items ) {
+			$group = [ 'items' => [], 'color' => $colors[ $ci % count( $colors ) ], 'roles' => [] ];
+
+			// Sort: parent first, then children
+			usort( $pack_items, function( $a, $b ) {
+				if ( $a['role'] === 'parent' && $b['role'] !== 'parent' ) return -1;
+				if ( $a['role'] !== 'parent' && $b['role'] === 'parent' ) return 1;
+				return 0;
+			} );
+
+			foreach ( $pack_items as $rec ) {
+				$group['items'][] = $rec['item_id'];
+				$group['roles'][ $rec['item_id'] ] = $rec['role'] === 'parent' ? 'parent' : 'child';
+			}
+
+			// Check if any transport matches items in this pack
+			foreach ( $transport_records as $ti => $transport ) {
+				if ( isset( $claimed_transport_ids[ $ti ] ) ) {
+					continue;
+				}
+				// Match transport to pack by entry_id or event_id+participant
+				foreach ( $pack_items as $pack_rec ) {
+					if ( $pack_rec['scope'] !== 'rental' ) continue;
+					$match = false;
+					if ( $pack_rec['entry_id'] > 0 && $transport['entry_id'] === $pack_rec['entry_id'] ) {
+						$match = true;
+					} elseif ( $pack_rec['event_id'] > 0 && $transport['event_id'] === $pack_rec['event_id']
+						&& $transport['participant'] !== '' && $transport['participant'] === $pack_rec['participant'] ) {
+						$match = true;
+					}
+					if ( $match ) {
+						$group['items'][] = $transport['item_id'];
+						$group['roles'][ $transport['item_id'] ] = 'child';
+						$claimed_transport_ids[ $ti ] = true;
+						break;
+					}
+				}
+			}
+
+			if ( count( $group['items'] ) > 1 ) {
+				$groups[] = $group;
+				$ci++;
+			}
+		}
+
+		// 2. Standalone rental + transport sub-groups
+		foreach ( $rental_subgroups as $subgroup ) {
+			if ( empty( $subgroup['transports'] ) ) {
+				continue; // Single rental with no transport — no grouping needed
+			}
+
+			$group = [ 'items' => [], 'color' => $colors[ $ci % count( $colors ) ], 'roles' => [] ];
+			$group['items'][] = $subgroup['rental']['item_id'];
+			$group['roles'][ $subgroup['rental']['item_id'] ] = 'parent';
+
+			foreach ( $subgroup['transports'] as $t ) {
+				$group['items'][] = $t['item_id'];
+				$group['roles'][ $t['item_id'] ] = 'child';
+			}
+
+			$groups[] = $group;
+			$ci++;
+		}
+
+		return $groups;
+	}
+
+	/**
+	 * Output grouping JS in admin footer.
+	 */
+	public static function admin_grouping_js() : void {
+		$screen = get_current_screen();
+		if ( ! $screen ) {
+			return;
+		}
+
+		$order_screens = [ 'shop_order', 'woocommerce_page_wc-orders' ];
+		if ( ! in_array( $screen->id, $order_screens, true ) ) {
+			return;
+		}
+
+		$order = self::get_current_order();
+		if ( ! $order || ! Woo_OrderMeta::is_booking_order( $order ) ) {
+			return;
+		}
+
+		$groups = self::build_grouping_map( $order );
+		if ( empty( $groups ) ) {
+			return;
+		}
+
+		// Prepare JSON-safe structure (convert item_id keys in roles to strings)
+		$groups_json = [];
+		foreach ( $groups as $g ) {
+			$roles = [];
+			foreach ( $g['roles'] as $id => $role ) {
+				$roles[ (string) $id ] = $role;
+			}
+			$groups_json[] = [
+				'items' => array_map( 'intval', $g['items'] ),
+				'color' => $g['color'],
+				'roles' => $roles,
+			];
+		}
+
+		?>
+		<script>
+		(function() {
+			var groups = <?php echo wp_json_encode( $groups_json ); ?>;
+			if ( ! groups || ! groups.length ) return;
+
+			function applyGrouping() {
+				var tbody = document.getElementById( 'order_line_items' );
+				if ( ! tbody ) return;
+
+				groups.forEach( function( group ) {
+					var parentRow = null;
+					var rows = [];
+
+					group.items.forEach( function( itemId ) {
+						var row = tbody.querySelector( 'tr.item[data-order_item_id="' + itemId + '"]' );
+						if ( ! row ) return;
+						rows.push( row );
+						if ( group.roles[ String( itemId ) ] === 'parent' && ! parentRow ) {
+							parentRow = row;
+						}
+					} );
+
+					if ( rows.length < 2 ) return;
+
+					// Ensure rows are adjacent: move children right after parent
+					if ( parentRow ) {
+						var insertAfter = parentRow;
+						rows.forEach( function( row ) {
+							if ( row === parentRow ) return;
+							insertAfter.after( row );
+							insertAfter = row;
+						} );
+					}
+
+					// Apply visual grouping
+					rows.forEach( function( row, idx ) {
+						var itemId = parseInt( row.getAttribute( 'data-order_item_id' ), 10 );
+						var role = group.roles[ String( itemId ) ] || 'child';
+
+						row.style.borderLeft = '3px solid ' + group.color;
+
+						if ( role === 'child' ) {
+							// Indent the name cell
+							var nameCell = row.querySelector( 'td.name' );
+							if ( nameCell ) {
+								nameCell.style.paddingLeft = '28px';
+							}
+						}
+
+						// Remove bottom border for all but last in group
+						if ( idx < rows.length - 1 ) {
+							row.classList.add( 'tcbf-group-item' );
+						}
+						// Last item gets bottom border rounded visual
+						if ( idx === rows.length - 1 ) {
+							row.classList.add( 'tcbf-group-last' );
+						}
+						// First item
+						if ( idx === 0 ) {
+							row.classList.add( 'tcbf-group-first' );
+						}
+					} );
+				} );
+			}
+
+			// Run on DOM ready and also after WC AJAX reloads the items
+			if ( document.readyState === 'loading' ) {
+				document.addEventListener( 'DOMContentLoaded', applyGrouping );
+			} else {
+				applyGrouping();
+			}
+
+			// Re-apply after WC reloads items via AJAX
+			jQuery( document.body ).on( 'wc_backbone_modal_loaded wc-enhanced-select-init', applyGrouping );
+			jQuery( document ).on( 'items_saved order-item-added', applyGrouping );
+		})();
+		</script>
+		<?php
+	}
+
+	/* =================================================================
+	 * Protect TCBF Meta from Custom Fields
+	 * ================================================================= */
+
 	public static function protect_tcbf_meta( $protected, $meta_key ) : bool {
 		if ( $protected ) {
 			return true;
 		}
 
-		// Already protected (underscore prefix)
-		// But some TCBF keys don't have underscore prefix — protect those too
 		$key_lower = strtolower( $meta_key );
 
-		// Prefix-based protection
 		$prefixes = [ 'partner_', 'client_', 'subtotal_', 'early_booking_', 'eb_', 'tc_' ];
 		foreach ( $prefixes as $prefix ) {
 			if ( strpos( $key_lower, $prefix ) === 0 ) {
@@ -393,7 +668,6 @@ class Woo_AdminOrder {
 			}
 		}
 
-		// Exact key matches (non-underscore-prefixed TCBF meta stored on orders)
 		static $protected_keys = null;
 		if ( $protected_keys === null ) {
 			$protected_keys = array_flip( array_map( 'strtolower', [
@@ -419,7 +693,6 @@ class Woo_AdminOrder {
 			return;
 		}
 
-		// Only on order edit screens
 		$order_screens = [ 'shop_order', 'woocommerce_page_wc-orders' ];
 		if ( ! in_array( $screen->id, $order_screens, true ) ) {
 			return;
@@ -454,6 +727,11 @@ class Woo_AdminOrder {
 			.tcbf-badge-participant { background: #f0f0f0; color: #1d2327; font-weight: 600; }
 			.tcbf-badge-event { background: #f5f0ff; color: #5b21b6; }
 			.tcbf-badge-transport-detail { background: #fff8e1; color: #7a5900; }
+
+			/* Grouping: connected items */
+			#order_line_items tr.tcbf-group-item > td { border-bottom: 1px dashed #e0e0e0 !important; }
+			#order_line_items tr.tcbf-group-first > td:first-child { border-top-left-radius: 3px; }
+			#order_line_items tr.tcbf-group-last > td:first-child { border-bottom-left-radius: 3px; }
 		</style>
 		<?php
 	}
@@ -462,9 +740,6 @@ class Woo_AdminOrder {
 	 * Helpers
 	 * ================================================================= */
 
-	/**
-	 * Get the order edit screen ID (supports HPOS and legacy).
-	 */
 	private static function get_order_screen() : ?string {
 		$screen = get_current_screen();
 		if ( ! $screen ) {
@@ -478,23 +753,17 @@ class Woo_AdminOrder {
 		return null;
 	}
 
-	/**
-	 * Get the current order being edited.
-	 */
 	private static function get_current_order() : ?\WC_Order {
 		global $post, $theorder;
 
-		// HPOS: $theorder is set by WooCommerce
 		if ( $theorder instanceof \WC_Order ) {
 			return $theorder;
 		}
 
-		// Legacy: get from post
 		if ( $post && $post->post_type === 'shop_order' ) {
 			return wc_get_order( $post->ID );
 		}
 
-		// HPOS fallback: check GET param
 		$order_id = isset( $_GET['id'] ) ? absint( $_GET['id'] ) : 0;
 		if ( $order_id > 0 ) {
 			$order = wc_get_order( $order_id );
@@ -506,9 +775,6 @@ class Woo_AdminOrder {
 		return null;
 	}
 
-	/**
-	 * Resolve order from meta box callback argument (WP_Post or WC_Order).
-	 */
 	private static function resolve_order( $post_or_order ) : ?\WC_Order {
 		if ( $post_or_order instanceof \WC_Order ) {
 			return $post_or_order;

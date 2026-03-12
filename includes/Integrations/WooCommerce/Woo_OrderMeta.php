@@ -512,8 +512,21 @@ class Woo_OrderMeta {
 	 * @return array Filtered meta array
 	 */
 	public static function filter_order_item_meta( $formatted_meta, $item ) {
-		// Apply meta hiding everywhere: frontend, emails, AND wp-admin order edit.
-		// Admin gets a structured meta box (Woo_AdminOrder) instead of raw meta dump.
+		// Admin order edit: hide ALL meta on booking items.
+		// Admins get structured Booking Summary meta box + inline badges instead.
+		if ( is_admin() && ! wp_doing_ajax() && ! defined( 'DOING_CRON' )
+			&& ! doing_action( 'woocommerce_email_order_details' ) ) {
+
+			// Check if this item belongs to a booking order
+			if ( $item instanceof \WC_Order_Item_Product ) {
+				$order = $item->get_order();
+				if ( $order instanceof \WC_Order && self::is_booking_order( $order ) ) {
+					return []; // Hide all meta — shown via Woo_AdminOrder meta box + badges
+				}
+			}
+			// Non-booking orders: show meta normally in admin
+			return $formatted_meta;
+		}
 
 		foreach ( $formatted_meta as $id => $meta ) {
 			$key = isset( $meta->key ) ? (string) $meta->key : '';
