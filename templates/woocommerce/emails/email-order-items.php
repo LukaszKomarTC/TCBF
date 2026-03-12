@@ -62,6 +62,12 @@ if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
 		$is_transport = ( $scope === 'transport' || $meta::get_item_meta_ci( $item, '_tcbf_transport_type' ) !== '' );
 		$transport_parent_product_id = (int) $meta::get_item_meta_ci( $item, '_tcbf_transport_parent_product_id' );
 
+		// GF entry ID — primary key for matching items from the same form submission
+		$entry_id = (int) $meta::get_item_meta_ci( $item, '_gf_entry_id' );
+		if ( $entry_id <= 0 ) {
+			$entry_id = (int) $meta::get_item_meta_ci( $item, '_tcbf_gf_entry_id' );
+		}
+
 		$product    = $item->get_product();
 		$product_id = $product ? $product->get_id() : 0;
 
@@ -70,6 +76,7 @@ if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
 			'scope'                       => $scope,
 			'group_id'                    => $group_id,
 			'group_role'                  => $group_role,
+			'entry_id'                    => $entry_id,
 			'event_id'                    => $event_id,
 			'participant'                 => $participant,
 			'is_transport'                => $is_transport,
@@ -153,13 +160,19 @@ if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
 				continue;
 			}
 
+			// Strategy 0: entry_id match (most reliable — same GF submission, works without participant name)
+			// Strategy 1: event_id + participant (tour-linked rentals)
+			// Strategy 2: parent_product_id + participant (standalone rentals, no event)
+			// Strategy 3: participant only (legacy orders without parent_product_id)
 			$match = false;
-			if ( $r_data['event_id'] > 0 && $t_data['event_id'] === $r_data['event_id']
-				&& $t_data['participant'] === $r_data['participant'] ) {
+			if ( $r_data['entry_id'] > 0 && $t_data['entry_id'] === $r_data['entry_id'] ) {
+				$match = true;
+			} elseif ( $r_data['event_id'] > 0 && $t_data['event_id'] === $r_data['event_id']
+				&& $t_data['participant'] !== '' && $t_data['participant'] === $r_data['participant'] ) {
 				$match = true;
 			} elseif ( $t_data['transport_parent_product_id'] > 0
 				&& $t_data['transport_parent_product_id'] === $r_data['product_id']
-				&& $t_data['participant'] === $r_data['participant'] ) {
+				&& $t_data['participant'] !== '' && $t_data['participant'] === $r_data['participant'] ) {
 				$match = true;
 			} elseif ( $t_data['transport_parent_product_id'] <= 0
 				&& $r_data['event_id'] <= 0

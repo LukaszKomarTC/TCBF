@@ -122,6 +122,14 @@ class Woo_OrderMeta {
 		if ( ! empty( $booking[self::BK_ENTRY_ID] ) ) {
 			$item->add_meta_data( '_gf_entry_id', $booking[self::BK_ENTRY_ID] );
 		}
+		// Persist _tcbf_participant_name for all scopes (participation, rental).
+		// Transport items already persist this via persist_transport_order_meta().
+		// This ensures order-level grouping can match items by entry_id even
+		// when clients are not logged in and participant name fields are empty.
+		if ( isset( $cart_item['_tcbf_participant_name'] ) && $cart_item['_tcbf_participant_name'] !== '' ) {
+			$item->add_meta_data( '_tcbf_participant_name', $cart_item['_tcbf_participant_name'], true );
+		}
+
 		if ( ! empty( $booking['_participant_email'] ) ) {
 			$item->add_meta_data( 'email', $booking['_participant_email'] );
 		}
@@ -2378,16 +2386,19 @@ class Woo_OrderMeta {
 				}
 
 				// Match transport to its parent rental.
+				// Strategy 0: entry_id match (most reliable — same GF submission, works without participant name)
 				// Strategy 1: event_id + participant (tour-linked rentals)
 				// Strategy 2: parent_product_id + participant (standalone rentals, no event)
 				// Strategy 3: participant only (legacy orders without parent_product_id)
 				$match = false;
-				if ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
-					&& $transport['participant'] === $rental['participant'] ) {
+				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
+					$match = true;
+				} elseif ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
+					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
 					$match = true;
 				} elseif ( $transport['transport_parent_product_id'] > 0
 					&& $transport['transport_parent_product_id'] === $rental['product_id']
-					&& $transport['participant'] === $rental['participant'] ) {
+					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
 					$match = true;
 				} elseif ( $transport['transport_parent_product_id'] <= 0
 					&& $rental['event_id'] <= 0
@@ -2593,6 +2604,12 @@ class Woo_OrderMeta {
 			}
 		}
 
+		// GF entry ID — primary key for matching items from the same form submission
+		$entry_id = (int) self::get_item_meta_ci( $item, '_gf_entry_id' );
+		if ( $entry_id <= 0 ) {
+			$entry_id = (int) self::get_item_meta_ci( $item, '_tcbf_gf_entry_id' );
+		}
+
 		// Transport meta
 		$transport_type     = self::get_item_meta_ci( $item, '_tcbf_transport_type' );
 		$transport_address  = self::get_item_meta_ci( $item, '_tcbf_transport_address' );
@@ -2609,6 +2626,7 @@ class Woo_OrderMeta {
 			'item_id'           => $item_id,
 			'item'              => $item,
 			'group_id'          => $group_id,
+			'entry_id'          => $entry_id,
 			'role'              => $role,
 			'scope'             => $scope,
 			'event_id'          => $event_id,
