@@ -42,7 +42,7 @@ final class Partner_Portal {
      * Check if current user is in admin mode (can see all partners)
      */
     private static function is_admin_mode() : bool {
-        return function_exists( 'current_user_can' ) && current_user_can( 'manage_woocommerce' );
+        return function_exists( 'current_user_can' ) && ( current_user_can( 'manage_woocommerce' ) || current_user_can( 'manage_options' ) );
     }
 
     /**
