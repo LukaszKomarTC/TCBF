@@ -1022,7 +1022,7 @@ final class Woo_Transport {
 
 		echo '<div class="tcbf-service-card__header">';
 		echo '<div class="tcbf-service-card__icon">';
-		echo ( $state === 'configured' ) ? '&#10003;' : '&#128690;';
+		echo ( $state === 'configured' ) ? '&#10003;' : '<img src="' . esc_url( TC_BF_URL . 'assets/images/delivery.svg' ) . '" alt="" width="24" height="24">';
 		echo '</div>';
 		echo '<div class="tcbf-service-card__title-wrap">';
 		echo '<h3 class="tcbf-service-card__title">';
