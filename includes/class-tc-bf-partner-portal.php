@@ -195,15 +195,13 @@ final class Partner_Portal {
     private static function get_partner_order_ids( int $partner_filter, bool $is_admin ) : array {
         global $wpdb;
 
-        // Try HPOS orders_meta table first, fall back to postmeta
-        $hpos_table = $wpdb->prefix . 'wc_orders_meta';
-        $hpos_enabled = $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
-            DB_NAME,
-            $hpos_table
-        ) ) > 0;
+        // Use HPOS orders_meta table if HPOS is the active storage, fall back to postmeta.
+        // Note: the wc_orders_meta table may exist even when HPOS is not active (WC creates
+        // it by default since 8.2), so we must check the actual storage policy, not table existence.
+        $hpos_enabled = class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' )
+            && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
 
-        $meta_table  = $hpos_enabled ? $hpos_table : $wpdb->postmeta;
+        $meta_table  = $hpos_enabled ? $wpdb->prefix . 'wc_orders_meta' : $wpdb->postmeta;
         $id_col      = $hpos_enabled ? 'order_id' : 'post_id';
         $key_col     = 'meta_key';
         $val_col     = 'meta_value';
