@@ -342,6 +342,13 @@ final class Partner_Portal {
      * getters, NOT from meta math. This ensures exact parity with cart/order confirmation.
      * Commission comes from ledger snapshot meta (for accounting).
      *
+     * Order origin detection:
+     * - 'direct':   the partner themselves placed the order (they are the WC customer)
+     * - 'referred': a client used the partner's discount code, or admin assigned it
+     *
+     * Direct orders get full access (clickable link, full product details).
+     * Referred orders get limited access (no link, participant names stripped for privacy).
+     *
      * @param \WC_Order $order         Order object
      * @param int       $partner_uid   Partner user ID (for "own order" detection)
      * @param float     $partner_pct   Partner commission % (fallback)
@@ -350,8 +357,18 @@ final class Partner_Portal {
      */
     private static function format_row( \WC_Order $order, int $partner_uid, float $partner_pct, bool $prices_inc_tax ) : array {
         $oid = $order->get_id();
-        $order_user_id = (int) $order->get_user_id();
-        $is_own_order = $order_user_id > 0 && $order_user_id === $partner_uid;
+
+        // Resolve the attributed partner from order meta (authoritative source).
+        // This is correct even in admin all-view where $partner_uid may be 0.
+        $order_partner_id = (int) $order->get_meta( 'partner_id', true );
+        $order_user_id    = (int) $order->get_user_id();
+
+        // "Direct" = the partner is also the WC customer who placed the order.
+        // We check against both $partner_uid (the viewing partner) and the order's
+        // own partner_id meta, so admin all-view works correctly too.
+        $effective_partner = $partner_uid > 0 ? $partner_uid : $order_partner_id;
+        $is_own_order      = $order_user_id > 0 && $order_user_id === $effective_partner;
+        $order_origin      = $is_own_order ? 'direct' : 'referred';
 
         // ============================================================
         // CLIENT-FACING MONEY: Use Woo authoritative getters (already rounded)
@@ -381,14 +398,20 @@ final class Partner_Portal {
 
         $status_slug = $order->get_status();
 
-        // Products/services description
-        $products_desc = self::format_products( $order );
+        // Products/services description — strip participant names for referred orders (privacy)
+        $products_desc = self::format_products( $order, ! $is_own_order );
+
+        // Type labels
+        $type_label = $is_own_order
+            ? __( 'Direct', TC_BF_TEXTDOMAIN )
+            : __( 'Referred', TC_BF_TEXTDOMAIN );
 
         return [
             'order_id'        => $oid,
             'date'            => $order->get_date_created() ? $order->get_date_created()->date_i18n( 'd/m/Y' ) : '',
             'date_iso'        => $order->get_date_created() ? $order->get_date_created()->format( 'Y-m-d' ) : '',
-            'type'            => $is_own_order ? 'Partner order' : 'QR',
+            'type'            => $type_label,
+            'order_origin'    => $order_origin,
             'is_own_order'    => $is_own_order,
             'products'        => $products_desc,
             'client_total'    => $client_total_disp,
@@ -414,8 +437,12 @@ final class Partner_Portal {
 
     /**
      * Format products/services for an order
+     *
+     * @param \WC_Order $order         Order object
+     * @param bool      $redact_names  If true, strip participant names from output (privacy for referred orders)
+     * @return string Semicolon-separated product descriptions
      */
-    private static function format_products( \WC_Order $order ) : string {
+    private static function format_products( \WC_Order $order, bool $redact_names = false ) : string {
         $lines = [];
 
         foreach ( $order->get_items() as $item_id => $item ) {
@@ -447,6 +474,23 @@ final class Partner_Portal {
                     } catch ( \Exception $e ) {
                         // Booking may be deleted or corrupted - skip silently
                     }
+                }
+            }
+
+            // For referred orders, strip participant name from the line (privacy).
+            // Participant names may appear in item meta displayed via the product name
+            // or as part of the item name itself; we strip the _participant meta reference.
+            if ( $redact_names ) {
+                $participant = (string) $item->get_meta( '_participant', true );
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( 'participant', true );
+                }
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( '_tcbf_participant_name', true );
+                }
+                if ( $participant !== '' ) {
+                    // Remove participant name if it appears in the product line
+                    $line = str_replace( $participant, '***', $line );
                 }
             }
 
@@ -596,13 +640,13 @@ final class Partner_Portal {
         }
 
         // Format rows
+        // $display_partner_id is the specific partner being viewed (0 in admin all-view).
+        // format_row() will fall back to the order's own partner_id meta when this is 0.
         $prices_inc_tax = function_exists( 'wc_prices_include_tax' ) ? (bool) wc_prices_include_tax() : true;
         $rows = [];
         foreach ( $orders as $order ) {
             if ( ! $order instanceof \WC_Order ) continue;
-            // For row formatting, use the partner_filter (or 0 for admin all-view)
-            $row_partner_id = $display_partner_id > 0 ? $display_partner_id : 0;
-            $rows[] = self::format_row( $order, $row_partner_id, $partner_pct, $prices_inc_tax );
+            $rows[] = self::format_row( $order, $display_partner_id, $partner_pct, $prices_inc_tax );
         }
 
         // For accurate total stats, get all orders (without pagination)
@@ -610,8 +654,7 @@ final class Partner_Portal {
         $all_rows = [];
         foreach ( $all_result['orders'] as $order ) {
             if ( ! $order instanceof \WC_Order ) continue;
-            $row_partner_id = $display_partner_id > 0 ? $display_partner_id : 0;
-            $all_rows[] = self::format_row( $order, $row_partner_id, $partner_pct, $prices_inc_tax );
+            $all_rows[] = self::format_row( $order, $display_partner_id, $partner_pct, $prices_inc_tax );
         }
         $total_stats = self::compute_stats( $all_rows );
 
@@ -675,6 +718,9 @@ final class Partner_Portal {
 
     /**
      * Render orders table
+     *
+     * Direct orders (partner placed themselves): full details, clickable order link.
+     * Referred orders (client used partner's code): limited info, no link, participant names stripped.
      */
     private static function render_table( array $rows, array $stats, bool $prices_inc_tax ) : void {
         $tax_label = $prices_inc_tax ? __( '(incl. tax)', TC_BF_TEXTDOMAIN ) : __( '(excl. tax)', TC_BF_TEXTDOMAIN );
@@ -692,9 +738,11 @@ final class Partner_Portal {
         echo '</tr></thead><tbody>';
 
         foreach ( $rows as $row ) {
-            echo '<tr>';
+            $origin_class = $row['is_own_order'] ? 'tcbf-origin-direct' : 'tcbf-origin-referred';
+            echo '<tr class="' . esc_attr( $origin_class ) . '">';
 
-            // Order ID (link only if own order)
+            // Order ID: clickable link only for direct (own) orders.
+            // Referred orders: partner is not the WC customer, so Woo would deny access.
             if ( $row['is_own_order'] ) {
                 echo '<td data-title="Order"><a href="' . esc_url( $row['view_url'] ) . '">#' . esc_html( $row['order_id'] ) . '</a></td>';
             } else {
@@ -869,8 +917,7 @@ final class Partner_Portal {
         $rows = [];
         foreach ( $orders as $order ) {
             if ( ! $order instanceof \WC_Order ) continue;
-            $row_partner_id = $display_partner_id > 0 ? $display_partner_id : 0;
-            $rows[] = self::format_row( $order, $row_partner_id, $partner_pct, $prices_inc_tax );
+            $rows[] = self::format_row( $order, $display_partner_id, $partner_pct, $prices_inc_tax );
         }
 
         $stats = self::compute_stats( $rows );
