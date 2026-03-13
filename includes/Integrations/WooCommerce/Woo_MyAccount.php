@@ -127,7 +127,7 @@ final class Woo_MyAccount {
 		}
 
 		if ( $participants ) {
-			echo implode( '<br>', $participants );
+			echo implode( '<br>', array_unique( $participants ) );
 		}
 	}
 
