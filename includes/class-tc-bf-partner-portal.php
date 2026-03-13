@@ -398,6 +398,7 @@ final class Partner_Portal {
 
         // Products/services description — strip participant names for referred orders (privacy)
         $products_desc = self::format_products( $order, ! $is_own_order );
+        $products_html = self::format_products_html( $order, ! $is_own_order );
 
         // Type labels
         $type_label = $is_own_order
@@ -412,6 +413,7 @@ final class Partner_Portal {
             'order_origin'    => $order_origin,
             'is_own_order'    => $is_own_order,
             'products'        => $products_desc,
+            'products_html'   => $products_html,
             'client_total'    => $client_total_disp,
             'discount'        => $discount_disp,
             'status'          => $status_slug,
@@ -434,7 +436,7 @@ final class Partner_Portal {
     }
 
     /**
-     * Format products/services for an order
+     * Format products/services for an order (plain text, used in CSV export)
      *
      * @param \WC_Order $order         Order object
      * @param bool      $redact_names  If true, strip participant names from output (privacy for referred orders)
@@ -496,6 +498,133 @@ final class Partner_Portal {
         }
 
         return implode( '; ', $lines );
+    }
+
+    /**
+     * Format products/services for an order as HTML with colored badges
+     *
+     * Renders each order item as a compact badge row with scope coloring,
+     * matching the admin order view badge style.
+     *
+     * @param \WC_Order $order         Order object
+     * @param bool      $redact_names  If true, strip participant names from output (privacy for referred orders)
+     * @return string HTML markup with badge-styled items
+     */
+    private static function format_products_html( \WC_Order $order, bool $redact_names = false ) : string {
+        $use_meta_helper = class_exists( __NAMESPACE__ . '\\Integrations\\WooCommerce\\Woo_OrderMeta' );
+        $items_html = [];
+
+        foreach ( $order->get_items() as $item_id => $item ) {
+            if ( ! $item instanceof \WC_Order_Item_Product ) continue;
+
+            // Resolve scope
+            $scope = '';
+            if ( $use_meta_helper ) {
+                $scope = Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tc_scope' );
+                if ( $scope === '' ) {
+                    $scope = Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, 'tcbf_scope' );
+                }
+            } else {
+                $scope = (string) $item->get_meta( '_tc_scope', true );
+                if ( $scope === '' ) {
+                    $scope = (string) $item->get_meta( 'tcbf_scope', true );
+                }
+            }
+
+            // Transport type
+            $transport_type = '';
+            if ( $use_meta_helper ) {
+                $transport_type = Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_type' );
+            } else {
+                $transport_type = (string) $item->get_meta( '_tcbf_transport_type', true );
+            }
+
+            // Determine badge class and label
+            $badge_class = 'tcbf-pr-scope-default';
+            $scope_label = '';
+            if ( $transport_type !== '' ) {
+                $badge_class = 'tcbf-pr-scope-transport';
+                $scope_label = $transport_type === 'delivery'
+                    ? __( 'Delivery', TC_BF_TEXTDOMAIN )
+                    : __( 'Return', TC_BF_TEXTDOMAIN );
+            } elseif ( $scope === 'participation' ) {
+                $badge_class = 'tcbf-pr-scope-participation';
+                $scope_label = __( 'Tour', TC_BF_TEXTDOMAIN );
+            } elseif ( $scope === 'rental' ) {
+                $badge_class = 'tcbf-pr-scope-rental';
+                $scope_label = __( 'Rental', TC_BF_TEXTDOMAIN );
+            }
+
+            // Product name
+            $product_name = $item->get_name();
+
+            // Redact participant names for referred orders
+            if ( $redact_names ) {
+                $participant = (string) $item->get_meta( '_participant', true );
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( 'participant', true );
+                }
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( '_tcbf_participant_name', true );
+                }
+                if ( $participant !== '' ) {
+                    $product_name = str_replace( $participant, '***', $product_name );
+                }
+            }
+
+            // Booking start date
+            $start_date = '';
+            if ( class_exists( 'WC_Booking_Data_Store' ) ) {
+                $booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+                if ( ! empty( $booking_ids ) ) {
+                    try {
+                        $b = new \WC_Booking( (int) $booking_ids[0] );
+                        if ( $b && $b->get_product_id() > 0 ) {
+                            $start = $b->get_start_date();
+                            if ( $start ) {
+                                $start_date = date_i18n( 'd/m/Y', strtotime( $start ) );
+                            }
+                        }
+                    } catch ( \Exception $e ) {
+                        // skip
+                    }
+                }
+            }
+
+            // Event title (for participation items)
+            $event_title = '';
+            $event_id = (int) $item->get_meta( '_event_id', true );
+            if ( $event_id > 0 ) {
+                $event_title = get_the_title( $event_id );
+            }
+
+            // Build item HTML
+            $html = '<div class="tcbf-pr-item ' . esc_attr( $badge_class ) . '">';
+
+            // Scope badge
+            if ( $scope_label !== '' ) {
+                $html .= '<span class="tcbf-pr-badge ' . esc_attr( $badge_class ) . '">' . esc_html( $scope_label ) . '</span> ';
+            }
+
+            // Product name
+            $html .= '<span class="tcbf-pr-name">' . esc_html( $product_name ) . '</span>';
+
+            // Event title badge (for participation items, show event separately)
+            if ( $event_title !== '' && $scope === 'participation' ) {
+                $short = mb_strlen( $event_title ) > 45 ? mb_substr( $event_title, 0, 42 ) . '...' : $event_title;
+                $html .= ' <span class="tcbf-pr-badge tcbf-pr-event">' . esc_html( $short ) . '</span>';
+            }
+
+            // Start date
+            if ( $start_date !== '' ) {
+                $html .= ' <span class="tcbf-pr-date">' . esc_html( $start_date ) . '</span>';
+            }
+
+            $html .= '</div>';
+            $items_html[] = $html;
+        }
+
+        return implode( '', $items_html );
     }
 
     /**
@@ -715,6 +844,57 @@ final class Partner_Portal {
     }
 
     /**
+     * Render inline CSS for product/service badges in the partner report table
+     */
+    private static function render_badge_css() : void {
+        ?>
+        <style>
+            /* Partner report: product/service badges */
+            .tcbf-pr-items { display: flex; flex-direction: column; gap: 4px; }
+            .tcbf-pr-item {
+                display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+                padding: 4px 8px; border-radius: 4px; font-size: 12px; line-height: 1.4;
+                border-left: 3px solid transparent;
+            }
+            .tcbf-pr-badge {
+                display: inline-block; padding: 1px 7px; border-radius: 3px;
+                font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+                white-space: nowrap;
+            }
+            .tcbf-pr-name { font-weight: 500; }
+            .tcbf-pr-date {
+                font-size: 11px; color: #666; white-space: nowrap;
+            }
+            .tcbf-pr-date::before { content: '📅 '; }
+
+            /* Scope: Participation / Tour */
+            .tcbf-pr-scope-participation { background: #f0faf0; border-left-color: #00a32a; }
+            .tcbf-pr-badge.tcbf-pr-scope-participation { background: #e7f5e7; color: #1a6a1a; border-left: none; }
+
+            /* Scope: Rental */
+            .tcbf-pr-scope-rental { background: #f0f5ff; border-left-color: #2271b1; }
+            .tcbf-pr-badge.tcbf-pr-scope-rental { background: #e8f0fe; color: #174ea6; border-left: none; }
+
+            /* Scope: Transport (Delivery / Return) */
+            .tcbf-pr-scope-transport { background: #fef9f0; border-left-color: #dba617; }
+            .tcbf-pr-badge.tcbf-pr-scope-transport { background: #fef3e0; color: #995c00; border-left: none; }
+
+            /* Default (no scope) */
+            .tcbf-pr-scope-default { background: #f8f8f8; border-left-color: #ccc; }
+
+            /* Event badge */
+            .tcbf-pr-badge.tcbf-pr-event { background: #f5f0ff; color: #5b21b6; font-weight: 600; text-transform: none; font-size: 11px; }
+
+            /* Responsive: on small screens stack badges */
+            @media (max-width: 768px) {
+                .tcbf-pr-item { font-size: 11px; }
+                .tcbf-pr-badge { font-size: 9px; }
+            }
+        </style>
+        <?php
+    }
+
+    /**
      * Render orders table
      *
      * Direct orders (partner placed themselves): full details, clickable order link.
@@ -722,6 +902,9 @@ final class Partner_Portal {
      */
     private static function render_table( array $rows, array $stats, bool $prices_inc_tax ) : void {
         $tax_label = $prices_inc_tax ? __( '(incl. tax)', TC_BF_TEXTDOMAIN ) : __( '(excl. tax)', TC_BF_TEXTDOMAIN );
+
+        // Badge styles for the products/services column
+        self::render_badge_css();
 
         echo '<table class="shop_table shop_table_responsive my_account_orders">';
         echo '<thead><tr>';
@@ -749,7 +932,7 @@ final class Partner_Portal {
 
             echo '<td data-title="Type">' . esc_html( $row['type'] ) . '</td>';
             echo '<td data-title="Date">' . esc_html( $row['date'] ) . '</td>';
-            echo '<td data-title="Products / Services">' . esc_html( $row['products'] ) . '</td>';
+            echo '<td data-title="Products / Services"><div class="tcbf-pr-items">' . wp_kses_post( $row['products_html'] ) . '</div></td>';
             echo '<td data-title="Client total">' . wp_kses_post( wc_price( $row['client_total'] ) ) . '</td>';
             echo '<td data-title="Discount">' . wp_kses_post( wc_price( $row['discount'] ) ) . '</td>';
             echo '<td data-title="Status">' . esc_html( $row['status_label'] ) . '</td>';
