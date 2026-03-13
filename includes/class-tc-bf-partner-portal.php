@@ -182,20 +182,77 @@ final class Partner_Portal {
     }
 
     /**
-     * Build query arguments for wc_get_orders
+     * Get partner-attributed order IDs directly from the database.
      *
-     * Supports two modes:
-     * - Partner mode: query by partner_id = current_user_id
-     * - Admin mode: query all partners (partner_filter=0) or specific partner (partner_filter>0)
+     * Uses a direct DB query on the postmeta table (and HPOS orders_meta if
+     * available) so we never depend on wc_get_orders() meta_query support,
+     * which can be silently ignored under HPOS.
      *
-     * @param array $filters          Associative array with: date_from, date_to, status
-     * @param int   $partner_filter   Partner to filter by (0 = all partners in admin mode)
-     * @param bool  $is_admin         Whether in admin mode
-     * @param int   $limit            Results per page (0 = unlimited)
-     * @param int   $page             Page number (1-indexed)
+     * @param int  $partner_filter  Partner user ID (0 = all partners in admin mode)
+     * @param bool $is_admin        Whether in admin mode
+     * @return int[] Order IDs matching partner meta conditions
+     */
+    private static function get_partner_order_ids( int $partner_filter, bool $is_admin ) : array {
+        global $wpdb;
+
+        // Try HPOS orders_meta table first, fall back to postmeta
+        $hpos_table = $wpdb->prefix . 'wc_orders_meta';
+        $hpos_enabled = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+            DB_NAME,
+            $hpos_table
+        ) ) > 0;
+
+        $meta_table  = $hpos_enabled ? $hpos_table : $wpdb->postmeta;
+        $id_col      = $hpos_enabled ? 'order_id' : 'post_id';
+        $key_col     = 'meta_key';
+        $val_col     = 'meta_value';
+
+        // Join: tc_ledger_version = '2' AND partner_id condition
+        if ( $is_admin && $partner_filter <= 0 ) {
+            // All partners: require partner_id EXISTS
+            $sql = $wpdb->prepare(
+                "SELECT lv.{$id_col}
+                 FROM {$meta_table} lv
+                 INNER JOIN {$meta_table} pi ON pi.{$id_col} = lv.{$id_col}
+                    AND pi.{$key_col} = 'partner_id'
+                    AND pi.{$val_col} != ''
+                 WHERE lv.{$key_col} = 'tc_ledger_version'
+                   AND lv.{$val_col} = %s",
+                '2'
+            );
+        } else {
+            // Specific partner
+            $sql = $wpdb->prepare(
+                "SELECT lv.{$id_col}
+                 FROM {$meta_table} lv
+                 INNER JOIN {$meta_table} pi ON pi.{$id_col} = lv.{$id_col}
+                    AND pi.{$key_col} = 'partner_id'
+                    AND pi.{$val_col} = %s
+                 WHERE lv.{$key_col} = 'tc_ledger_version'
+                   AND lv.{$val_col} = %s",
+                (string) $partner_filter,
+                '2'
+            );
+        }
+
+        $ids = $wpdb->get_col( $sql );
+        return array_map( 'intval', $ids );
+    }
+
+    /**
+     * Build query arguments for wc_get_orders (without meta_query).
+     *
+     * Partner filtering is handled by pre-fetching IDs via get_partner_order_ids()
+     * and passing them in the 'include' param for full HPOS compatibility.
+     *
+     * @param array $filters   Associative array with: date_from, date_to, status
+     * @param int[] $order_ids Pre-filtered order IDs from get_partner_order_ids()
+     * @param int   $limit     Results per page (0 = unlimited)
+     * @param int   $page      Page number (1-indexed)
      * @return array Query args for wc_get_orders
      */
-    private static function build_query_args( array $filters, int $partner_filter, bool $is_admin, int $limit = 30, int $page = 1 ) : array {
+    private static function build_query_args( array $filters, array $order_ids, int $limit = 30, int $page = 1 ) : array {
         $args = [
             'limit'      => $limit > 0 ? $limit : -1,
             'paged'      => $page,
@@ -203,58 +260,19 @@ final class Partner_Portal {
             'order'      => 'DESC',
         ];
 
-        // Build meta query - always require tc_ledger_version = 2
-        $meta_query = [
-            'relation' => 'AND',
-            [
-                'key'     => 'tc_ledger_version',
-                'value'   => '2',
-                'compare' => '=',
-            ],
-        ];
-
-        // Partner ID filter
-        if ( $is_admin ) {
-            // Admin mode: filter by specific partner if selected, otherwise show all
-            if ( $partner_filter > 0 ) {
-                $meta_query[] = [
-                    'key'     => 'partner_id',
-                    'value'   => (string) $partner_filter,
-                    'compare' => '=',
-                ];
-            } else {
-                // All partners: just require partner_id EXISTS (any partner-attributed order)
-                $meta_query[] = [
-                    'key'     => 'partner_id',
-                    'compare' => 'EXISTS',
-                ];
-            }
+        // Restrict to pre-filtered partner order IDs
+        if ( ! empty( $order_ids ) ) {
+            $args['post__in'] = $order_ids;
         } else {
-            // Partner mode: always filter by their own partner_id
-            $meta_query[] = [
-                'key'     => 'partner_id',
-                'value'   => (string) $partner_filter,
-                'compare' => '=',
-            ];
+            // No matching orders — force empty result
+            $args['post__in'] = [ 0 ];
         }
-
-        $args['meta_query'] = $meta_query;
 
         // Date range filter
         $date_from = $filters['date_from'] ?? '';
         $date_to   = $filters['date_to'] ?? '';
 
         if ( $date_from !== '' || $date_to !== '' ) {
-            $date_query = [];
-
-            if ( $date_from !== '' ) {
-                $date_query['after'] = $date_from . ' 00:00:00';
-            }
-            if ( $date_to !== '' ) {
-                $date_query['before'] = $date_to . ' 23:59:59';
-            }
-            $date_query['inclusive'] = true;
-
             $args['date_created'] = $date_from . '...' . $date_to;
         }
 
@@ -263,7 +281,6 @@ final class Partner_Portal {
         if ( $status !== '' ) {
             $args['status'] = str_replace( 'wc-', '', $status );
         } else {
-            // All visible statuses (includes 'invoiced' only if registered)
             $args['status'] = self::get_visible_statuses();
         }
 
@@ -271,7 +288,11 @@ final class Partner_Portal {
     }
 
     /**
-     * Get orders using meta-based query
+     * Get orders using direct DB meta lookup + wc_get_orders.
+     *
+     * Two-step approach for HPOS compatibility:
+     * 1. get_partner_order_ids() queries meta tables directly for partner-attributed IDs
+     * 2. wc_get_orders() fetches full order objects filtered by those IDs + date/status
      *
      * @param array $filters        Filters array
      * @param int   $partner_filter Partner to filter by (0 = all in admin mode)
@@ -285,9 +306,15 @@ final class Partner_Portal {
             return [ 'orders' => [], 'total' => 0 ];
         }
 
-        $args = self::build_query_args( $filters, $partner_filter, $is_admin, $limit, $page );
+        // Step 1: get matching order IDs directly from meta tables
+        $order_ids = self::get_partner_order_ids( $partner_filter, $is_admin );
 
-        // Get paginated results
+        if ( empty( $order_ids ) ) {
+            return [ 'orders' => [], 'total' => 0 ];
+        }
+
+        // Step 2: fetch full orders with date/status filters + pagination
+        $args = self::build_query_args( $filters, $order_ids, $limit, $page );
         $args['paginate'] = true;
         $results = wc_get_orders( $args );
 
@@ -299,11 +326,7 @@ final class Partner_Portal {
             $total  = (int) $results->total;
         } elseif ( is_array( $results ) ) {
             $orders = $results;
-            // For non-paginated, get total count separately
-            $count_args = self::build_query_args( $filters, $partner_filter, $is_admin, -1, 1 );
-            $count_args['return'] = 'ids';
-            $all_ids = wc_get_orders( $count_args );
-            $total = is_array( $all_ids ) ? count( $all_ids ) : 0;
+            $total  = count( $results );
         }
 
         return [
