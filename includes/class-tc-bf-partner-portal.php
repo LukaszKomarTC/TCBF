@@ -39,10 +39,25 @@ final class Partner_Portal {
     const BASE_PAYABLE_STATUSES = [ 'processing', 'completed' ];
 
     /**
-     * Check if current user is in admin mode (can see all partners)
+     * Check if current user is in admin mode (can see all partners).
+     *
+     * Hotel-role users are always treated as partners, even if they also
+     * have manage_woocommerce (common when WooCommerce caps are added to
+     * the custom role). This prevents partners from seeing all orders.
      */
     private static function is_admin_mode() : bool {
-        return function_exists( 'current_user_can' ) && ( current_user_can( 'manage_woocommerce' ) || current_user_can( 'manage_options' ) );
+        if ( ! function_exists( 'current_user_can' ) ) {
+            return false;
+        }
+        if ( ! current_user_can( 'manage_woocommerce' ) && ! current_user_can( 'manage_options' ) ) {
+            return false;
+        }
+        // Partners (hotel role) are never in admin mode — they see only their own orders.
+        $u = wp_get_current_user();
+        if ( $u && in_array( 'hotel', (array) $u->roles, true ) ) {
+            return false;
+        }
+        return true;
     }
 
     /**
