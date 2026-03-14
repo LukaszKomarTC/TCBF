@@ -78,8 +78,8 @@ final class Woo_Transport {
 		// Frontend assets
 		add_action( 'wp_enqueue_scripts', [ __CLASS__, 'enqueue_assets' ], 20 );
 
-		// Cart-level service card (after cart table)
-		add_action( 'woocommerce_after_cart_table', [ __CLASS__, 'render_transport_service_card' ], 10 );
+		// Cart-level service card (before coupon / actions row)
+		add_action( 'woocommerce_cart_contents', [ __CLASS__, 'render_transport_service_card' ], 10 );
 
 		// Per-bike compact status indicators
 		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_transport_indicator' ], 20, 2 );
@@ -1018,6 +1018,7 @@ final class Woo_Transport {
 
 		$state_class  = 'tcbf-service-card--' . $state;
 
+		echo '<tr class="tcbf-service-card-row"><td colspan="6">';
 		echo '<div class="tcbf-service-card ' . esc_attr( $state_class ) . '" id="tcbf-service-card">';
 
 		echo '<div class="tcbf-service-card__header">';
@@ -1102,6 +1103,7 @@ final class Woo_Transport {
 		echo '</div>'; // actions
 
 		echo '</div>'; // service-card
+		echo '</td></tr>'; // table row wrapper
 	}
 
 	/**
