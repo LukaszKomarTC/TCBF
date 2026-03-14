@@ -755,16 +755,40 @@ body.tcbf-modal-open {
 		padding: 0 12px;
 	}
 
-	/* Transport child rows: prevent content overflow in metrics bar cells */
+	/* Suppress ::before pseudo-element on service card td (prevents stray dot/colon) */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row > td::before {
+		display: none !important;
+		content: none !important;
+	}
+
+	/* Transport child rows: keep metrics bar layout (match parent row behavior) */
 	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price,
 	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity,
 	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal {
-		white-space: normal;
+		display: inline-block !important;
+		width: 33.333% !important;
+		vertical-align: top;
+		padding: 10px 6px !important;
+		text-align: center !important;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		box-sizing: border-box;
 	}
 
-	/* Variation details inside child rows: prevent overflow */
+	/* Metrics bar captions for child rows */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price::before,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity::before,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal::before {
+		display: block !important;
+		content: attr(data-title) !important;
+		font-size: 11px;
+		font-weight: 600;
+		opacity: 0.7;
+		margin-bottom: 4px;
+		text-align: center;
+	}
+
+	/* Variation details inside child rows: compact inline display */
 	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation {
 		display: block;
 		word-break: break-word;
@@ -788,6 +812,13 @@ body.tcbf-modal-open {
 	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-name {
 		overflow: hidden;
 		word-break: break-word;
+	}
+
+	/* Suppress ::before on thumbnail cell for child rows (prevents stray label) */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-thumbnail::before,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-remove::before {
+		display: none !important;
+		content: none !important;
 	}
 }
 
