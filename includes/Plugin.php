@@ -1811,6 +1811,7 @@ final class Plugin {
 			echo "    display: inline-block;\n";
 			echo "    max-width: 100%;\n";
 			echo "    overflow: hidden;\n";
+			echo "    text-decoration: line-through;\n";
 			echo "    text-overflow: ellipsis;\n";
 			echo "    white-space: nowrap;\n";
 			echo "    font-size: 13px;\n";
@@ -1906,6 +1907,7 @@ final class Plugin {
 			echo "  }\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original,\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .tcbf-price-original {\n";
+			echo "    text-decoration: line-through;\n";
 			echo "    font-size: 11px;\n";
 			echo "  }\n";
 			echo "}\n";
