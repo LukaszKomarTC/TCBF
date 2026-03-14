@@ -1145,7 +1145,7 @@
 
 	/**
 	 * Refresh the cart page after transport changes.
-	 * Uses WooCommerce's native AJAX cart update with fallback to page reload.
+	 * Uses WooCommerce's native AJAX to fetch refreshed cart fragments.
 	 */
 	function refreshCartPage() {
 		var $form = $('form.woocommerce-cart-form');
@@ -1156,14 +1156,14 @@
 				$('div.cart_totals').block({ message: null, overlayCSS: { background: '#fff', opacity: 0.6 } });
 			}
 			$.ajax({
-				url: wc_cart_params.wc_ajax_url.toString().replace('%%endpoint%%', 'update_cart'),
+				url: wc_cart_params.wc_ajax_url.toString().replace('%%endpoint%%', 'get_refreshed_fragments'),
 				method: 'POST',
-				data: $form.serialize(),
-				dataType: 'html'
+				dataType: 'json'
 			}).done(function (response) {
-				var $response = $(response);
-				$('form.woocommerce-cart-form').replaceWith($response.find('form.woocommerce-cart-form'));
-				$('div.cart_totals').replaceWith($response.find('div.cart_totals'));
+				if (response && response.fragments) {
+					applyFragments(response.fragments);
+				}
+				$(document.body).trigger('wc_fragments_refreshed');
 				$(document.body).trigger('updated_cart_totals');
 			}).fail(function () {
 				location.reload();
