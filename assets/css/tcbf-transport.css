@@ -738,6 +738,18 @@ body.tcbf-modal-open {
 }
 
 /* ================================================================
+ * Cart table integration: service-card row full-width
+ * ================================================================ */
+
+tr.tcbf-service-card-row {
+	display: table-row;
+}
+
+tr.tcbf-service-card-row > td:first-child {
+	padding: 0 !important;
+}
+
+/* ================================================================
  * Medium-screen (tablet) fixes for cart table integration
  * ================================================================ */
 
