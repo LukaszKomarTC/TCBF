@@ -737,6 +737,60 @@ body.tcbf-modal-open {
 	}
 }
 
+/* ================================================================
+ * Medium-screen (tablet) fixes for cart table integration
+ * ================================================================ */
+
+@media (max-width: 1024px) {
+	/* Service card row: make it a full-width block like other cart rows */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row {
+		display: block;
+		width: 100%;
+	}
+
+	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row > td {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 0 12px;
+	}
+
+	/* Transport child rows: prevent content overflow in metrics bar cells */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal {
+		white-space: normal;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* Variation details inside child rows: prevent overflow */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation {
+		display: block;
+		word-break: break-word;
+		overflow-wrap: break-word;
+	}
+
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dt,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dd {
+		display: inline;
+		margin: 0;
+		padding: 0;
+		font-size: 12px;
+	}
+
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dd p {
+		display: inline;
+		margin: 0;
+	}
+
+	/* Product name cell in child rows: contain long variation metadata */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-name {
+		overflow: hidden;
+		word-break: break-word;
+	}
+}
+
 @media (max-width: 480px) {
 	.tcbf-transport-modal__map {
 		height: 180px;
