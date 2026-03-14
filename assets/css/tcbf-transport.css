@@ -171,7 +171,7 @@
  * ================================================================ */
 
 .tcbf-transport-indicator {
-	display: inline-flex;
+	display: flex;
 	align-items: center;
 	gap: 6px;
 	margin-top: 4px;
