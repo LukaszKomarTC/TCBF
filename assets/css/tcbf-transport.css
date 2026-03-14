@@ -7,7 +7,8 @@
  * ================================================================ */
 
 .tcbf-service-card {
-	margin: 16px 0;
+	margin: 10px !important;
+	margin-bottom: 10px !important;
 	padding: 16px 20px;
 	background: #f8f9fa;
 	border: 1px solid #e2e5ea;
@@ -743,7 +744,8 @@ body.tcbf-modal-open {
  * ================================================================ */
 
 tr.tcbf-service-card-row {
-	display: table-row;
+	display: table-row !important;
+	width: 100%;
 }
 
 tr.tcbf-service-card-row > td:first-child {
@@ -755,9 +757,9 @@ tr.tcbf-service-card-row > td:first-child {
  * ================================================================ */
 
 @media (max-width: 1024px) {
-	/* Service card row: make it a full-width block like other cart rows */
+	/* Service card row: keep full-width table-row on all screen sizes */
 	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row {
-		display: block;
+		display: table-row !important;
 		width: 100%;
 	}
 
