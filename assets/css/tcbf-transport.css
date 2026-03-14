@@ -167,42 +167,6 @@
 }
 
 /* ================================================================
- * Per-bike compact indicator
- * ================================================================ */
-
-.tcbf-transport-indicator {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	margin-top: 4px;
-	padding: 3px 10px;
-	background: #f0fdf4;
-	border: 1px solid #bbf7d0;
-	border-radius: 4px;
-	font-size: 11px;
-	color: #166534;
-	font-weight: 500;
-}
-
-.tcbf-transport-indicator--excluded {
-	background: #f9fafb;
-	border-color: #e5e7eb;
-	color: #6b7280;
-}
-
-.tcbf-transport-indicator__sep {
-	color: #86efac;
-}
-
-.tcbf-transport-indicator--excluded .tcbf-transport-indicator__sep {
-	color: #d1d5db;
-}
-
-.tcbf-transport-indicator__excluded {
-	color: #dc2626;
-}
-
-/* ================================================================
  * Modal overlay + container
  * ================================================================ */
 
@@ -734,91 +698,6 @@ body.tcbf-modal-open {
 
 	.tcbf-service-card__help {
 		padding-left: 0;
-	}
-}
-
-/* ================================================================
- * Medium-screen (tablet) fixes for cart table integration
- * ================================================================ */
-
-@media (max-width: 1024px) {
-	/* Service card row: make it a full-width block like other cart rows */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row {
-		display: block;
-		width: 100%;
-	}
-
-	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row > td {
-		display: block;
-		width: 100%;
-		box-sizing: border-box;
-		padding: 0 12px;
-	}
-
-	/* Suppress ::before pseudo-element on service card td (prevents stray dot/colon) */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row > td::before {
-		display: none !important;
-		content: none !important;
-	}
-
-	/* Transport child rows: keep metrics bar layout (match parent row behavior) */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price,
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity,
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal {
-		display: inline-block !important;
-		width: 33.333% !important;
-		vertical-align: top;
-		padding: 10px 6px !important;
-		text-align: center !important;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		box-sizing: border-box;
-	}
-
-	/* Metrics bar captions for child rows */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price::before,
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity::before,
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal::before {
-		display: block !important;
-		content: attr(data-title) !important;
-		font-size: 11px;
-		font-weight: 600;
-		opacity: 0.7;
-		margin-bottom: 4px;
-		text-align: center;
-	}
-
-	/* Variation details inside child rows: compact inline display */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation {
-		display: block;
-		word-break: break-word;
-		overflow-wrap: break-word;
-	}
-
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dt,
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dd {
-		display: inline;
-		margin: 0;
-		padding: 0;
-		font-size: 12px;
-	}
-
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dd p {
-		display: inline;
-		margin: 0;
-	}
-
-	/* Product name cell in child rows: contain long variation metadata */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-name {
-		overflow: hidden;
-		word-break: break-word;
-	}
-
-	/* Suppress ::before on thumbnail cell for child rows (prevents stray label) */
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-thumbnail::before,
-	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-remove::before {
-		display: none !important;
-		content: none !important;
 	}
 }
 

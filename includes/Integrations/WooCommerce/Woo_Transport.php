@@ -78,11 +78,14 @@ final class Woo_Transport {
 		// Frontend assets
 		add_action( 'wp_enqueue_scripts', [ __CLASS__, 'enqueue_assets' ], 20 );
 
-		// Cart-level service card (before coupon / actions row)
-		add_action( 'woocommerce_cart_contents', [ __CLASS__, 'render_transport_service_card' ], 10 );
+		// Cart-level service card (below cart table, inside <form>)
+		add_action( 'woocommerce_after_cart_table', [ __CLASS__, 'render_transport_service_card' ], 10 );
 
-		// Per-bike compact status indicators
-		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_transport_indicator' ], 20, 2 );
+		// Hide transport line items from the cart table (they still exist for pricing/checkout)
+		add_filter( 'woocommerce_cart_item_visible', [ __CLASS__, 'hide_transport_cart_item' ], 10, 3 );
+
+		// Inline transport summary under parent rental's product-name cell
+		add_action( 'woocommerce_after_cart_item_name', [ __CLASS__, 'render_inline_transport_summary' ], 20, 2 );
 
 		// Order/email: render transport meta after item meta
 		add_action( 'woocommerce_order_item_meta_end', [ __CLASS__, 'render_order_item_transport_meta' ], 10, 4 );
@@ -994,6 +997,95 @@ final class Woo_Transport {
 	}
 
 	/* ================================================================
+	 * Hide transport items from cart table display
+	 * ================================================================ */
+
+	public static function hide_transport_cart_item( bool $visible, array $cart_item, string $cart_item_key ) : bool {
+		if ( self::is_transport_item( $cart_item ) && is_cart() ) {
+			return false;
+		}
+		return $visible;
+	}
+
+	/* ================================================================
+	 * Inline transport summary (rendered under parent rental name)
+	 * ================================================================ */
+
+	public static function render_inline_transport_summary( array $cart_item, string $cart_item_key ) : void {
+
+		if ( ! is_cart() ) {
+			return;
+		}
+
+		if ( ! self::is_transport_eligible( $cart_item ) ) {
+			return;
+		}
+
+		$has_delivery = self::rental_has_transport( $cart_item_key, self::DIR_DELIVERY );
+		$has_pickup   = self::rental_has_transport( $cart_item_key, self::DIR_PICKUP );
+
+		if ( ! $has_delivery && ! $has_pickup ) {
+			return;
+		}
+
+		// Find the transport child items for this rental
+		$cart = WC()->cart->get_cart();
+		$lines = [];
+
+		foreach ( $cart as $key => $item ) {
+			if ( ( $item['_tcbf_transport_parent_key'] ?? '' ) !== $cart_item_key ) {
+				continue;
+			}
+			$type    = $item['_tcbf_transport_type'] ?? 'delivery';
+			$label   = ( $type === 'pickup' )
+				? Woo::translate( '[:en]Pickup[:es]Recogida[:]' )
+				: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+			$window  = $item['_tcbf_transport_window'] ?? '';
+			$window_label = '';
+			if ( $window === 'morning' ) {
+				$window_label = Woo::translate( '[:en]Morning[:es]Mañana[:]' );
+			} elseif ( $window === 'afternoon' ) {
+				$window_label = Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
+			}
+			$address = $item['_tcbf_transport_address'] ?? '';
+			if ( mb_strlen( $address ) > 40 ) {
+				$address = mb_substr( $address, 0, 37 ) . '...';
+			}
+			$price = (float) ( $item['_tcbf_transport_price'] ?? 0 );
+
+			$detail = $window_label;
+			if ( $address ) {
+				$detail .= ( $detail ? ' · ' : '' ) . $address;
+			}
+
+			$lines[] = [
+				'label'  => $label,
+				'detail' => $detail,
+				'price'  => $price,
+			];
+		}
+
+		if ( empty( $lines ) ) {
+			return;
+		}
+
+		echo '<div class="tcbf-transport-inline">';
+		foreach ( $lines as $line ) {
+			echo '<div class="tcbf-transport-inline__line">';
+			echo '<span class="tcbf-transport-inline__icon">&#128666;</span> ';
+			echo '<span class="tcbf-transport-inline__label">' . esc_html( $line['label'] ) . '</span>';
+			if ( $line['detail'] ) {
+				echo '<span class="tcbf-transport-inline__detail">' . esc_html( $line['detail'] ) . '</span>';
+			}
+			if ( $line['price'] > 0 ) {
+				echo '<span class="tcbf-transport-inline__price">' . wp_kses_post( wc_price( $line['price'] ) ) . '</span>';
+			}
+			echo '</div>';
+		}
+		echo '</div>';
+	}
+
+	/* ================================================================
 	 * Cart-level service card
 	 * ================================================================ */
 
@@ -1018,7 +1110,6 @@ final class Woo_Transport {
 
 		$state_class  = 'tcbf-service-card--' . $state;
 
-		echo '<tr class="tcbf-service-card-row"><td colspan="6">';
 		echo '<div class="tcbf-service-card ' . esc_attr( $state_class ) . '" id="tcbf-service-card">';
 
 		echo '<div class="tcbf-service-card__header">';
@@ -1103,71 +1194,6 @@ final class Woo_Transport {
 		echo '</div>'; // actions
 
 		echo '</div>'; // service-card
-		echo '</td></tr>'; // table row wrapper
-	}
-
-	/**
-	 * Compact per-bike status indicator.
-	 *
-	 * Shows ✓ for active directions and ✕ exclusion badges when the order has
-	 * transport configured but this bike is excluded.
-	 */
-	public static function render_transport_indicator( array $cart_item, string $cart_item_key ) : void {
-
-		if ( ! is_cart() ) {
-			return;
-		}
-
-		if ( ! self::is_transport_eligible( $cart_item ) ) {
-			return;
-		}
-
-		$has_delivery = self::rental_has_transport( $cart_item_key, self::DIR_DELIVERY );
-		$has_pickup   = self::rental_has_transport( $cart_item_key, self::DIR_PICKUP );
-
-		// Determine if the order has any transport at all (for exclusion badges)
-		$order_delivery_count = self::count_direction_bikes( self::DIR_DELIVERY );
-		$order_pickup_count   = self::count_direction_bikes( self::DIR_PICKUP );
-		$order_has_transport  = ( $order_delivery_count + $order_pickup_count ) > 0;
-
-		if ( ! $has_delivery && ! $has_pickup && ! $order_has_transport ) {
-			return;
-		}
-
-		$parts = [];
-		$excluded = false;
-
-		// Delivery status
-		if ( $has_delivery ) {
-			$parts[] = Woo::translate( '[:en]Delivery[:es]Entrega[:]' ) . ' &#10003;';
-		} elseif ( $order_delivery_count > 0 ) {
-			$parts[] = '<span class="tcbf-transport-indicator__excluded">' . Woo::translate( '[:en]Delivery[:es]Entrega[:]' ) . ' &#10007;</span>';
-			$excluded = true;
-		}
-
-		// Pickup status
-		if ( $has_pickup ) {
-			$parts[] = Woo::translate( '[:en]Pickup[:es]Recogida[:]' ) . ' &#10003;';
-		} elseif ( $order_pickup_count > 0 ) {
-			$parts[] = '<span class="tcbf-transport-indicator__excluded">' . Woo::translate( '[:en]Pickup[:es]Recogida[:]' ) . ' &#10007;</span>';
-			$excluded = true;
-		}
-
-		if ( empty( $parts ) ) {
-			return;
-		}
-
-		$css_class = 'tcbf-transport-indicator';
-		if ( $excluded && ! $has_delivery && ! $has_pickup ) {
-			$css_class .= ' tcbf-transport-indicator--excluded';
-		}
-
-		printf(
-			'<div class="%s" data-cart-key="%s">%s</div>',
-			esc_attr( $css_class ),
-			esc_attr( $cart_item_key ),
-			wp_kses_post( implode( ' <span class="tcbf-transport-indicator__sep">|</span> ', $parts ) )
-		);
 	}
 
 	/* ================================================================
