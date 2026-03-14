@@ -93,6 +93,9 @@ final class Woo_Transport {
 		// Recalculate prices after a transport item is removed (e.g. bundle discount changes)
 		add_action( 'woocommerce_cart_item_removed', [ __CLASS__, 'recalculate_after_transport_removal' ], 10, 2 );
 
+		// Remove orphaned transport items (parent rental removed by WCB hold expiry or session restore)
+		add_action( 'woocommerce_check_cart_items', [ __CLASS__, 'remove_orphan_transport_items' ], 0 );
+
 		// Clear session on cart empty
 		add_action( 'woocommerce_cart_emptied', [ __CLASS__, 'clear_transport_session' ], 5 );
 	}
@@ -671,6 +674,61 @@ final class Woo_Transport {
 					'type'          => $item['_tcbf_transport_type'] ?? '',
 				] );
 			}
+		}
+	}
+
+	/**
+	 * Remove orphaned transport items whose parent rental is no longer in the cart
+	 *
+	 * When WooCommerce Bookings' hold timer expires, the rental booking is dropped
+	 * during session restoration (woocommerce_get_cart_item_from_session returns empty)
+	 * which bypasses woocommerce_remove_cart_item — so cleanup_transport_on_removal
+	 * never fires. This catch-all runs on cart/checkout page load to remove any
+	 * transport items whose parent rental key no longer exists in the cart.
+	 *
+	 * Hooked at priority 0 on woocommerce_check_cart_items (before Pack_Grouping
+	 * expired-entry check at priority 1).
+	 */
+	public static function remove_orphan_transport_items() : void {
+
+		if ( ! WC() || ! WC()->cart ) {
+			return;
+		}
+
+		$cart = WC()->cart;
+		$cart_contents = $cart->get_cart();
+
+		if ( empty( $cart_contents ) ) {
+			return;
+		}
+
+		$to_remove = [];
+
+		foreach ( $cart_contents as $key => $item ) {
+			if ( ! self::is_transport_item( $item ) ) {
+				continue;
+			}
+
+			$parent_key = $item['_tcbf_transport_parent_key'] ?? '';
+			if ( $parent_key !== '' && ! isset( $cart_contents[ $parent_key ] ) ) {
+				$to_remove[] = $key;
+			}
+		}
+
+		if ( empty( $to_remove ) ) {
+			return;
+		}
+
+		Logger::log( 'transport.orphan_cleanup.start', [
+			'orphan_count' => count( $to_remove ),
+		] );
+
+		foreach ( $to_remove as $key ) {
+			$cart->remove_cart_item( $key );
+
+			Logger::log( 'transport.orphan_cleanup.removed', [
+				'transport_key' => $key,
+			] );
 		}
 	}
 
