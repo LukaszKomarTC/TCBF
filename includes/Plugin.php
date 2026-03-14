@@ -1805,6 +1805,18 @@ final class Plugin {
 			echo "    text-overflow: ellipsis;\n";
 			echo "  }\n";
 			echo "\n";
+			echo "  /* Strikethrough EB price: constrain within flex column */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .tcbf-price-original {\n";
+			echo "    display: inline-block;\n";
+			echo "    max-width: 100%;\n";
+			echo "    overflow: hidden;\n";
+			echo "    text-overflow: ellipsis;\n";
+			echo "    white-space: nowrap;\n";
+			echo "    font-size: 13px;\n";
+			echo "    opacity: 0.6;\n";
+			echo "  }\n";
+			echo "\n";
 			echo "  /* Quantity input */\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity .quantity {\n";
 			echo "    display: inline-flex;\n";
@@ -1891,6 +1903,10 @@ final class Plugin {
 			echo "  }\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-thumbnail img {\n";
 			echo "    max-width: 56px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .tcbf-price-original {\n";
+			echo "    font-size: 11px;\n";
 			echo "  }\n";
 			echo "}\n";
 		}
