@@ -1145,25 +1145,25 @@
 
 	/**
 	 * Refresh the cart page after transport changes.
-	 * Uses WooCommerce's native AJAX to fetch refreshed cart fragments.
+	 * Fetches the cart page HTML and replaces the form and totals sections.
 	 */
 	function refreshCartPage() {
 		var $form = $('form.woocommerce-cart-form');
-		if (typeof wc_cart_params !== 'undefined' && $form.length) {
-			// Block UI on form and totals while loading
+		if ($form.length) {
 			if ($.fn.block) {
 				$form.block({ message: null, overlayCSS: { background: '#fff', opacity: 0.6 } });
 				$('div.cart_totals').block({ message: null, overlayCSS: { background: '#fff', opacity: 0.6 } });
 			}
-			$.ajax({
-				url: wc_cart_params.wc_ajax_url.toString().replace('%%endpoint%%', 'get_refreshed_fragments'),
-				method: 'POST',
-				dataType: 'json'
-			}).done(function (response) {
-				if (response && response.fragments) {
-					applyFragments(response.fragments);
+			$.get(window.location.href).done(function (html) {
+				var $page = $($.parseHTML(html));
+				var $newForm = $page.find('form.woocommerce-cart-form');
+				var $newTotals = $page.find('div.cart_totals');
+				if ($newForm.length) {
+					$('form.woocommerce-cart-form').replaceWith($newForm);
 				}
-				$(document.body).trigger('wc_fragments_refreshed');
+				if ($newTotals.length) {
+					$('div.cart_totals').replaceWith($newTotals);
+				}
 				$(document.body).trigger('updated_cart_totals');
 			}).fail(function () {
 				location.reload();
