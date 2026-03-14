@@ -1817,6 +1817,12 @@ final class Plugin {
 			echo "    font-size: 13px;\n";
 			echo "    opacity: 0.6;\n";
 			echo "  }\n";
+			echo "  /* line-through must also be on .amount children since inline-block escapes parent text-decoration */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original .amount,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .tcbf-price-original .amount {\n";
+			echo "    text-decoration: line-through;\n";
+			echo "    font-weight: 400;\n";
+			echo "  }\n";
 			echo "\n";
 			echo "  /* Quantity input */\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity .quantity {\n";
@@ -1909,6 +1915,11 @@ final class Plugin {
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .tcbf-price-original {\n";
 			echo "    text-decoration: line-through;\n";
 			echo "    font-size: 11px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original .amount,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .tcbf-price-original .amount {\n";
+			echo "    text-decoration: line-through;\n";
+			echo "    font-weight: 400;\n";
 			echo "  }\n";
 			echo "}\n";
 		}
