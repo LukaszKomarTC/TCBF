@@ -1605,6 +1605,11 @@ final class Plugin {
 			echo "  border-spacing: 0 !important;\n";
 			echo "}\n";
 
+			echo "\n/* Actions row lost its top border due to border-collapse: separate */\n";
+			echo ".woocommerce-cart .woocommerce-cart-form .shop_table.cart td.actions {\n";
+			echo "  border-top: 2px solid rgba(0, 0, 0, 0.05) !important;\n";
+			echo "}\n";
+
 			echo "\n/* Partner Coupon Styling in Cart Totals */\n";
 			echo ".cart_totals .coupon,\n";
 			echo ".woocommerce-cart-form .coupon,\n";
