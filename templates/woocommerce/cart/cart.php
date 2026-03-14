@@ -708,6 +708,7 @@ do_action( 'woocommerce_before_cart' ); ?>
 	width: 80px;
 	height: auto;
 	border-radius: 4px;
+	object-fit: cover;
 }
 /* Inline EB summary rows (per-item) */
 .tcbf-pack-footer-row--inline .tcbf-pack-footer--inline {
@@ -720,5 +721,16 @@ do_action( 'woocommerce_before_cart' ); ?>
 	border-top: 1px solid #ddd;
 	padding-top: 8px;
 	margin-top: 4px;
+}
+/* Desktop table: prevent price columns from compressing */
+@media (min-width: 1025px) {
+	.woocommerce-cart-form__contents td.product-price,
+	.woocommerce-cart-form__contents td.product-subtotal {
+		white-space: nowrap;
+		min-width: 90px;
+	}
+	.woocommerce-cart-form__contents td.product-quantity {
+		min-width: 80px;
+	}
 }
 </style>
