@@ -80,7 +80,7 @@
 				nonce: config.nonce
 			}
 		}).done(function () {
-			$(document.body).trigger('wc_update_cart');
+			refreshCartPage();
 		}).fail(function () {
 			$card.removeClass('tcbf-service-card--loading');
 			showError(i18n.errorGeneric);
@@ -1072,7 +1072,7 @@
 			if (response.data && response.data.fragments) {
 				applyFragments(response.data.fragments);
 			}
-			$(document.body).trigger('wc_update_cart');
+			refreshCartPage();
 		})
 		.fail(function (jqXHR) {
 			var msg = i18n.errorGeneric;
@@ -1141,6 +1141,36 @@
 		}
 
 		$modal.find('.tcbf-transport-modal__confirm').prop('disabled', !valid);
+	}
+
+	/**
+	 * Refresh the cart page after transport changes.
+	 * Uses WooCommerce's native AJAX cart update with fallback to page reload.
+	 */
+	function refreshCartPage() {
+		var $form = $('form.woocommerce-cart-form');
+		if (typeof wc_cart_params !== 'undefined' && $form.length) {
+			// Block UI on form and totals while loading
+			if ($.fn.block) {
+				$form.block({ message: null, overlayCSS: { background: '#fff', opacity: 0.6 } });
+				$('div.cart_totals').block({ message: null, overlayCSS: { background: '#fff', opacity: 0.6 } });
+			}
+			$.ajax({
+				url: wc_cart_params.wc_ajax_url.toString().replace('%%endpoint%%', 'update_cart'),
+				method: 'POST',
+				data: $form.serialize(),
+				dataType: 'html'
+			}).done(function (response) {
+				var $response = $(response);
+				$('form.woocommerce-cart-form').replaceWith($response.find('form.woocommerce-cart-form'));
+				$('div.cart_totals').replaceWith($response.find('div.cart_totals'));
+				$(document.body).trigger('updated_cart_totals');
+			}).fail(function () {
+				location.reload();
+			});
+		} else {
+			location.reload();
+		}
 	}
 
 	function applyFragments(fragments) {
