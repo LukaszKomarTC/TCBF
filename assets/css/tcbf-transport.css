@@ -535,6 +535,23 @@ body.tcbf-modal-open {
 	background: #f3f4f6;
 }
 
+/* Window time note */
+.tcbf-modal__window-note {
+	margin-top: 10px;
+}
+
+.tcbf-modal__window-note p {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.4;
+	color: #6b7280;
+	font-style: italic;
+	background: #f9fafb;
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	padding: 8px 10px;
+}
+
 /* ================================================================
  * Quote preview (global, at bottom of modal body)
  * ================================================================ */

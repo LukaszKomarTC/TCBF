@@ -139,7 +139,7 @@
 
 		var sameAddr = summary.link_return ? true : (!hasPickup || !hasDelivery || initialMode !== 'both');
 		var deliveryWindow = summary.delivery_window || 'morning';
-		var pickupWindow = summary.pickup_window || 'morning';
+		var pickupWindow = summary.pickup_window || 'afternoon';
 
 		// Restore addresses
 		deliveryPlace = null;
@@ -260,6 +260,11 @@
 			windowBtns('pickup', pickupWindow) +
 			'</div>' +
 
+			// Window time note
+			'<div class="tcbf-modal__window-note">' +
+			'<p>' + escHtml(i18n.windowNote || '') + '</p>' +
+			'</div>' +
+
 			'</div>' + // unified-controls
 			'</div>' + // unified-layout
 			'</div>' + // unified mode
@@ -316,6 +321,11 @@
 			'</div>' + // direction-controls
 			'</div>' + // direction-layout
 			'</div>' + // pickup section
+
+			// Window time note (split mode)
+			'<div class="tcbf-modal__window-note">' +
+			'<p>' + escHtml(i18n.windowNote || '') + '</p>' +
+			'</div>' +
 
 			'</div>' + // split mode
 

@@ -1563,7 +1563,7 @@ final class Woo_Transport {
 				'sizeLabel'        => Woo::translate( '[:en]size[:es]talla[:]' ),
 				'addressLabel'     => Woo::translate( '[:en]Delivery address (hotel, accommodation, or any location)[:es]Dirección de entrega (hotel, alojamiento o cualquier ubicación)[:]' ),
 				'pickupAddressLabel' => Woo::translate( '[:en]Pickup address[:es]Dirección de recogida[:]' ),
-				'sameAddressLabel' => Woo::translate( '[:en]Same address as for delivery[:es]Misma dirección que para la entrega[:]' ),
+				'sameAddressLabel' => Woo::translate( '[:en]Return pickup address — same as for delivery[:es]Dirección de recogida — misma que para la entrega[:]' ),
 				'differentAddress' => Woo::translate( '[:en]Use a different pickup address[:es]Usar una dirección de recogida diferente[:]' ),
 				'windowLabel'      => Woo::translate( '[:en]Time window[:es]Horario[:]' ),
 				'windowMorning'    => self::get_window_label( 'morning', true ),
@@ -1583,6 +1583,7 @@ final class Woo_Transport {
 				'availabilityLabel'=> Woo::translate( '[:en]Available slots[:es]Plazas disponibles[:]' ),
 				'geocoding'        => Woo::translate( '[:en]Looking up address...[:es]Buscando dirección...[:]' ),
 				'geocodeFailed'    => Woo::translate( '[:en]Could not find that address. Please try a different one.[:es]No se encontró esa dirección. Pruebe con otra.[:]' ),
+				'windowNote'       => Woo::translate( '[:en]The exact delivery and/or pickup times will be confirmed closer to the rental date.[:es]Los horarios exactos de entrega y/o recogida se confirmarán próximos a la fecha de alquiler.[:]' ),
 				'removeConfirm'    => Woo::translate( '[:en]Remove transport for all bikes?[:es]¿Eliminar transporte para todas las bicicletas?[:]' ),
 			],
 		] );
