@@ -1390,11 +1390,15 @@ final class Plugin {
 
 			echo "\n/* Mini cart widget: white text on dark/green background */\n";
 			echo ".widget_shopping_cart .mini_cart_item a,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item a,\n";
 			echo ".widget_shopping_cart .mini_cart_item .quantity,\n";
-			echo ".widget_shopping_cart .mini_cart_item .woocommerce-Price-amount {\n";
+			echo ".widget_shopping_cart_content .mini_cart_item .quantity,\n";
+			echo ".widget_shopping_cart .mini_cart_item .woocommerce-Price-amount,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item .woocommerce-Price-amount {\n";
 			echo "  color: #fff !important;\n";
 			echo "}\n";
-			echo ".widget_shopping_cart .mini_cart_item del .woocommerce-Price-amount {\n";
+			echo ".widget_shopping_cart .mini_cart_item del .woocommerce-Price-amount,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item del .woocommerce-Price-amount {\n";
 			echo "  color: rgba(255, 255, 255, 0.7) !important;\n";
 			echo "}\n";
 
