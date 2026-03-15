@@ -439,12 +439,13 @@ class Woo_AdminOrder {
 		}
 
 		// Transport zone + window
-		if ( $transport_zone !== '' ) {
-			$zone_text = $transport_zone;
-			if ( $transport_window !== '' ) {
-				$zone_text .= ' · ' . Woo_Transport::get_window_label( $transport_window );
-			}
-			$badges[] = '<span class="tcbf-item-badge tcbf-badge-transport-detail">' . esc_html( $zone_text ) . '</span>';
+		if ( $transport_zone !== '' && $transport_window !== '' ) {
+			$detail_text = $transport_zone . ' · ' . Woo_Transport::get_window_label( $transport_window );
+			$badges[] = '<span class="tcbf-item-badge tcbf-badge-transport-detail">' . esc_html( $detail_text ) . '</span>';
+		} elseif ( $transport_zone !== '' ) {
+			$badges[] = '<span class="tcbf-item-badge tcbf-badge-transport-detail">' . esc_html( $transport_zone ) . '</span>';
+		} elseif ( $transport_window !== '' ) {
+			$badges[] = '<span class="tcbf-item-badge tcbf-badge-transport-detail">' . esc_html( Woo_Transport::get_window_label( $transport_window ) ) . '</span>';
 		}
 
 		if ( ! empty( $badges ) ) {
