@@ -70,6 +70,7 @@
 	font-size: 15px;
 	font-weight: 600;
 	color: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	padding: 0 15px;
 }
 
 .tcbf-service-card__help {
@@ -121,7 +122,7 @@
 }
 
 .tcbf-service-card__btn--remove:hover {
-	background: #fef2f2;
+	background: #dc2626;
 }
 
 /* State variants */
