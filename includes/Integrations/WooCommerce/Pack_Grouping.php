@@ -60,7 +60,8 @@ final class Pack_Grouping {
 		// Atomic removal: when one item is removed, remove all items in the pack
 		add_action( 'woocommerce_remove_cart_item', [ __CLASS__, 'atomic_remove_pack_items' ], 5, 2 );
 
-		// Handle cart empty events
+		// Cache group IDs when cart loads from session (before any emptying can happen)
+		add_action( 'woocommerce_cart_loaded_from_session', [ __CLASS__, 'cache_groups_from_session' ], 10 );
 		add_action( 'woocommerce_cart_emptied', [ __CLASS__, 'handle_cart_emptied' ], 10 );
 
 		// Persist pack metadata to order items
@@ -267,32 +268,51 @@ final class Pack_Grouping {
 	}
 
 	/**
-	 * Handle cart emptied event
+	 * Group IDs cached from session (used by handle_cart_emptied)
 	 *
-	 * When the entire cart is emptied, we need to identify all groups
-	 * and potentially mark their GF entries as removed (Phase 2 integration).
+	 * @var int[]
 	 */
-	public static function handle_cart_emptied() : void {
+	private static $cached_group_ids = [];
 
-		if ( ! WC() || ! WC()->cart ) {
+	/**
+	 * Cache group IDs when cart is loaded from session.
+	 *
+	 * woocommerce_cart_emptied fires AFTER the cart is cleared, so get_cart()
+	 * returns empty at that point. By caching group IDs at session load time,
+	 * we have them available when the emptied hook fires.
+	 *
+	 * @param \WC_Cart $cart Cart instance
+	 */
+	public static function cache_groups_from_session( $cart ) : void {
+
+		self::$cached_group_ids = [];
+
+		if ( ! $cart || ! method_exists( $cart, 'get_cart' ) ) {
 			return;
 		}
 
-		$cart = WC()->cart;
-		$cart_contents = $cart->get_cart();
-
-		if ( empty( $cart_contents ) ) {
-			return;
-		}
-
-		$groups = [];
-		foreach ( $cart_contents as $item ) {
+		foreach ( $cart->get_cart() as $item ) {
 			if ( isset( $item[ self::META_GROUP_ID ] ) ) {
-				$groups[] = $item[ self::META_GROUP_ID ];
+				self::$cached_group_ids[] = (int) $item[ self::META_GROUP_ID ];
 			}
 		}
 
-		$groups = array_unique( $groups );
+		self::$cached_group_ids = array_values( array_unique( self::$cached_group_ids ) );
+	}
+
+	/**
+	 * Handle cart emptied event
+	 *
+	 * Uses group IDs captured before the cart was cleared.
+	 */
+	public static function handle_cart_emptied() : void {
+
+		$groups = self::$cached_group_ids;
+		self::$cached_group_ids = [];
+
+		if ( empty( $groups ) ) {
+			return;
+		}
 
 		\TC_BF\Support\Logger::log( 'pack.cart_emptied', [
 			'group_count' => count( $groups ),

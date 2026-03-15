@@ -132,15 +132,16 @@ class Woo_Notifications {
 		if ( $order_id <= 0 ) return;
 
 		// Dedupe: avoid duplicate sends (truthy check for robustness)
-		if ( get_post_meta( $order_id, self::META_PAID_NOTIFS_SENT, true ) ) return;
-
-		if ( ! class_exists('GFAPI') ) return;
-
+		// Use wc_get_order() early so we can check meta via HPOS-compatible API
 		$order = $maybe_order;
 		if ( ! $order || ! is_object($order) || ! is_a($order, 'WC_Order') ) {
 			$order = wc_get_order( $order_id );
 		}
 		if ( ! $order ) return;
+
+		if ( $order->get_meta( self::META_PAID_NOTIFS_SENT, true ) ) return;
+
+		if ( ! class_exists('GFAPI') ) return;
 
 		// Determine trigger status for audit trail
 		if ( $trigger === '' ) {
@@ -186,10 +187,11 @@ class Woo_Notifications {
 		}
 
 		if ( $did_any ) {
-			// Mark as sent + audit metadata
-			update_post_meta( $order_id, self::META_PAID_NOTIFS_SENT, '1' );
-			update_post_meta( $order_id, self::META_PAID_NOTIFS_SENT_AT, current_time( 'mysql' ) );
-			update_post_meta( $order_id, self::META_PAID_NOTIFS_TRIGGER, $trigger );
+			// Mark as sent + audit metadata (HPOS-compatible)
+			$order->update_meta_data( self::META_PAID_NOTIFS_SENT, '1' );
+			$order->update_meta_data( self::META_PAID_NOTIFS_SENT_AT, current_time( 'mysql' ) );
+			$order->update_meta_data( self::META_PAID_NOTIFS_TRIGGER, $trigger );
+			$order->save();
 
 			\TC_BF\Support\Logger::log('gf.notif.wc_paid.sent', [
 				'order_id'  => $order_id,
@@ -366,14 +368,14 @@ class Woo_Notifications {
 		$order_id = (int) $order_id;
 		if ( $order_id <= 0 ) return;
 
-		// Dedupe: send once per order
-		if ( get_post_meta( $order_id, self::META_SETTLED_NOTIFS_SENT, true ) ) return;
-
 		$order = $maybe_order;
 		if ( ! $order || ! is_object($order) || ! is_a($order, 'WC_Order') ) {
 			$order = wc_get_order( $order_id );
 		}
 		if ( ! $order ) return;
+
+		// Dedupe: send once per order (HPOS-compatible)
+		if ( $order->get_meta( self::META_SETTLED_NOTIFS_SENT, true ) ) return;
 
 		$entry_ids = self::collect_entry_ids( $order );
 		if ( empty( $entry_ids ) ) return;
@@ -401,9 +403,10 @@ class Woo_Notifications {
 		}
 
 		if ( $did_any ) {
-			// Mark as sent + audit metadata
-			update_post_meta( $order_id, self::META_SETTLED_NOTIFS_SENT, '1' );
-			update_post_meta( $order_id, self::META_SETTLED_NOTIFS_SENT_AT, current_time( 'mysql' ) );
+			// Mark as sent + audit metadata (HPOS-compatible)
+			$order->update_meta_data( self::META_SETTLED_NOTIFS_SENT, '1' );
+			$order->update_meta_data( self::META_SETTLED_NOTIFS_SENT_AT, current_time( 'mysql' ) );
+			$order->save();
 
 			\TC_BF\Support\Logger::log('gf.notif.wc_settled.sent', [
 				'order_id'  => $order_id,

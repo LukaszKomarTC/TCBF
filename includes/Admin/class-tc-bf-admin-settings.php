@@ -101,6 +101,8 @@ final class Settings {
 			wp_send_json_error(['message' => 'forbidden'], 403);
 		}
 
+		check_ajax_referer( 'tc_bf_log', 'nonce' );
+
 		$msg = isset($_POST['message']) ? sanitize_text_field( wp_unslash($_POST['message']) ) : '';
 		$ctx = isset($_POST['context']) ? wp_unslash($_POST['context']) : '';
 
@@ -305,25 +307,27 @@ final class Settings {
 			<?php submit_button(); ?>
 		</form>
 
-		<hr/>
-		<h2><?php echo esc_html__('Form Health', 'tc-booking-flow-next'); ?></h2>
-		<?php
-		if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_FormValidator' ) ) {
-			\TC_BF\Integrations\GravityForms\GF_FormValidator::render_health_section();
-		}
-		?>
-
-		<hr/>
-		<h2><?php echo esc_html__('Tools', 'tc-booking-flow-next'); ?></h2>
-
-		<?php self::render_notification_tools(); ?>
-
-		<hr/>
-		<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
-
 		<?php
 		$debug = self::is_debug();
 		if ( ! $debug ) {
+			?>
+			<hr/>
+			<h2><?php echo esc_html__('Form Health', 'tc-booking-flow-next'); ?></h2>
+			<?php
+			if ( class_exists( '\\TC_BF\\Integrations\\GravityForms\\GF_FormValidator' ) ) {
+				\TC_BF\Integrations\GravityForms\GF_FormValidator::render_health_section();
+			}
+			?>
+
+			<hr/>
+			<h2><?php echo esc_html__('Tools', 'tc-booking-flow-next'); ?></h2>
+
+			<?php self::render_notification_tools(); ?>
+
+			<hr/>
+			<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
+
+			<?php
 			echo '<p><em>' . esc_html__('Debug mode is currently off. Enable it above to collect logs.', 'tc-booking-flow-next') . '</em></p>';
 		} else {
 			// Clear logs handler
@@ -362,28 +366,23 @@ final class Settings {
 			<h2><?php echo esc_html__('Diagnostics', 'tc-booking-flow-next'); ?></h2>
 
 			<?php
-			$debug = self::is_debug();
-			if ( ! $debug ) {
-				echo '<p><em>' . esc_html__('Debug mode is currently off. Enable it above to collect logs.', 'tc-booking-flow-next') . '</em></p>';
-			} else {
-				echo '<table class="widefat striped" style="max-width: 1200px;">';
-				echo '<thead><tr><th>' . esc_html__('Log Entry', 'tc-booking-flow-next') . '</th></tr></thead><tbody>';
-				foreach ( $logs as $line ) {
-					echo '<tr><td><pre style="white-space:pre-wrap; margin:0; font-family:monospace; font-size:12px;">' . esc_html($line) . '</pre></td></tr>';
-				}
-				echo '</tbody></table>';
-
-				$bundle = [
-					'site' => home_url(),
-					'time' => gmdate('c'),
-					'plugin' => 'tc-booking-flow-next',
-					'version' => defined('TC_BF_VERSION') ? TC_BF_VERSION : '',
-					'logs' => array_reverse($logs),
-				];
-				$json = wp_json_encode($bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-				echo '<h3 style="margin-top:16px;">' . esc_html__('Copy debug bundle', 'tc-booking-flow-next') . '</h3>';
-				echo '<textarea readonly style="width:100%; max-width:1200px; height:240px; font-family:monospace; font-size:12px;">' . esc_textarea($json) . '</textarea>';
+			echo '<table class="widefat striped" style="max-width: 1200px;">';
+			echo '<thead><tr><th>' . esc_html__('Log Entry', 'tc-booking-flow-next') . '</th></tr></thead><tbody>';
+			foreach ( $logs as $line ) {
+				echo '<tr><td><pre style="white-space:pre-wrap; margin:0; font-family:monospace; font-size:12px;">' . esc_html($line) . '</pre></td></tr>';
 			}
+			echo '</tbody></table>';
+
+			$bundle = [
+				'site' => home_url(),
+				'time' => gmdate('c'),
+				'plugin' => 'tc-booking-flow-next',
+				'version' => defined('TC_BF_VERSION') ? TC_BF_VERSION : '',
+				'logs' => array_reverse($logs),
+			];
+			$json = wp_json_encode($bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+			echo '<h3 style="margin-top:16px;">' . esc_html__('Copy debug bundle', 'tc-booking-flow-next') . '</h3>';
+			echo '<textarea readonly style="width:100%; max-width:1200px; height:240px; font-family:monospace; font-size:12px;">' . esc_textarea($json) . '</textarea>';
 		}
 		?>
 		<?php
