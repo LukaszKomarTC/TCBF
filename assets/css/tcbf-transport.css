@@ -76,7 +76,7 @@
 	margin: 8px 0 0;
 	padding: 0 0 0 52px;
 	font-size: 12px;
-	color: #888;
+	color: #fff;
 	font-style: italic;
 }
 
@@ -435,7 +435,7 @@ body.tcbf-modal-open {
 	padding: 0 16px;
 	font-size: 13px;
 	font-weight: 500;
-	color: #888;
+	color: #fff;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 }
@@ -617,7 +617,7 @@ body.tcbf-modal-open {
 
 .tcbf-modal__bike-dates {
 	font-size: 12px;
-	color: #888;
+	color: #fff;
 }
 
 /* ================================================================
