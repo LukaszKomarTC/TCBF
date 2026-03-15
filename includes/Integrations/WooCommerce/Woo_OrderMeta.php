@@ -78,6 +78,9 @@ class Woo_OrderMeta {
 		'Notification Language',
 	];
 
+	/** @var bool Whether we are currently rendering the mini cart widget */
+	private static $is_mini_cart = false;
+
 	/** @var int|null Order ID for which email rendering is active (set by render_email_summary_block) */
 	private static $email_rendering_order_id = null;
 
@@ -1788,9 +1791,22 @@ class Woo_OrderMeta {
 		return wc_price( $base_total );
 	}
 
+	/** Set mini cart rendering flag (called by woocommerce_before_mini_cart). */
+	public static function set_mini_cart_context() : void {
+		self::$is_mini_cart = true;
+	}
+
+	/** Clear mini cart rendering flag (called by woocommerce_after_mini_cart). */
+	public static function clear_mini_cart_context() : void {
+		self::$is_mini_cart = false;
+	}
+
 	/**
 	 * Override cart item price display to show original price with strikethrough
 	 * for EB items, and bold for non-EB items.
+	 *
+	 * In mini cart context, also handles transport items (stored price) and
+	 * shows discounted price alongside struck-through original for EB items.
 	 *
 	 * @param string $price     Formatted price HTML
 	 * @param array  $cart_item Cart item data
@@ -1798,6 +1814,25 @@ class Woo_OrderMeta {
 	 * @return string Modified price HTML
 	 */
 	public static function override_cart_item_price( $price, $cart_item, $cart_item_key ) {
+		if ( self::$is_mini_cart ) {
+			// Transport items: use stored price (product catalog price is 0)
+			if ( Woo_Transport::is_transport_item( $cart_item ) && isset( $cart_item['_tcbf_transport_price'] ) ) {
+				$tp = (float) $cart_item['_tcbf_transport_price'];
+				return wc_price( $tp );
+			}
+
+			// EB items: struck-through original + actual discounted price
+			$eb_base = self::get_cart_item_eb_base( $cart_item );
+			if ( $eb_base > 0 ) {
+				$actual = self::get_cart_item_eb_actual( $cart_item );
+				return '<del>' . wp_kses_post( wc_price( $eb_base ) ) . '</del> '
+					 . '<ins style="text-decoration:none;">' . wp_kses_post( wc_price( $actual ) ) . '</ins>';
+			}
+
+			return $price;
+		}
+
+		// Main cart / checkout: existing behavior
 		$eb_base = self::get_cart_item_eb_base( $cart_item );
 		if ( $eb_base > 0 ) {
 			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base ) ) . '</del>';
@@ -1808,12 +1843,35 @@ class Woo_OrderMeta {
 	/**
 	 * Override cart item subtotal display (price * qty).
 	 *
+	 * In mini cart context, also handles transport items and EB actual prices.
+	 *
 	 * @param string $subtotal  Formatted subtotal HTML
 	 * @param array  $cart_item Cart item data
 	 * @param string $cart_item_key Cart item key
 	 * @return string Modified subtotal HTML
 	 */
 	public static function override_cart_item_subtotal( $subtotal, $cart_item, $cart_item_key ) {
+		if ( self::$is_mini_cart ) {
+			// Transport items: use stored price
+			if ( Woo_Transport::is_transport_item( $cart_item ) && isset( $cart_item['_tcbf_transport_price'] ) ) {
+				$tp  = (float) $cart_item['_tcbf_transport_price'];
+				$qty = max( 1, (int) $cart_item['quantity'] );
+				return wc_price( $tp * $qty );
+			}
+
+			// EB items: struck-through original + actual discounted price
+			$eb_base = self::get_cart_item_eb_base( $cart_item );
+			if ( $eb_base > 0 ) {
+				$qty    = max( 1, (int) $cart_item['quantity'] );
+				$actual = self::get_cart_item_eb_actual( $cart_item );
+				return '<del>' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del> '
+					 . '<ins style="text-decoration:none;">' . wp_kses_post( wc_price( $actual * $qty ) ) . '</ins>';
+			}
+
+			return $subtotal;
+		}
+
+		// Main cart / checkout: existing behavior
 		$eb_base = self::get_cart_item_eb_base( $cart_item );
 		if ( $eb_base > 0 ) {
 			$qty = max( 1, (int) $cart_item['quantity'] );
@@ -1857,6 +1915,44 @@ class Woo_OrderMeta {
 			if ( $eb_amount > 0 ) {
 				return (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
 			}
+		}
+
+		return 0.0;
+	}
+
+	/**
+	 * Get the actual per-unit price after EB discount from a cart item.
+	 *
+	 * Uses BK_EB_ELIGIBLE guard to avoid entering the booking branch
+	 * for WC Bookings items that have a 'booking' array but no EB keys.
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Discounted price (base − discount)
+	 */
+	private static function get_cart_item_eb_actual( array $cart_item ) : float {
+		// Event Form packs: actual price is stored in _custom_cost
+		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
+			$booking  = $cart_item['booking'];
+			$eligible = ! empty( $booking[ \TC_BF\Plugin::BK_EB_ELIGIBLE ] );
+			if ( $eligible ) {
+				if ( isset( $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ] ) ) {
+					return (float) $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ];
+				}
+				$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
+				$amt  = isset( $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] : 0.0;
+				return max( 0.0, $base - $amt );
+			}
+		}
+
+		// WC Bookings: ledger meta
+		if ( ! empty( $cart_item['_tcbf_ledger_processed'] ) ) {
+			$total = (float) ( $cart_item['_tcbf_ledger_total'] ?? 0 );
+			if ( $total > 0 ) {
+				return $total;
+			}
+			$base = (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+			$amt  = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+			return max( 0.0, $base - $amt );
 		}
 
 		return 0.0;

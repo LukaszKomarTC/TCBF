@@ -315,6 +315,10 @@ final class Plugin {
 		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
 		add_filter('woocommerce_cart_item_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_subtotal' ], 10, 3);
 
+		// ---- Mini cart context flag: lets price overrides apply mini-cart-only logic
+		add_action('woocommerce_before_mini_cart', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'set_mini_cart_context' ]);
+		add_action('woocommerce_after_mini_cart', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'clear_mini_cart_context' ]);
+
 		// ---- Cart display: show per-item EB summary block (base price, discount, total) after item name
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_summary' ], 20, 2);
 
@@ -1382,6 +1386,16 @@ final class Plugin {
 			echo ".product-total .tcbf-price-final {\n";
 			echo "  font-weight: 800;\n";
 			echo "  color: #1a1a1a;\n";
+			echo "}\n";
+
+			echo "\n/* Mini cart widget: white text on dark/green background */\n";
+			echo ".widget_shopping_cart .mini_cart_item a,\n";
+			echo ".widget_shopping_cart .mini_cart_item .quantity,\n";
+			echo ".widget_shopping_cart .mini_cart_item .woocommerce-Price-amount {\n";
+			echo "  color: #fff !important;\n";
+			echo "}\n";
+			echo ".widget_shopping_cart .mini_cart_item del .woocommerce-Price-amount {\n";
+			echo "  color: rgba(255, 255, 255, 0.7) !important;\n";
 			echo "}\n";
 
 			echo "\n/* EB row with gradient badge + bold total in cart/checkout footers */\n";
