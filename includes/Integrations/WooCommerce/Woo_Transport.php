@@ -61,6 +61,9 @@ final class Woo_Transport {
 		// Cart display
 		add_filter( 'woocommerce_get_item_data', [ __CLASS__, 'display_transport_cart_item_data' ], 25, 2 );
 
+		// Replace transport product name with direction label in cart
+		add_filter( 'woocommerce_cart_item_name', [ __CLASS__, 'filter_transport_cart_item_name' ], 10, 3 );
+
 		// Transport product is not standalone — suppress its permalink in cart and order views
 		add_filter( 'woocommerce_cart_item_permalink', [ __CLASS__, 'suppress_transport_permalink' ], 10, 3 );
 		add_filter( 'woocommerce_order_item_permalink', [ __CLASS__, 'suppress_transport_order_permalink' ], 10, 3 );
@@ -998,6 +1001,23 @@ final class Woo_Transport {
 		return $permalink;
 	}
 
+	/**
+	 * Replace the raw transport product name with a styled direction label in the cart.
+	 */
+	public static function filter_transport_cart_item_name( string $product_name, array $cart_item, string $cart_item_key ) : string {
+
+		if ( ! self::is_transport_item( $cart_item ) ) {
+			return $product_name;
+		}
+
+		$transport_type = $cart_item['_tcbf_transport_type'] ?? 'delivery';
+		$label = ( $transport_type === 'pickup' )
+			? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
+			: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+
+		return '<span class="tcbf-transport-item-name">' . esc_html( $label ) . '</span>';
+	}
+
 	public static function display_transport_cart_item_data( array $item_data, array $cart_item ) : array {
 
 		if ( ! self::is_transport_item( $cart_item ) ) {
@@ -1005,16 +1025,6 @@ final class Woo_Transport {
 		}
 
 		$item_data = [];
-
-		$transport_type = $cart_item['_tcbf_transport_type'] ?? 'delivery';
-		$direction_label = ( $transport_type === 'pickup' )
-			? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
-			: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
-
-		$item_data[] = [
-			'name'  => Woo::translate( '[:en]Service[:es]Servicio[:]' ),
-			'value' => $direction_label,
-		];
 
 		$address = $cart_item['_tcbf_transport_address'] ?? '';
 		if ( $address !== '' ) {
