@@ -324,10 +324,14 @@ final class Woo_Transport {
 		// Build summary for response
 		$summary = self::get_transport_service_summary();
 
+		$fragments = self::get_cart_fragments();
+		$cart_hash = WC()->cart->get_cart_hash();
+
 		wp_send_json_success( [
 			'action'    => 'configured',
 			'summary'   => $summary,
-			'fragments' => self::get_cart_fragments(),
+			'fragments' => $fragments,
+			'cart_hash' => $cart_hash,
 		] );
 	}
 
@@ -2083,7 +2087,7 @@ final class Woo_Transport {
 		$mini_cart = ob_get_clean();
 
 		return [
-			'div.widget_shopping_cart_content' => $mini_cart,
+			'div.widget_shopping_cart_content' => '<div class="widget_shopping_cart_content">' . $mini_cart . '</div>',
 		];
 	}
 }

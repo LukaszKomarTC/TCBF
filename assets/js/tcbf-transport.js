@@ -1071,6 +1071,8 @@
 
 			if (response.data && response.data.fragments) {
 				applyFragments(response.data.fragments);
+				// Notify WooCommerce's cart-fragments.js so the mini cart widget updates
+				$(document.body).trigger('added_to_cart', [response.data.fragments, response.data.cart_hash || '']);
 			}
 			refreshCartPage();
 		})
