@@ -295,6 +295,12 @@ class Woo_OrderMeta {
 
 		foreach ( $order->get_items() as $item ) {
 
+			// Skip transport items — they must not contribute to partner commission/discount base.
+			$scope = $item->get_meta( '_tcbf_scope', true );
+			if ( $scope === 'transport' ) {
+				continue;
+			}
+
 			$qty = max(1, (int) $item->get_quantity());
 
 			// Check for Event Form products (have _event_id)
