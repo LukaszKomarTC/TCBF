@@ -595,8 +595,10 @@ final class Woo_Transport {
 			$cart_item_meta['_tcbf_gf_entry_id'] = $group_id;
 		}
 
-		if ( isset( $rental_item['_tcbf_participant_name'] ) ) {
+		if ( isset( $rental_item['_tcbf_participant_name'] ) && $rental_item['_tcbf_participant_name'] !== '' ) {
 			$cart_item_meta['_tcbf_participant_name'] = $rental_item['_tcbf_participant_name'];
+		} elseif ( isset( $rental_item['booking']['_participant'] ) && $rental_item['booking']['_participant'] !== '' ) {
+			$cart_item_meta['_tcbf_participant_name'] = $rental_item['booking']['_participant'];
 		}
 
 		// Store parent rental's product ID for order-level matching (cart keys don't persist to orders)

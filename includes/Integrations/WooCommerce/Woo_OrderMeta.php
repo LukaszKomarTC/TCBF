@@ -2507,6 +2507,7 @@ class Woo_OrderMeta {
 				// Strategy 1: event_id + participant (tour-linked rentals)
 				// Strategy 2: parent_product_id + participant (standalone rentals, no event)
 				// Strategy 3: participant only (legacy orders without parent_product_id)
+				// Strategy 4: parent_product_id only (fallback when participant is empty on either side)
 				$match = false;
 				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
 					$match = true;
@@ -2522,6 +2523,10 @@ class Woo_OrderMeta {
 					&& $transport['participant'] !== ''
 					&& $transport['participant'] === $rental['participant'] ) {
 					// Legacy fallback: match by participant alone when no event and no parent product ID
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
+					// Fallback: match by parent product ID alone when participant is missing
 					$match = true;
 				}
 

@@ -112,6 +112,10 @@ class Woo_AdminOrder {
 					&& $transport['participant'] !== ''
 					&& $transport['participant'] === $rental['participant'] ) {
 					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
+					// Fallback: match by parent product ID alone when participant is missing
+					$match = true;
 				}
 				if ( $match ) {
 					$rental_transport_map[ $rental['item_id'] ][] = $transport;
@@ -533,6 +537,10 @@ class Woo_AdminOrder {
 					&& $rental['event_id'] <= 0
 					&& $transport['participant'] !== ''
 					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
+					// Fallback: match by parent product ID alone when participant is missing
 					$match = true;
 				}
 
