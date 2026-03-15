@@ -1401,6 +1401,10 @@ final class Plugin {
 			echo ".widget_shopping_cart_content .mini_cart_item del .woocommerce-Price-amount {\n";
 			echo "  color: rgba(255, 255, 255, 0.7) !important;\n";
 			echo "}\n";
+			echo ".widget_shopping_cart .tcbf-transport-item-name,\n";
+			echo ".widget_shopping_cart_content .tcbf-transport-item-name {\n";
+			echo "  color: #fff !important;\n";
+			echo "}\n";
 
 			echo "\n/* EB row with gradient badge + bold total in cart/checkout footers */\n";
 			echo ".tcbf-pack-footer-eb-row,\n";
