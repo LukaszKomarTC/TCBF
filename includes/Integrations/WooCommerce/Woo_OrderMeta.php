@@ -3636,12 +3636,9 @@ class Woo_OrderMeta {
 
 		// Time window
 		if ( $record['transport_window'] !== '' ) {
-			$window_label = ( $record['transport_window'] === 'morning' )
-				? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
-				: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
 			echo '<div class="tcbf-meta-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $window_label ) . '</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo_Transport::get_window_label( $record['transport_window'], true ) ) . '</span>';
 			echo '</div>';
 		}
 
@@ -3773,12 +3770,9 @@ class Woo_OrderMeta {
 
 			// Time window
 			if ( $record['transport_window'] !== '' ) {
-				$window_label = ( $record['transport_window'] === 'morning' )
-					? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
-					: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
 				echo '<div class="tcbf-meta-line">';
 				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</span>';
-				echo '<span class="tcbf-meta-value">' . esc_html( $window_label ) . '</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( Woo_Transport::get_window_label( $record['transport_window'], true ) ) . '</span>';
 				echo '</div>';
 			}
 

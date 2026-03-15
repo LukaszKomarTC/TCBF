@@ -811,6 +811,35 @@ final class Woo_Transport {
 		self::set_session( $key, $window );
 	}
 
+	/**
+	 * Get a translated window label with configurable time range.
+	 *
+	 * @param string $window        'morning' or 'afternoon'
+	 * @param bool   $include_times Whether to append the time range (e.g. "Morning (9:00–13:00)")
+	 * @return string
+	 */
+	public static function get_window_label( string $window, bool $include_times = false ) : string {
+		$config = TransportPricing::get_config();
+
+		$base_label = ( $window === 'morning' )
+			? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
+			: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
+
+		if ( ! $include_times ) {
+			return $base_label;
+		}
+
+		if ( $window === 'morning' ) {
+			$start = $config['window_morning_start'] ?? '09:00';
+			$end   = $config['window_morning_end']   ?? '13:00';
+		} else {
+			$start = $config['window_afternoon_start'] ?? '14:00';
+			$end   = $config['window_afternoon_end']   ?? '18:00';
+		}
+
+		return $base_label . ' (' . $start . '–' . $end . ')';
+	}
+
 	private static function get_session( string $key ) {
 		if ( ! WC() || ! WC()->session ) {
 			return null;
@@ -1045,12 +1074,9 @@ final class Woo_Transport {
 
 		$window = $cart_item['_tcbf_transport_window'] ?? '';
 		if ( $window !== '' ) {
-			$window_label = ( $window === 'morning' )
-				? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
-				: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
 			$item_data[] = [
 				'name'  => Woo::translate( '[:en]Window[:es]Horario[:]' ),
-				'value' => $window_label,
+				'value' => self::get_window_label( $window, true ),
 			];
 		}
 
@@ -1308,9 +1334,7 @@ final class Woo_Transport {
 
 		$window_label = '';
 		if ( $window !== '' ) {
-			$window_label = ( $window === 'morning' )
-				? Woo::translate( '[:en]Morning[:es]Mañana[:]' )
-				: Woo::translate( '[:en]Afternoon[:es]Tarde[:]' );
+			$window_label = self::get_window_label( $window, true );
 		}
 
 		if ( $plain_text ) {
@@ -1542,8 +1566,8 @@ final class Woo_Transport {
 				'sameAddressLabel' => Woo::translate( '[:en]Same address as for delivery[:es]Misma dirección que para la entrega[:]' ),
 				'differentAddress' => Woo::translate( '[:en]Use a different pickup address[:es]Usar una dirección de recogida diferente[:]' ),
 				'windowLabel'      => Woo::translate( '[:en]Time window[:es]Horario[:]' ),
-				'windowMorning'    => Woo::translate( '[:en]Morning (9:00–13:00)[:es]Mañana (9:00–13:00)[:]' ),
-				'windowAfternoon'  => Woo::translate( '[:en]Afternoon (14:00–18:00)[:es]Tarde (14:00–18:00)[:]' ),
+				'windowMorning'    => self::get_window_label( 'morning', true ),
+				'windowAfternoon'  => self::get_window_label( 'afternoon', true ),
 				'bikesLabel'       => Woo::translate( '[:en]Bikes to transport[:es]Bicicletas a transportar[:]' ),
 				'selectAll'        => Woo::translate( '[:en]Select all[:es]Seleccionar todas[:]' ),
 				'confirmBtn'       => Woo::translate( '[:en]Confirm transport[:es]Confirmar transporte[:]' ),

@@ -55,6 +55,12 @@ final class TransportPricing {
 		// Bulk bike pricing: additional bikes are cheaper
 		'price_additional_bike_multiplier' => 0.7,  // 70% of base for 2nd+ bike
 
+		// Time window hours (HH:MM, 24h format)
+		'window_morning_start'     => '09:00',
+		'window_morning_end'       => '13:00',
+		'window_afternoon_start'   => '14:00',
+		'window_afternoon_end'     => '18:00',
+
 		// Capacity per window (bikes per slot)
 		'capacity_morning_bikes'   => 5,
 		'capacity_afternoon_bikes' => 5,

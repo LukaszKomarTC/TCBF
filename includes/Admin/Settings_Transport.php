@@ -68,6 +68,17 @@ final class Settings_Transport {
 		// Bulk pricing
 		$config['price_additional_bike_multiplier'] = min( 1.0, max( 0.0, (float) ( $_POST['tcbf_additional_bike_multiplier'] ?? 0.7 ) ) );
 
+		// Time windows
+		$config['window_morning_start']   = self::sanitize_time( $_POST['tcbf_window_morning_start'] ?? '09:00' );
+		$config['window_morning_end']     = self::sanitize_time( $_POST['tcbf_window_morning_end'] ?? '13:00' );
+		$config['window_afternoon_start'] = self::sanitize_time( $_POST['tcbf_window_afternoon_start'] ?? '14:00' );
+		$config['window_afternoon_end']   = self::sanitize_time( $_POST['tcbf_window_afternoon_end'] ?? '18:00' );
+
+		// Validate: morning end <= afternoon start
+		if ( $config['window_morning_end'] > $config['window_afternoon_start'] ) {
+			$config['window_morning_end']     = $config['window_afternoon_start'];
+		}
+
 		// Capacity
 		$config['capacity_morning_bikes']   = max( 1, absint( $_POST['tcbf_capacity_morning_bikes'] ?? 5 ) );
 		$config['capacity_afternoon_bikes'] = max( 1, absint( $_POST['tcbf_capacity_afternoon_bikes'] ?? 5 ) );
@@ -340,6 +351,40 @@ final class Settings_Transport {
 				</tbody>
 			</table>
 
+			<!-- Time Windows -->
+			<h2><?php echo esc_html__( 'Time Windows', 'tc-booking-flow-next' ); ?></h2>
+			<p class="description" style="margin-bottom: 12px;">
+				<?php echo esc_html__( 'Define the morning and afternoon delivery/pickup windows shown to customers.', 'tc-booking-flow-next' ); ?>
+			</p>
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row">
+							<?php echo esc_html__( 'Morning window', 'tc-booking-flow-next' ); ?>
+						</th>
+						<td>
+							<input type="time" name="tcbf_window_morning_start" id="tcbf_window_morning_start"
+								value="<?php echo esc_attr( $config['window_morning_start'] ?? '09:00' ); ?>" />
+							<span>&ndash;</span>
+							<input type="time" name="tcbf_window_morning_end" id="tcbf_window_morning_end"
+								value="<?php echo esc_attr( $config['window_morning_end'] ?? '13:00' ); ?>" />
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<?php echo esc_html__( 'Afternoon window', 'tc-booking-flow-next' ); ?>
+						</th>
+						<td>
+							<input type="time" name="tcbf_window_afternoon_start" id="tcbf_window_afternoon_start"
+								value="<?php echo esc_attr( $config['window_afternoon_start'] ?? '14:00' ); ?>" />
+							<span>&ndash;</span>
+							<input type="time" name="tcbf_window_afternoon_end" id="tcbf_window_afternoon_end"
+								value="<?php echo esc_attr( $config['window_afternoon_end'] ?? '18:00' ); ?>" />
+						</td>
+					</tr>
+				</tbody>
+			</table>
+
 			<!-- Capacity -->
 			<h2><?php echo esc_html__( 'Transport Capacity', 'tc-booking-flow-next' ); ?></h2>
 			<p class="description" style="margin-bottom: 12px;">
@@ -518,5 +563,16 @@ final class Settings_Transport {
 	 */
 	private static function sanitize_price( $value ) : float {
 		return round( max( 0, (float) $value ), 2 );
+	}
+
+	/**
+	 * Sanitize a time value (HH:MM format)
+	 */
+	private static function sanitize_time( $value ) : string {
+		$value = sanitize_text_field( wp_unslash( $value ) );
+		if ( preg_match( '/^([01]\d|2[0-3]):([0-5]\d)$/', $value ) ) {
+			return $value;
+		}
+		return '00:00';
 	}
 }

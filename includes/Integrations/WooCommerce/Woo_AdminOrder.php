@@ -442,7 +442,7 @@ class Woo_AdminOrder {
 		if ( $transport_zone !== '' ) {
 			$zone_text = $transport_zone;
 			if ( $transport_window !== '' ) {
-				$zone_text .= ' · ' . ucfirst( $transport_window );
+				$zone_text .= ' · ' . Woo_Transport::get_window_label( $transport_window );
 			}
 			$badges[] = '<span class="tcbf-item-badge tcbf-badge-transport-detail">' . esc_html( $zone_text ) . '</span>';
 		}
