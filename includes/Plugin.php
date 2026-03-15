@@ -1377,24 +1377,11 @@ final class Plugin {
 			echo "  color: #1a1a1a;\n";
 			echo "  font-weight: 400;\n";
 			echo "}\n";
-			echo "ins.tcbf-price-final {\n";
-			echo "  text-decoration: none;\n";
-			echo "}\n";
 			echo ".product-subtotal .tcbf-price-final,\n";
 			echo ".product-price .tcbf-price-final,\n";
 			echo ".product-total .tcbf-price-final {\n";
 			echo "  font-weight: 800;\n";
 			echo "  color: #1a1a1a;\n";
-			echo "}\n";
-			echo "\n/* Mini cart: prices on dark/green background need white text */\n";
-			echo ".widget_shopping_cart .tcbf-price-original,\n";
-			echo ".mini_cart_content .tcbf-price-original {\n";
-			echo "  color: rgba(255, 255, 255, 0.7);\n";
-			echo "}\n";
-			echo ".widget_shopping_cart .tcbf-price-final,\n";
-			echo ".mini_cart_content .tcbf-price-final {\n";
-			echo "  color: #fff;\n";
-			echo "  font-weight: 800;\n";
 			echo "}\n";
 
 			echo "\n/* EB row with gradient badge + bold total in cart/checkout footers */\n";

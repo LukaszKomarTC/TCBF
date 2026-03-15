@@ -1798,17 +1798,9 @@ class Woo_OrderMeta {
 	 * @return string Modified price HTML
 	 */
 	public static function override_cart_item_price( $price, $cart_item, $cart_item_key ) {
-		// Transport items: use stored price directly (product catalog price is 0)
-		if ( isset( $cart_item['_tcbf_transport_price'] ) ) {
-			$tp = (float) $cart_item['_tcbf_transport_price'];
-			return '<span class="tcbf-price-final">' . wp_kses_post( wc_price( $tp ) ) . '</span>';
-		}
-
 		$eb_base = self::get_cart_item_eb_base( $cart_item );
 		if ( $eb_base > 0 ) {
-			$actual = self::get_cart_item_eb_actual( $cart_item );
-			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base ) ) . '</del> '
-				 . '<ins class="tcbf-price-final">' . wp_kses_post( wc_price( $actual ) ) . '</ins>';
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base ) ) . '</del>';
 		}
 		return '<span class="tcbf-price-final">' . wp_kses_post( $price ) . '</span>';
 	}
@@ -1822,19 +1814,10 @@ class Woo_OrderMeta {
 	 * @return string Modified subtotal HTML
 	 */
 	public static function override_cart_item_subtotal( $subtotal, $cart_item, $cart_item_key ) {
-		// Transport items: use stored price directly (product catalog price is 0)
-		if ( isset( $cart_item['_tcbf_transport_price'] ) ) {
-			$tp  = (float) $cart_item['_tcbf_transport_price'];
-			$qty = max( 1, (int) $cart_item['quantity'] );
-			return '<span class="tcbf-price-final">' . wp_kses_post( wc_price( $tp * $qty ) ) . '</span>';
-		}
-
 		$eb_base = self::get_cart_item_eb_base( $cart_item );
 		if ( $eb_base > 0 ) {
-			$qty    = max( 1, (int) $cart_item['quantity'] );
-			$actual = self::get_cart_item_eb_actual( $cart_item );
-			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del> '
-				 . '<ins class="tcbf-price-final">' . wp_kses_post( wc_price( $actual * $qty ) ) . '</ins>';
+			$qty = max( 1, (int) $cart_item['quantity'] );
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del>';
 		}
 		return '<span class="tcbf-price-final">' . wp_kses_post( $subtotal ) . '</span>';
 	}
@@ -1874,39 +1857,6 @@ class Woo_OrderMeta {
 			if ( $eb_amount > 0 ) {
 				return (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
 			}
-		}
-
-		return 0.0;
-	}
-
-	/**
-	 * Get the actual per-unit price after EB discount from a cart item.
-	 *
-	 * @param array $cart_item Cart item data
-	 * @return float Discounted price (base − discount)
-	 */
-	private static function get_cart_item_eb_actual( array $cart_item ) : float {
-		// Event Form packs: actual price is stored in _custom_cost
-		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
-			$booking = $cart_item['booking'];
-			if ( isset( $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ] ) ) {
-				return (float) $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ];
-			}
-			// Fallback: base − amount
-			$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
-			$amt  = isset( $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] : 0.0;
-			return max( 0.0, $base - $amt );
-		}
-
-		// WC Bookings: ledger meta
-		if ( ! empty( $cart_item['_tcbf_ledger_processed'] ) ) {
-			$total = (float) ( $cart_item['_tcbf_ledger_total'] ?? 0 );
-			if ( $total > 0 ) {
-				return $total;
-			}
-			$base = (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
-			$amt  = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
-			return max( 0.0, $base - $amt );
 		}
 
 		return 0.0;
