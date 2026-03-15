@@ -79,7 +79,11 @@
 				bike_keys: JSON.stringify([]),
 				nonce: config.nonce
 			}
-		}).done(function () {
+		}).done(function (response) {
+			if (response && response.success && response.data && response.data.fragments) {
+				applyFragments(response.data.fragments);
+				$(document.body).trigger('added_to_cart', [response.data.fragments, response.data.cart_hash || '']);
+			}
 			refreshCartPage();
 		}).fail(function () {
 			$card.removeClass('tcbf-service-card--loading');
