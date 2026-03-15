@@ -802,8 +802,9 @@ final class Woo_Transport {
 	}
 
 	public static function get_direction_window( string $direction ) : string {
-		$key = ( $direction === self::DIR_PICKUP ) ? self::SESSION_RETURN_WINDOW : self::SESSION_DELIVERY_WINDOW;
-		return (string) ( self::get_session( $key ) ?? 'morning' );
+		$key     = ( $direction === self::DIR_PICKUP ) ? self::SESSION_RETURN_WINDOW : self::SESSION_DELIVERY_WINDOW;
+		$default = ( $direction === self::DIR_PICKUP ) ? 'afternoon' : 'morning';
+		return (string) ( self::get_session( $key ) ?? $default );
 	}
 
 	private static function set_direction_window( string $direction, string $window ) : void {
