@@ -1887,20 +1887,15 @@ class Woo_OrderMeta {
 	 */
 	private static function get_cart_item_eb_actual( array $cart_item ) : float {
 		// Event Form packs: actual price is stored in _custom_cost
-		// Guard with BK_EB_ELIGIBLE so WC Bookings items (which also have a
-		// 'booking' array) fall through to the ledger path below.
 		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
-			$booking  = $cart_item['booking'];
-			$eligible = ! empty( $booking[ \TC_BF\Plugin::BK_EB_ELIGIBLE ] );
-			if ( $eligible ) {
-				if ( isset( $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ] ) ) {
-					return (float) $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ];
-				}
-				// Fallback: base − amount
-				$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
-				$amt  = isset( $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] : 0.0;
-				return max( 0.0, $base - $amt );
+			$booking = $cart_item['booking'];
+			if ( isset( $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ] ) ) {
+				return (float) $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ];
 			}
+			// Fallback: base − amount
+			$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
+			$amt  = isset( $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] : 0.0;
+			return max( 0.0, $base - $amt );
 		}
 
 		// WC Bookings: ledger meta
