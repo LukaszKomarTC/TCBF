@@ -104,17 +104,15 @@ class Woo_AdminOrder {
 				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
 					$match = true;
 				} elseif ( $transport['transport_parent_product_id'] > 0
-					&& $transport['transport_parent_product_id'] === $rental['product_id']
+					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
+					$match = true;
+				} elseif ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
 					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
 					$match = true;
 				} elseif ( $transport['transport_parent_product_id'] <= 0
 					&& $rental['event_id'] <= 0
 					&& $transport['participant'] !== ''
 					&& $transport['participant'] === $rental['participant'] ) {
-					$match = true;
-				} elseif ( $transport['transport_parent_product_id'] > 0
-					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
-					// Fallback: match by parent product ID alone when participant is missing
 					$match = true;
 				}
 				if ( $match ) {
@@ -526,21 +524,16 @@ class Woo_AdminOrder {
 				$match = false;
 				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
 					$match = true;
-				} elseif ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
-					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
-					$match = true;
 				} elseif ( $transport['transport_parent_product_id'] > 0
-					&& $transport['transport_parent_product_id'] === $rental['product_id']
+					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
+					$match = true;
+				} elseif ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
 					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
 					$match = true;
 				} elseif ( $transport['transport_parent_product_id'] <= 0
 					&& $rental['event_id'] <= 0
 					&& $transport['participant'] !== ''
 					&& $transport['participant'] === $rental['participant'] ) {
-					$match = true;
-				} elseif ( $transport['transport_parent_product_id'] > 0
-					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
-					// Fallback: match by parent product ID alone when participant is missing
 					$match = true;
 				}
 

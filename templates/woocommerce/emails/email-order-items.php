@@ -160,29 +160,23 @@ if ( class_exists( '\TC_BF\Integrations\WooCommerce\Woo_OrderMeta' ) ) {
 				continue;
 			}
 
-			// Strategy 0: entry_id match (most reliable — same GF submission, works without participant name)
-			// Strategy 1: event_id + participant (tour-linked rentals)
-			// Strategy 2: parent_product_id + participant (standalone rentals, no event)
+			// Strategy 0: entry_id match (most reliable — same GF submission)
+			// Strategy 1: parent_product_id match (reliable — set at cart time, no participant needed)
+			// Strategy 2: event_id + participant (tour-linked rentals, partner/admin orders)
 			// Strategy 3: participant only (legacy orders without parent_product_id)
-			// Strategy 4: parent_product_id only (fallback when participant is empty on either side)
 			$match = false;
 			if ( $r_data['entry_id'] > 0 && $t_data['entry_id'] === $r_data['entry_id'] ) {
 				$match = true;
-			} elseif ( $r_data['event_id'] > 0 && $t_data['event_id'] === $r_data['event_id']
-				&& $t_data['participant'] !== '' && $t_data['participant'] === $r_data['participant'] ) {
-				$match = true;
 			} elseif ( $t_data['transport_parent_product_id'] > 0
-				&& $t_data['transport_parent_product_id'] === $r_data['product_id']
+				&& $t_data['transport_parent_product_id'] === $r_data['product_id'] ) {
+				$match = true;
+			} elseif ( $r_data['event_id'] > 0 && $t_data['event_id'] === $r_data['event_id']
 				&& $t_data['participant'] !== '' && $t_data['participant'] === $r_data['participant'] ) {
 				$match = true;
 			} elseif ( $t_data['transport_parent_product_id'] <= 0
 				&& $r_data['event_id'] <= 0
 				&& $t_data['participant'] !== ''
 				&& $t_data['participant'] === $r_data['participant'] ) {
-				$match = true;
-			} elseif ( $t_data['transport_parent_product_id'] > 0
-				&& $t_data['transport_parent_product_id'] === $r_data['product_id'] ) {
-				// Fallback: match by parent product ID alone when participant is missing
 				$match = true;
 			}
 
