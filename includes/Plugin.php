@@ -1614,14 +1614,13 @@ final class Plugin {
 			echo "  display: inline-flex;\n";
 			echo "}\n";
 
-			echo "\n/* Hide qty & subtotal cells for pack items (always 1, price = subtotal) */\n";
-			echo "tr.tcbf-pack-item td.product-quantity,\n";
-			echo "tr.tcbf-pack-item td.product-subtotal {\n";
+			echo "\n/* Hide qty & subtotal cells (always 1, price = subtotal) */\n";
+			echo ".woocommerce-cart-form__contents td.product-quantity,\n";
+			echo ".woocommerce-cart-form__contents td.product-subtotal {\n";
 			echo "  display: none !important;\n";
 			echo "}\n";
-			echo "\n/* When ALL cart rows are pack items, hide the column headers too */\n";
-			echo ".woocommerce-cart-form__contents:not(:has(tr.cart_item:not(.tcbf-pack-item))) th.product-quantity,\n";
-			echo ".woocommerce-cart-form__contents:not(:has(tr.cart_item:not(.tcbf-pack-item))) th.product-subtotal {\n";
+			echo ".woocommerce-cart-form__contents th.product-quantity,\n";
+			echo ".woocommerce-cart-form__contents th.product-subtotal {\n";
 			echo "  display: none !important;\n";
 			echo "}\n";
 			echo "\n/* Give price breathing room from right edge */\n";
