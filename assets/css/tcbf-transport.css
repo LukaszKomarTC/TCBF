@@ -77,7 +77,7 @@
 	margin: 8px 0 0;
 	padding: 0 0 0 52px;
 	font-size: 12px;
-	color: #fff;
+	color: #666;
 	font-style: italic;
 }
 
@@ -166,6 +166,30 @@
 .tcbf-service-card--invalid_dates .tcbf-service-card__icon {
 	background: #fee2e2;
 	color: #dc2626;
+}
+
+.tcbf-service-card--invalid_dates .tcbf-service-card__subtitle {
+	color: #991b1b;
+}
+
+.tcbf-service-card--invalid_dates .tcbf-service-card__help {
+	color: #b91c1c;
+}
+
+.tcbf-service-card--mixed_dates .tcbf-service-card__subtitle {
+	color: #5b21b6;
+}
+
+.tcbf-service-card--mixed_dates .tcbf-service-card__help {
+	color: #6d28d9;
+}
+
+.tcbf-service-card--mismatch .tcbf-service-card__subtitle {
+	color: #991b1b;
+}
+
+.tcbf-service-card--mismatch .tcbf-service-card__help {
+	color: #b91c1c;
 }
 
 /* ================================================================
