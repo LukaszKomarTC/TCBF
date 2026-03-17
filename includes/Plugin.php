@@ -1381,7 +1381,6 @@ final class Plugin {
 			echo "  color: #1a1a1a;\n";
 			echo "  font-weight: 400;\n";
 			echo "}\n";
-			echo ".product-subtotal .tcbf-price-final,\n";
 			echo ".product-price .tcbf-price-final,\n";
 			echo ".product-total .tcbf-price-final {\n";
 			echo "  font-weight: 800;\n";
@@ -1615,9 +1614,15 @@ final class Plugin {
 			echo "  display: inline-flex;\n";
 			echo "}\n";
 
-			echo "\n/* Give price/subtotal breathing room from right edge */\n";
-			echo ".woocommerce-cart-form__contents td.product-price,\n";
+			echo "\n/* Hide quantity and subtotal everywhere (always 1, price = subtotal) */\n";
+			echo ".woocommerce-cart-form__contents th.product-quantity,\n";
+			echo ".woocommerce-cart-form__contents td.product-quantity,\n";
+			echo ".woocommerce-cart-form__contents th.product-subtotal,\n";
 			echo ".woocommerce-cart-form__contents td.product-subtotal {\n";
+			echo "  display: none !important;\n";
+			echo "}\n";
+			echo "\n/* Give price breathing room from right edge */\n";
+			echo ".woocommerce-cart-form__contents td.product-price {\n";
 			echo "  padding-right: 14px !important;\n";
 			echo "}\n";
 
@@ -1790,11 +1795,6 @@ final class Plugin {
 			echo "    font-weight: 500;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Hide quantity and subtotal on mobile/tablet (always 1, price = subtotal) */\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal {\n";
-			echo "    display: none !important;\n";
-			echo "  }\n";
 			echo "\n";
 			echo "  /* ---- Price column as standalone block ---- */\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price {\n";
@@ -1850,7 +1850,6 @@ final class Plugin {
 			echo "    font-weight: 400;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Quantity input (hidden on mobile but kept for desktop) */\n";
 			echo "\n";
 			echo "  /* Parent row: pad away from border */\n";
 			echo "  tr.tcbf-pack-role-parent > td:not(.product-remove),\n";
