@@ -197,6 +197,28 @@
 	color: #1a1a1a;
 }
 
+/* ---- Zone map ---- */
+
+.tcbf-transport-popup__map {
+	width: 100%;
+	height: 340px;
+	border-radius: 8px;
+	border: 1px solid #e2e5ea;
+	margin: 0 0 16px;
+	background: #f4f6f8;
+}
+
+/* ---- Note callout ---- */
+
+.tcbf-transport-popup__note {
+	padding: 10px 14px;
+	background: #fff8e6;
+	border-left: 3px solid #e6a800;
+	border-radius: 4px;
+	font-size: 13px !important;
+	color: #6b5900 !important;
+}
+
 /* ---- Tables ---- */
 
 .tcbf-transport-popup__table {
@@ -318,6 +340,10 @@
 
 	.tcbf-transport-popup__title {
 		font-size: 18px !important;
+	}
+
+	.tcbf-transport-popup__map {
+		height: 240px;
 	}
 
 	.tcbf-transport-popup__table {

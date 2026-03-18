@@ -40,20 +40,49 @@ final class Transport_Homepage_Teaser {
 			return;
 		}
 
+		// Leaflet CSS + JS (free, no API key needed — used for the read-only zone map)
+		wp_enqueue_style(
+			'leaflet',
+			'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+			[],
+			'1.9.4'
+		);
+		wp_enqueue_script(
+			'leaflet',
+			'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+			[],
+			'1.9.4',
+			true
+		);
+
 		wp_enqueue_style(
 			'tcbf-transport-teaser',
 			TC_BF_URL . 'assets/css/tcbf-transport-teaser.css',
-			[],
+			[ 'leaflet' ],
 			defined('TC_BF_VERSION') ? TC_BF_VERSION : null
 		);
 
 		wp_enqueue_script(
 			'tcbf-transport-teaser',
 			TC_BF_URL . 'assets/js/tcbf-transport-teaser.js',
-			[],
+			[ 'leaflet' ],
 			defined('TC_BF_VERSION') ? TC_BF_VERSION : null,
 			true
 		);
+
+		// Pass zone data to JS for the map
+		$zones = TransportZones::get_zones();
+		$zone_data = [];
+		foreach ( $zones as $z ) {
+			$zone_data[] = [
+				'id'        => $z['id'] ?? '',
+				'name'      => $z['name'] ?? '',
+				'lat'       => (float) ( $z['lat'] ?? 0 ),
+				'lng'       => (float) ( $z['lng'] ?? 0 ),
+				'radius_km' => (float) ( $z['radius_km'] ?? 0 ),
+			];
+		}
+		wp_localize_script( 'tcbf-transport-teaser', 'tcbfTeaserZones', $zone_data );
 	}
 
 	/**
@@ -91,6 +120,8 @@ final class Transport_Homepage_Teaser {
 		$surcharge_remote   = isset( $cfg['surcharge_remote'] )   ? $cfg['surcharge_remote']   : 20.0;
 		$bulk_multiplier    = isset( $cfg['price_additional_bike_multiplier'] ) ? $cfg['price_additional_bike_multiplier'] : 0.7;
 		$bulk_discount_pct  = round( ( 1 - $bulk_multiplier ) * 100 );
+		$min_dist_charge    = isset( $cfg['min_distance_charge'] ) ? $cfg['min_distance_charge'] : 25.0;
+		$max_dist_charge    = isset( $cfg['max_distance_charge'] ) ? $cfg['max_distance_charge'] : 200.0;
 
 		// Format prices for display (locale-aware)
 		$fmt = function( $v ) {
@@ -102,18 +133,18 @@ final class Transport_Homepage_Teaser {
 		$ex_total = $base_delivery + $ex_bike2 + $ex_bike2;
 		$ex_without = $base_delivery * 3;
 
-		// Pull zone list
-		$zones = [];
-		if ( class_exists( '\\TC_BF\\Domain\\TransportZones' ) ) {
-			$zone_cfg = TransportZones::get_zones();
-			foreach ( $zone_cfg as $z ) {
-				$zones[] = isset( $z['label'] ) ? $z['label'] : '';
-			}
+		// Pull zone list from configuration
+		$zone_cfg = class_exists( '\\TC_BF\\Domain\\TransportZones' )
+			? TransportZones::get_zones()
+			: [];
+		$zone_labels_arr = [];
+		foreach ( $zone_cfg as $z ) {
+			$zone_labels_arr[] = isset( $z['name'] ) ? $z['name'] : '';
 		}
-		if ( empty( $zones ) ) {
-			$zones = [ 'Barcelona City', 'BCN Airport (El Prat)', 'Girona City', 'Girona Airport' ];
+		if ( empty( $zone_labels_arr ) ) {
+			$zone_labels_arr = [ 'Barcelona City', 'BCN Airport (El Prat)', 'Girona City', 'Girona Airport' ];
 		}
-		$zone_labels = implode( ' · ', $zones );
+		$zone_labels = implode( ' · ', array_filter( $zone_labels_arr ) );
 
 		ob_start();
 		?>
@@ -231,6 +262,10 @@ final class Transport_Homepage_Teaser {
 						'[:en]We operate in the following areas. If your address falls within a zone, the standard base price applies. If you\'re outside these zones, a distance-based surcharge is calculated automatically.'
 						. '[:es]Operamos en las siguientes áreas. Si tu dirección está dentro de una zona, se aplica el precio base estándar. Si estás fuera de estas zonas, se calcula automáticamente un suplemento por distancia.[:]'
 					) ); ?></p>
+
+					<?php /* ---- Zone map ---- */ ?>
+					<div id="tcbf-transport-zone-map" class="tcbf-transport-popup__map"></div>
+
 					<table class="tcbf-transport-popup__table">
 						<thead>
 							<tr>
@@ -239,22 +274,19 @@ final class Transport_Homepage_Teaser {
 							</tr>
 						</thead>
 						<tbody>
+							<?php foreach ( $zone_cfg as $z ) :
+								$z_name   = esc_html( $z['name'] ?? '' );
+								$z_radius = (int) ( $z['radius_km'] ?? 0 );
+								$z_desc_en = sprintf( '~%d km radius', $z_radius );
+								$z_desc_es = sprintf( '~%d km de radio', $z_radius );
+							?>
 							<tr>
-								<td><strong><?php echo esc_html( self::tr( '[:en]Barcelona City[:es]Barcelona ciudad[:]' ) ); ?></strong></td>
-								<td><?php echo esc_html( self::tr( '[:en]Central Barcelona and surroundings (~12 km radius)[:es]Barcelona centro y alrededores (~12 km de radio)[:]' ) ); ?></td>
+								<td><strong><?php echo $z_name; ?></strong></td>
+								<td><?php echo esc_html( self::tr(
+									'[:en]' . $z_desc_en . '[:es]' . $z_desc_es . '[:]'
+								) ); ?></td>
 							</tr>
-							<tr>
-								<td><strong><?php echo esc_html( self::tr( '[:en]BCN Airport (El Prat)[:es]Aeropuerto BCN (El Prat)[:]' ) ); ?></strong></td>
-								<td><?php echo esc_html( self::tr( '[:en]Airport terminals and nearby area (~5 km radius)[:es]Terminales del aeropuerto y zona cercana (~5 km de radio)[:]' ) ); ?></td>
-							</tr>
-							<tr>
-								<td><strong><?php echo esc_html( self::tr( '[:en]Girona City[:es]Girona ciudad[:]' ) ); ?></strong></td>
-								<td><?php echo esc_html( self::tr( '[:en]Girona city center and surroundings (~8 km radius)[:es]Centro de Girona y alrededores (~8 km de radio)[:]' ) ); ?></td>
-							</tr>
-							<tr>
-								<td><strong><?php echo esc_html( self::tr( '[:en]Girona Airport[:es]Aeropuerto de Girona[:]' ) ); ?></strong></td>
-								<td><?php echo esc_html( self::tr( '[:en]Costa Brava airport area (~5 km radius)[:es]Zona del aeropuerto Costa Brava (~5 km de radio)[:]' ) ); ?></td>
-							</tr>
+							<?php endforeach; ?>
 						</tbody>
 					</table>
 					<p><?php echo esc_html( self::tr(
@@ -313,8 +345,8 @@ final class Transport_Homepage_Teaser {
 						. '[:es]<strong>Ejemplo:</strong> 3 bicis, solo entrega = ' . $fmt( $base_delivery ) . ' + ' . $fmt( $ex_bike2 ) . ' + ' . $fmt( $ex_bike2 ) . ' = <strong>' . $fmt( $ex_total ) . '</strong> (en lugar de ' . $fmt( $ex_without ) . ')[:]'
 					) ); ?></p>
 					<p><?php echo wp_kses_post( self::tr(
-						'[:en]<strong>Outside coverage zones:</strong> An additional distance surcharge of <strong>' . $fmt( $per_km ) . '/km</strong> is added based on your distance beyond the nearest zone boundary.'
-						. '[:es]<strong>Fuera de las zonas de cobertura:</strong> Se aplica un suplemento de <strong>' . $fmt( $per_km ) . '/km</strong> según la distancia desde el límite de la zona más cercana.[:]'
+						'[:en]<strong>Outside coverage zones:</strong> An additional distance surcharge of <strong>' . $fmt( $per_km ) . '/km</strong> is added based on your distance beyond the nearest zone boundary (minimum ' . $fmt( $min_dist_charge ) . ', maximum ' . $fmt( $max_dist_charge ) . ' per direction).'
+						. '[:es]<strong>Fuera de las zonas de cobertura:</strong> Se aplica un suplemento de <strong>' . $fmt( $per_km ) . '/km</strong> según la distancia desde el límite de la zona más cercana (mínimo ' . $fmt( $min_dist_charge ) . ', máximo ' . $fmt( $max_dist_charge ) . ' por trayecto).[:]'
 					) ); ?></p>
 
 					<?php /* ------- SURCHARGES ------- */ ?>
@@ -375,6 +407,10 @@ final class Transport_Homepage_Teaser {
 					) ); ?></strong> — <?php echo esc_html( self::tr(
 						'[:en]each time window has a maximum number of bikes we can transport. Book early to secure your preferred slot.'
 						. '[:es]cada franja horaria tiene un número máximo de bicis que podemos transportar. Reserva con antelación para asegurar tu horario preferido.[:]'
+					) ); ?></p>
+					<p class="tcbf-transport-popup__note"><?php echo wp_kses_post( self::tr(
+						'[:en]<strong>Note:</strong> Windows before 07:00 or after 21:00 carry a night surcharge of ' . $fmt( $surcharge_night ) . '.'
+						. '[:es]<strong>Nota:</strong> Las franjas antes de las 07:00 o después de las 21:00 tienen un suplemento nocturno de ' . $fmt( $surcharge_night ) . '.[:]'
 					) ); ?></p>
 
 					<?php /* ------- IMPORTANT NOTES ------- */ ?>
