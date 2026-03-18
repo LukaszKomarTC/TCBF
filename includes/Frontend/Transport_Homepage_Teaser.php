@@ -1,0 +1,451 @@
+<?php
+namespace TC_BF\Frontend;
+
+use TC_BF\Domain\TransportPricing;
+use TC_BF\Domain\TransportZones;
+
+if ( ! defined('ABSPATH') ) exit;
+
+/**
+ * Transport Homepage Teaser
+ *
+ * Renders a bilingual (EN/ES) teaser section + detailed popup for the
+ * transport rental addon. Designed to be placed on the homepage via shortcode.
+ *
+ * Usage: [tcbf_transport_teaser]
+ *
+ * Content follows docs/transport-homepage-content.md specification.
+ * Pricing values are pulled from the live TransportPricing configuration.
+ *
+ * @since 1.1.0
+ */
+final class Transport_Homepage_Teaser {
+
+	/**
+	 * Register shortcode and assets
+	 */
+	public static function register() : void {
+		add_shortcode( 'tcbf_transport_teaser', [ __CLASS__, 'render_shortcode' ] );
+	}
+
+	/**
+	 * Enqueue CSS/JS on pages that use the shortcode
+	 *
+	 * Called via wp_enqueue_scripts hook; only enqueues when shortcode is present.
+	 */
+	public static function enqueue_assets() : void {
+		global $post;
+
+		if ( ! $post || ! has_shortcode( $post->post_content, 'tcbf_transport_teaser' ) ) {
+			return;
+		}
+
+		wp_enqueue_style(
+			'tcbf-transport-teaser',
+			TC_BF_URL . 'assets/css/tcbf-transport-teaser.css',
+			[],
+			defined('TC_BF_VERSION') ? TC_BF_VERSION : null
+		);
+
+		wp_enqueue_script(
+			'tcbf-transport-teaser',
+			TC_BF_URL . 'assets/js/tcbf-transport-teaser.js',
+			[],
+			defined('TC_BF_VERSION') ? TC_BF_VERSION : null,
+			true
+		);
+	}
+
+	/**
+	 * Translate string using qTranslate XT if available
+	 *
+	 * @param string $text Multilingual string [:en]..[:es]..[:]
+	 * @return string
+	 */
+	private static function tr( string $text ) : string {
+		if ( function_exists( 'qtranxf_useCurrentLanguageIfNotFoundUseDefaultLanguage' ) ) {
+			return (string) qtranxf_useCurrentLanguageIfNotFoundUseDefaultLanguage( $text );
+		}
+		return $text;
+	}
+
+	/**
+	 * Render the teaser shortcode
+	 *
+	 * @param array|string $atts Shortcode attributes (unused, reserved for future)
+	 * @return string HTML
+	 */
+	public static function render_shortcode( $atts = [] ) : string {
+
+		// Pull live pricing from the system SSOT
+		$cfg = class_exists( '\\TC_BF\\Domain\\TransportPricing' )
+			? TransportPricing::get_config()
+			: [];
+
+		$base_delivery = isset( $cfg['base_delivery'] )   ? $cfg['base_delivery']   : 45.0;
+		$base_both     = isset( $cfg['base_both'] )        ? $cfg['base_both']        : 75.0;
+		$bundle_save   = ( $base_delivery * 2 ) - $base_both;
+		$per_km        = isset( $cfg['per_km_rate'] )      ? $cfg['per_km_rate']      : 1.20;
+		$surcharge_night    = isset( $cfg['surcharge_night'] )    ? $cfg['surcharge_night']    : 15.0;
+		$surcharge_box      = isset( $cfg['surcharge_bike_box'] ) ? $cfg['surcharge_bike_box'] : 10.0;
+		$surcharge_remote   = isset( $cfg['surcharge_remote'] )   ? $cfg['surcharge_remote']   : 20.0;
+		$bulk_multiplier    = isset( $cfg['price_additional_bike_multiplier'] ) ? $cfg['price_additional_bike_multiplier'] : 0.7;
+		$bulk_discount_pct  = round( ( 1 - $bulk_multiplier ) * 100 );
+
+		// Format prices for display (locale-aware)
+		$fmt = function( $v ) {
+			return self::format_price( $v );
+		};
+
+		// Example: 3 bikes delivery
+		$ex_bike2 = $base_delivery * $bulk_multiplier;
+		$ex_total = $base_delivery + $ex_bike2 + $ex_bike2;
+		$ex_without = $base_delivery * 3;
+
+		// Pull zone list
+		$zones = [];
+		if ( class_exists( '\\TC_BF\\Domain\\TransportZones' ) ) {
+			$zone_cfg = TransportZones::get_zones();
+			foreach ( $zone_cfg as $z ) {
+				$zones[] = isset( $z['label'] ) ? $z['label'] : '';
+			}
+		}
+		if ( empty( $zones ) ) {
+			$zones = [ 'Barcelona City', 'BCN Airport (El Prat)', 'Girona City', 'Girona Airport' ];
+		}
+		$zone_labels = implode( ' · ', $zones );
+
+		ob_start();
+		?>
+		<section class="tcbf-transport-teaser" id="tcbf-transport-teaser">
+
+			<div class="tcbf-transport-teaser__inner">
+
+				<?php /* ---- Icon ---- */ ?>
+				<div class="tcbf-transport-teaser__icon">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="18" cy="46" r="10"/>
+						<circle cx="46" cy="46" r="10"/>
+						<path d="M18 46 L24 22 H40 L46 46"/>
+						<path d="M24 22 L32 12"/>
+						<path d="M28 34 H38"/>
+					</svg>
+				</div>
+
+				<?php /* ---- Headline ---- */ ?>
+				<h2 class="tcbf-transport-teaser__title">
+					<?php echo esc_html( self::tr( '[:en]We bring the bike to you[:es]Llevamos la bici hasta ti[:]' ) ); ?>
+				</h2>
+
+				<?php /* ---- Body text ---- */ ?>
+				<p class="tcbf-transport-teaser__body">
+					<?php echo esc_html( self::tr(
+						'[:en]Forget about logistics. We deliver your rental bike directly to your accommodation, hotel, or any address in the Barcelona and Girona areas — and pick it up when you\'re done. Choose your time window, confirm the address, and that\'s it. The bike will be waiting for you.'
+						. '[:es]Olvídate de la logística. Entregamos tu bici de alquiler directamente en tu alojamiento, hotel o cualquier dirección en las zonas de Barcelona y Girona — y la recogemos cuando termines. Elige tu franja horaria, confirma la dirección y listo. La bici te estará esperando.[:]'
+					) ); ?>
+				</p>
+
+				<?php /* ---- Coverage + starting price ---- */ ?>
+				<div class="tcbf-transport-teaser__meta">
+					<span class="tcbf-transport-teaser__zones">
+						<strong><?php echo esc_html( self::tr( '[:en]Coverage zones:[:es]Zonas de cobertura:[:]' ) ); ?></strong>
+						<?php echo esc_html( $zone_labels ); ?>
+					</span>
+					<span class="tcbf-transport-teaser__price">
+						<strong><?php echo esc_html( self::tr( '[:en]Starting from[:es]Desde[:]' ) ); ?></strong>
+						<?php echo esc_html( $fmt( $base_delivery ) ); ?>
+						<?php echo esc_html( self::tr( '[:en]per direction[:es]por trayecto[:]' ) ); ?>
+						&middot;
+						<?php echo esc_html( self::tr( '[:en]Save when you book both ways[:es]Ahorra reservando ida y vuelta[:]' ) ); ?>
+					</span>
+				</div>
+
+				<?php /* ---- CTA button ---- */ ?>
+				<button type="button" class="tcbf-transport-teaser__cta" data-tcbf-open-transport-popup>
+					<?php echo esc_html( self::tr( '[:en]See full details & pricing →[:es]Ver todos los detalles y precios →[:]' ) ); ?>
+				</button>
+
+			</div>
+
+		</section>
+
+		<?php /* ======== DETAILED POPUP ======== */ ?>
+		<div class="tcbf-transport-popup-overlay" id="tcbf-transport-popup-overlay" aria-hidden="true">
+			<div class="tcbf-transport-popup" role="dialog" aria-modal="true" aria-labelledby="tcbf-transport-popup-title">
+
+				<button type="button" class="tcbf-transport-popup__close" data-tcbf-close-transport-popup aria-label="<?php echo esc_attr( self::tr( '[:en]Close[:es]Cerrar[:]' ) ); ?>">&times;</button>
+
+				<div class="tcbf-transport-popup__scroll">
+
+					<?php /* -- Title -- */ ?>
+					<h2 id="tcbf-transport-popup-title" class="tcbf-transport-popup__title">
+						<?php echo esc_html( self::tr(
+							'[:en]Bike Transport Service — How it works'
+							. '[:es]Servicio de Transporte de Bicis — Cómo funciona[:]'
+						) ); ?>
+					</h2>
+
+					<p class="tcbf-transport-popup__intro">
+						<?php echo esc_html( self::tr(
+							'[:en]We take care of getting your rental bike to you — and bringing it back. No need to visit the shop: we deliver directly to your accommodation, hotel, airport meeting point, or any accessible address within our coverage area.'
+							. '[:es]Nos encargamos de llevar tu bici de alquiler hasta ti — y de recogerla cuando termines. No necesitas venir a la tienda: entregamos directamente en tu alojamiento, hotel, punto de encuentro en el aeropuerto o cualquier dirección accesible dentro de nuestra zona de cobertura.[:]'
+						) ); ?>
+					</p>
+
+					<?php /* ------- HOW TO BOOK ------- */ ?>
+					<h3><?php echo esc_html( self::tr( '[:en]How to book transport[:es]Cómo reservar el transporte[:]' ) ); ?></h3>
+					<ol class="tcbf-transport-popup__steps">
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Add your rental bikes to the cart</strong> on our website as usual.'
+							. '[:es]<strong>Añade tus bicis de alquiler al carrito</strong> en nuestra web como de costumbre.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>A transport card will appear</strong> below your cart — click "Configure".'
+							. '[:es]<strong>Aparecerá una tarjeta de transporte</strong> debajo del carrito — haz clic en "Configurar".[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Choose your service:</strong> Delivery only, Pickup only, or Both (best value).'
+							. '[:es]<strong>Elige tu servicio:</strong> Solo entrega, Solo recogida, o Ambos (mejor precio).[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Enter your address</strong> — our map will help you pinpoint the exact location.'
+							. '[:es]<strong>Introduce tu dirección</strong> — el mapa te ayudará a señalar la ubicación exacta.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Select a time window</strong> for each direction.'
+							. '[:es]<strong>Selecciona una franja horaria</strong> para cada trayecto.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Review the quote</strong> — you\'ll see the full price breakdown before confirming.'
+							. '[:es]<strong>Revisa el presupuesto</strong> — verás el desglose completo del precio antes de confirmar.[:]'
+						) ); ?></li>
+					</ol>
+					<p><?php echo esc_html( self::tr(
+						'[:en]That\'s it. The transport is added to your cart and included in your order.'
+						. '[:es]Eso es todo. El transporte se añade a tu carrito y se incluye en tu pedido.[:]'
+					) ); ?></p>
+
+					<?php /* ------- COVERAGE ZONES ------- */ ?>
+					<h3><?php echo esc_html( self::tr( '[:en]Coverage zones[:es]Zonas de cobertura[:]' ) ); ?></h3>
+					<p><?php echo esc_html( self::tr(
+						'[:en]We operate in the following areas. If your address falls within a zone, the standard base price applies. If you\'re outside these zones, a distance-based surcharge is calculated automatically.'
+						. '[:es]Operamos en las siguientes áreas. Si tu dirección está dentro de una zona, se aplica el precio base estándar. Si estás fuera de estas zonas, se calcula automáticamente un suplemento por distancia.[:]'
+					) ); ?></p>
+					<table class="tcbf-transport-popup__table">
+						<thead>
+							<tr>
+								<th><?php echo esc_html( self::tr( '[:en]Zone[:es]Zona[:]' ) ); ?></th>
+								<th><?php echo esc_html( self::tr( '[:en]Area covered[:es]Área cubierta[:]' ) ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><strong><?php echo esc_html( self::tr( '[:en]Barcelona City[:es]Barcelona ciudad[:]' ) ); ?></strong></td>
+								<td><?php echo esc_html( self::tr( '[:en]Central Barcelona and surroundings (~12 km radius)[:es]Barcelona centro y alrededores (~12 km de radio)[:]' ) ); ?></td>
+							</tr>
+							<tr>
+								<td><strong><?php echo esc_html( self::tr( '[:en]BCN Airport (El Prat)[:es]Aeropuerto BCN (El Prat)[:]' ) ); ?></strong></td>
+								<td><?php echo esc_html( self::tr( '[:en]Airport terminals and nearby area (~5 km radius)[:es]Terminales del aeropuerto y zona cercana (~5 km de radio)[:]' ) ); ?></td>
+							</tr>
+							<tr>
+								<td><strong><?php echo esc_html( self::tr( '[:en]Girona City[:es]Girona ciudad[:]' ) ); ?></strong></td>
+								<td><?php echo esc_html( self::tr( '[:en]Girona city center and surroundings (~8 km radius)[:es]Centro de Girona y alrededores (~8 km de radio)[:]' ) ); ?></td>
+							</tr>
+							<tr>
+								<td><strong><?php echo esc_html( self::tr( '[:en]Girona Airport[:es]Aeropuerto de Girona[:]' ) ); ?></strong></td>
+								<td><?php echo esc_html( self::tr( '[:en]Costa Brava airport area (~5 km radius)[:es]Zona del aeropuerto Costa Brava (~5 km de radio)[:]' ) ); ?></td>
+							</tr>
+						</tbody>
+					</table>
+					<p><?php echo esc_html( self::tr(
+						'[:en]Custom locations outside these zones? No problem — we can still reach you. The system will calculate a per-km surcharge based on your distance from the nearest zone.'
+						. '[:es]¿Tu ubicación está fuera de estas zonas? Sin problema — podemos llegar igualmente. El sistema calculará un suplemento por km basado en tu distancia a la zona más cercana.[:]'
+					) ); ?></p>
+
+					<?php /* ------- PRICING ------- */ ?>
+					<h3><?php echo esc_html( self::tr( '[:en]Pricing[:es]Precios[:]' ) ); ?></h3>
+					<table class="tcbf-transport-popup__table">
+						<thead>
+							<tr>
+								<th><?php echo esc_html( self::tr( '[:en]Service[:es]Servicio[:]' ) ); ?></th>
+								<th><?php echo esc_html( self::tr( '[:en]Price[:es]Precio[:]' ) ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>
+									<strong><?php echo esc_html( self::tr( '[:en]Delivery only[:es]Solo entrega[:]' ) ); ?></strong>
+									<span class="tcbf-transport-popup__table-sub"><?php echo esc_html( self::tr( '[:en](we bring the bike to you)[:es](llevamos la bici hasta ti)[:]' ) ); ?></span>
+								</td>
+								<td><?php echo esc_html( $fmt( $base_delivery ) ); ?></td>
+							</tr>
+							<tr>
+								<td>
+									<strong><?php echo esc_html( self::tr( '[:en]Pickup only[:es]Solo recogida[:]' ) ); ?></strong>
+									<span class="tcbf-transport-popup__table-sub"><?php echo esc_html( self::tr( '[:en](we collect the bike from you)[:es](recogemos la bici)[:]' ) ); ?></span>
+								</td>
+								<td><?php echo esc_html( $fmt( $base_delivery ) ); ?></td>
+							</tr>
+							<tr>
+								<td>
+									<strong><?php echo esc_html( self::tr( '[:en]Both directions[:es]Ambos trayectos[:]' ) ); ?></strong>
+									<span class="tcbf-transport-popup__table-sub"><?php echo esc_html( self::tr( '[:en](delivery + pickup)[:es](entrega + recogida)[:]' ) ); ?></span>
+								</td>
+								<td>
+									<?php echo esc_html( $fmt( $base_both ) ); ?>
+									<span class="tcbf-transport-popup__save">
+										<?php echo esc_html( self::tr(
+											'[:en](you save ' . $fmt( $bundle_save ) . ')'
+											. '[:es](te ahorras ' . $fmt( $bundle_save ) . ')[:]'
+										) ); ?>
+									</span>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+
+					<p><?php echo wp_kses_post( self::tr(
+						'[:en]<strong>Multiple bikes?</strong> The first bike is charged at full price. Each additional bike in the same transport is charged at <strong>' . (int) ( $bulk_multiplier * 100 ) . '% of the base price</strong> — a ' . (int) $bulk_discount_pct . '% discount per extra bike.'
+						. '[:es]<strong>¿Varias bicis?</strong> La primera bici se cobra a precio completo. Cada bici adicional en el mismo transporte tiene un <strong>' . (int) $bulk_discount_pct . '% de descuento</strong> sobre el precio base (se cobra al ' . (int) ( $bulk_multiplier * 100 ) . '%).[:]'
+					) ); ?></p>
+					<p class="tcbf-transport-popup__example"><?php echo wp_kses_post( self::tr(
+						'[:en]<strong>Example:</strong> 3 bikes, delivery only = ' . $fmt( $base_delivery ) . ' + ' . $fmt( $ex_bike2 ) . ' + ' . $fmt( $ex_bike2 ) . ' = <strong>' . $fmt( $ex_total ) . '</strong> (instead of ' . $fmt( $ex_without ) . ')'
+						. '[:es]<strong>Ejemplo:</strong> 3 bicis, solo entrega = ' . $fmt( $base_delivery ) . ' + ' . $fmt( $ex_bike2 ) . ' + ' . $fmt( $ex_bike2 ) . ' = <strong>' . $fmt( $ex_total ) . '</strong> (en lugar de ' . $fmt( $ex_without ) . ')[:]'
+					) ); ?></p>
+					<p><?php echo wp_kses_post( self::tr(
+						'[:en]<strong>Outside coverage zones:</strong> An additional distance surcharge of <strong>' . $fmt( $per_km ) . '/km</strong> is added based on your distance beyond the nearest zone boundary.'
+						. '[:es]<strong>Fuera de las zonas de cobertura:</strong> Se aplica un suplemento de <strong>' . $fmt( $per_km ) . '/km</strong> según la distancia desde el límite de la zona más cercana.[:]'
+					) ); ?></p>
+
+					<?php /* ------- SURCHARGES ------- */ ?>
+					<h3><?php echo esc_html( self::tr( '[:en]Surcharges[:es]Suplementos[:]' ) ); ?></h3>
+					<table class="tcbf-transport-popup__table">
+						<thead>
+							<tr>
+								<th><?php echo esc_html( self::tr( '[:en]Surcharge[:es]Suplemento[:]' ) ); ?></th>
+								<th><?php echo esc_html( self::tr( '[:en]Amount[:es]Importe[:]' ) ); ?></th>
+								<th><?php echo esc_html( self::tr( '[:en]When it applies[:es]Cuándo se aplica[:]' ) ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><?php echo esc_html( self::tr( '[:en]Night hours[:es]Horario nocturno[:]' ) ); ?></td>
+								<td>+<?php echo esc_html( $fmt( $surcharge_night ) ); ?> <?php echo esc_html( self::tr( '[:en]per direction[:es]por trayecto[:]' ) ); ?></td>
+								<td><?php echo esc_html( self::tr( '[:en]Time window before 07:00 or after 21:00[:es]Franja horaria antes de las 07:00 o después de las 21:00[:]' ) ); ?></td>
+							</tr>
+							<tr>
+								<td><?php echo esc_html( self::tr( '[:en]Bike box[:es]Caja de bici[:]' ) ); ?></td>
+								<td>+<?php echo esc_html( $fmt( $surcharge_box ) ); ?> <?php echo esc_html( self::tr( '[:en]per box[:es]por caja[:]' ) ); ?></td>
+								<td><?php echo esc_html( self::tr( '[:en]If you need a bike transport box[:es]Si necesitas una caja de transporte para la bici[:]' ) ); ?></td>
+							</tr>
+							<tr>
+								<td><?php echo esc_html( self::tr( '[:en]Remote area[:es]Zona de difícil acceso[:]' ) ); ?></td>
+								<td>+<?php echo esc_html( $fmt( $surcharge_remote ) ); ?> <?php echo esc_html( self::tr( '[:en]per direction[:es]por trayecto[:]' ) ); ?></td>
+								<td><?php echo esc_html( self::tr( '[:en]Locations flagged as difficult access[:es]Ubicaciones marcadas como acceso complicado[:]' ) ); ?></td>
+							</tr>
+						</tbody>
+					</table>
+
+					<?php /* ------- TIME WINDOWS ------- */ ?>
+					<h3><?php echo esc_html( self::tr( '[:en]Available time windows[:es]Franjas horarias disponibles[:]' ) ); ?></h3>
+					<p><?php echo esc_html( self::tr(
+						'[:en]When configuring transport, you choose a 2-hour time window for each direction:'
+						. '[:es]Al configurar el transporte, eliges una franja de 2 horas para cada trayecto:[:]'
+					) ); ?></p>
+					<table class="tcbf-transport-popup__table tcbf-transport-popup__table--compact">
+						<thead>
+							<tr>
+								<th><?php echo esc_html( self::tr( '[:en]Window[:es]Franja[:]' ) ); ?></th>
+								<th><?php echo esc_html( self::tr( '[:en]Hours[:es]Horario[:]' ) ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Early morning[:es]Primera hora[:]' ) ); ?></td><td>06:00 – 08:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Morning[:es]Mañana[:]' ) ); ?></td><td>08:00 – 10:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Late morning[:es]Media mañana[:]' ) ); ?></td><td>10:00 – 12:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Midday[:es]Mediodía[:]' ) ); ?></td><td>12:00 – 14:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Afternoon[:es]Tarde[:]' ) ); ?></td><td>14:00 – 16:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Late afternoon[:es]Tarde-noche[:]' ) ); ?></td><td>16:00 – 18:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Evening[:es]Atardecer[:]' ) ); ?></td><td>18:00 – 20:00</td></tr>
+							<tr><td><?php echo esc_html( self::tr( '[:en]Night[:es]Noche[:]' ) ); ?></td><td>20:00 – 22:00</td></tr>
+						</tbody>
+					</table>
+					<p><strong><?php echo esc_html( self::tr(
+						'[:en]Capacity is limited[:es]La capacidad es limitada[:]'
+					) ); ?></strong> — <?php echo esc_html( self::tr(
+						'[:en]each time window has a maximum number of bikes we can transport. Book early to secure your preferred slot.'
+						. '[:es]cada franja horaria tiene un número máximo de bicis que podemos transportar. Reserva con antelación para asegurar tu horario preferido.[:]'
+					) ); ?></p>
+
+					<?php /* ------- IMPORTANT NOTES ------- */ ?>
+					<h3><?php echo esc_html( self::tr( '[:en]Important things to know[:es]Cosas importantes que debes saber[:]' ) ); ?></h3>
+					<ul class="tcbf-transport-popup__notes">
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Same address option:</strong> When booking both directions, you can use the same address for delivery and pickup, or set different addresses for each.'
+							. '[:es]<strong>Misma dirección:</strong> Al reservar ambos trayectos, puedes usar la misma dirección para entrega y recogida, o elegir direcciones diferentes para cada uno.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>All bikes travel together:</strong> All your rental bikes must share the same transport dates and time windows.'
+							. '[:es]<strong>Todas las bicis viajan juntas:</strong> Todas tus bicis de alquiler deben compartir las mismas fechas y franjas horarias de transporte.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Price shown before you confirm:</strong> The full breakdown (base price, discounts, surcharges) is shown in the cart before checkout. No surprises.'
+							. '[:es]<strong>Precio visible antes de confirmar:</strong> El desglose completo (precio base, descuentos, suplementos) se muestra en el carrito antes del pago. Sin sorpresas.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Address precision matters:</strong> Use the map to place your pin accurately. This ensures we find you without delays and that zone pricing is calculated correctly.'
+							. '[:es]<strong>La precisión de la dirección importa:</strong> Usa el mapa para colocar el pin con exactitud. Esto asegura que te encontremos sin retrasos y que el precio por zona se calcule correctamente.[:]'
+						) ); ?></li>
+						<li><?php echo wp_kses_post( self::tr(
+							'[:en]<strong>Cancellation:</strong> Transport follows the same cancellation policy as your bike rental.'
+							. '[:es]<strong>Cancelación:</strong> El transporte sigue la misma política de cancelación que tu alquiler de bici.[:]'
+						) ); ?></li>
+					</ul>
+
+					<?php /* ------- QUICK SUMMARY ------- */ ?>
+					<div class="tcbf-transport-popup__summary">
+						<p><?php echo esc_html( self::tr(
+							'[:en]Book your rental bike → Add transport → Choose delivery, pickup, or both → Enter your address → Pick your time slot → Done. We handle the rest.'
+							. '[:es]Reserva tu bici de alquiler → Añade transporte → Elige entrega, recogida o ambos → Introduce tu dirección → Escoge tu franja horaria → Listo. Nosotros nos encargamos del resto.[:]'
+						) ); ?></p>
+					</div>
+
+				</div><!-- .tcbf-transport-popup__scroll -->
+
+			</div><!-- .tcbf-transport-popup -->
+		</div><!-- .tcbf-transport-popup-overlay -->
+
+		<?php
+		return ob_get_clean();
+	}
+
+	/**
+	 * Format a price value for display
+	 *
+	 * Uses € symbol. Respects decimal comma locale for Spanish.
+	 *
+	 * @param float $value
+	 * @return string e.g. "€45" or "45 €"
+	 */
+	private static function format_price( float $value ) : string {
+		// Use decimal comma for ES locale, dot for EN
+		$lang = 'en';
+		if ( function_exists( 'qtranxf_getLanguage' ) ) {
+			$lang = qtranxf_getLanguage();
+		}
+
+		if ( $lang === 'es' ) {
+			// Spanish: "45 €" or "31,50 €"
+			$formatted = ( floor( $value ) == $value )
+				? number_format( $value, 0, ',', '.' )
+				: number_format( $value, 2, ',', '.' );
+			return $formatted . ' €';
+		}
+
+		// English: "€45" or "€31.50"
+		$formatted = ( floor( $value ) == $value )
+			? number_format( $value, 0, '.', ',' )
+			: number_format( $value, 2, '.', ',' );
+		return '€' . $formatted;
+	}
+}

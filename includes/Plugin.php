@@ -34,6 +34,7 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_MyAccount.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_PartnerCheckout.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_AdminOrder.php';
+require_once TC_BF_PATH . 'includes/Frontend/Transport_Homepage_Teaser.php';
 
 /**
  * TC Booking Flow Plugin Main Class (Orchestrator)
@@ -161,6 +162,12 @@ final class Plugin {
 		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_Participants_List') ) {
 			\TC_BF\Integrations\GravityForms\GF_Participants_List::register();
 			add_action( 'wp_enqueue_scripts', [ \TC_BF\Integrations\GravityForms\GF_Participants_List::class, 'enqueue_assets' ], 20 );
+		}
+
+		// Transport Homepage Teaser: [tcbf_transport_teaser] shortcode for homepage
+		if ( class_exists('\\TC_BF\\Frontend\\Transport_Homepage_Teaser') ) {
+			\TC_BF\Frontend\Transport_Homepage_Teaser::register();
+			add_action( 'wp_enqueue_scripts', [ \TC_BF\Frontend\Transport_Homepage_Teaser::class, 'enqueue_assets' ], 20 );
 		}
 
 		// GF Notifications Ledger: track notification send/fail for participant info status
