@@ -208,6 +208,11 @@
 	background: #f4f6f8;
 }
 
+.tcbf-transport-popup__map path:focus,
+.tcbf-transport-popup__map path {
+	outline: none;
+}
+
 /* ---- Note callout ---- */
 
 .tcbf-transport-popup__note {
