@@ -27,11 +27,36 @@
 			return;
 		}
 
+		// Compute bounds first so the map has a valid view before any layers are added.
+		// Without an initial center/zoom, Leaflet throws "Set map center and zoom first"
+		// when circles attempt coordinate projection during addTo().
+		var bounds = L.latLngBounds();
+		var validZones = [];
+
+		zones.forEach(function (zone, idx) {
+			if (!zone.lat || !zone.lng || !zone.radius_km) return;
+			var radiusM = zone.radius_km * 1000;
+			var center = L.latLng(zone.lat, zone.lng);
+			// Pre-calculate circle bounds using simple offset (good enough for fitBounds)
+			var latOffset = (radiusM / 111320);
+			var lngOffset = (radiusM / (111320 * Math.cos(zone.lat * Math.PI / 180)));
+			bounds.extend([center.lat - latOffset, center.lng - lngOffset]);
+			bounds.extend([center.lat + latOffset, center.lng + lngOffset]);
+			validZones.push({ zone: zone, idx: idx, radiusM: radiusM });
+		});
+
+		if (!bounds.isValid() || !validZones.length) {
+			mapEl.style.display = 'none';
+			return;
+		}
+
 		map = L.map(mapEl, {
 			scrollWheelZoom: false,
 			dragging: true,
 			zoomControl: true,
-			attributionControl: true
+			attributionControl: true,
+			center: bounds.getCenter(),
+			zoom: 8
 		});
 
 		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -39,30 +64,26 @@
 			maxZoom: 18
 		}).addTo(map);
 
-		var bounds = L.latLngBounds();
+		map.fitBounds(bounds, { padding: [30, 30] });
 
-		zones.forEach(function (zone, idx) {
-			if (!zone.lat || !zone.lng || !zone.radius_km) return;
-
-			var color = ZONE_COLORS[idx % ZONE_COLORS.length];
-			var radiusM = zone.radius_km * 1000;
+		validZones.forEach(function (item) {
+			var zone = item.zone;
+			var color = ZONE_COLORS[item.idx % ZONE_COLORS.length];
 
 			var circle = L.circle([zone.lat, zone.lng], {
-				radius: radiusM,
+				radius: item.radiusM,
 				color: color,
 				fillColor: color,
 				fillOpacity: 0.12,
 				weight: 2
 			}).addTo(map);
 
-			// Label tooltip
 			circle.bindTooltip(zone.name + ' (~' + zone.radius_km + ' km)', {
 				permanent: false,
 				direction: 'top',
 				className: 'tcbf-zone-tooltip'
 			});
 
-			// Center marker
 			L.circleMarker([zone.lat, zone.lng], {
 				radius: 4,
 				color: color,
@@ -70,13 +91,7 @@
 				fillOpacity: 1,
 				weight: 0
 			}).addTo(map);
-
-			bounds.extend(circle.getBounds());
 		});
-
-		if (bounds.isValid()) {
-			map.fitBounds(bounds, { padding: [30, 30] });
-		}
 	}
 
 	/** Open popup */
