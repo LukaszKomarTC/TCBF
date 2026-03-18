@@ -86,6 +86,59 @@ final class Transport_Homepage_Teaser {
 	}
 
 	/**
+	 * Ensure CSS/JS assets are enqueued (fallback for when has_shortcode detection fails)
+	 */
+	private static function ensure_assets() : void {
+		if ( wp_script_is( 'tcbf-transport-teaser', 'enqueued' ) ) {
+			return;
+		}
+
+		// Leaflet CSS + JS
+		wp_enqueue_style(
+			'leaflet',
+			'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+			[],
+			'1.9.4'
+		);
+		wp_enqueue_script(
+			'leaflet',
+			'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+			[],
+			'1.9.4',
+			true
+		);
+
+		wp_enqueue_style(
+			'tcbf-transport-teaser',
+			TC_BF_URL . 'assets/css/tcbf-transport-teaser.css',
+			[ 'leaflet' ],
+			defined('TC_BF_VERSION') ? TC_BF_VERSION : null
+		);
+
+		wp_enqueue_script(
+			'tcbf-transport-teaser',
+			TC_BF_URL . 'assets/js/tcbf-transport-teaser.js',
+			[ 'leaflet' ],
+			defined('TC_BF_VERSION') ? TC_BF_VERSION : null,
+			true
+		);
+
+		// Pass zone data to JS for the map
+		$zones = TransportZones::get_zones();
+		$zone_data = [];
+		foreach ( $zones as $z ) {
+			$zone_data[] = [
+				'id'        => $z['id'] ?? '',
+				'name'      => $z['name'] ?? '',
+				'lat'       => (float) ( $z['lat'] ?? 0 ),
+				'lng'       => (float) ( $z['lng'] ?? 0 ),
+				'radius_km' => (float) ( $z['radius_km'] ?? 0 ),
+			];
+		}
+		wp_localize_script( 'tcbf-transport-teaser', 'tcbfTeaserZones', $zone_data );
+	}
+
+	/**
 	 * Translate string using qTranslate XT if available
 	 *
 	 * @param string $text Multilingual string [:en]..[:es]..[:]
@@ -106,6 +159,10 @@ final class Transport_Homepage_Teaser {
 	 */
 	public static function render_shortcode( $atts = [] ) : string {
 
+		// Ensure assets are enqueued even if has_shortcode() detection failed
+		// (page builders, widgets, Gutenberg reusable blocks, etc.)
+		self::ensure_assets();
+
 		// Pull live pricing from the system SSOT
 		$cfg = class_exists( '\\TC_BF\\Domain\\TransportPricing' )
 			? TransportPricing::get_config()
@@ -118,7 +175,7 @@ final class Transport_Homepage_Teaser {
 		$surcharge_night    = isset( $cfg['surcharge_night'] )    ? $cfg['surcharge_night']    : 15.0;
 		$surcharge_box      = isset( $cfg['surcharge_bike_box'] ) ? $cfg['surcharge_bike_box'] : 10.0;
 		$surcharge_remote   = isset( $cfg['surcharge_remote'] )   ? $cfg['surcharge_remote']   : 20.0;
-		$bulk_multiplier    = isset( $cfg['price_additional_bike_multiplier'] ) ? $cfg['price_additional_bike_multiplier'] : 0.7;
+		$bulk_multiplier    = isset( $cfg['price_additional_bike_multiplier'] ) ? $cfg['price_additional_bike_multiplier'] : 0.8;
 		$bulk_discount_pct  = round( ( 1 - $bulk_multiplier ) * 100 );
 		$min_dist_charge    = isset( $cfg['min_distance_charge'] ) ? $cfg['min_distance_charge'] : 25.0;
 		$max_dist_charge    = isset( $cfg['max_distance_charge'] ) ? $cfg['max_distance_charge'] : 200.0;

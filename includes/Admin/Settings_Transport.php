@@ -66,7 +66,7 @@ final class Settings_Transport {
 		$config['bundle_discount'] = self::sanitize_price( $_POST['tcbf_bundle_discount'] ?? '' );
 
 		// Bulk pricing
-		$config['price_additional_bike_multiplier'] = min( 1.0, max( 0.0, (float) ( $_POST['tcbf_additional_bike_multiplier'] ?? 0.7 ) ) );
+		$config['price_additional_bike_multiplier'] = min( 1.0, max( 0.0, (float) ( $_POST['tcbf_additional_bike_multiplier'] ?? $config['price_additional_bike_multiplier'] ) ) );
 
 		// Time windows
 		$config['window_morning_start']   = self::sanitize_time( $_POST['tcbf_window_morning_start'] ?? '09:00' );
@@ -342,7 +342,7 @@ final class Settings_Transport {
 						</th>
 						<td>
 							<input type="number" class="small-text" name="tcbf_additional_bike_multiplier" id="tcbf_additional_bike_multiplier"
-								value="<?php echo esc_attr( (string) ( $config['price_additional_bike_multiplier'] ?? 0.7 ) ); ?>" min="0" max="1" step="0.01" />
+								value="<?php echo esc_attr( (string) ( $config['price_additional_bike_multiplier'] ) ); ?>" min="0" max="1" step="0.01" />
 							<p class="description">
 								<?php echo esc_html__( 'Price multiplier for 2nd+ bike (e.g., 0.7 = 70% of base). First bike is always full price.', 'tc-booking-flow-next' ); ?>
 							</p>

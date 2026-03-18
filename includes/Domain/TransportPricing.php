@@ -53,7 +53,7 @@ final class TransportPricing {
 		'bundle_discount'       => 15.00,
 
 		// Bulk bike pricing: additional bikes are cheaper
-		'price_additional_bike_multiplier' => 0.7,  // 70% of base for 2nd+ bike
+		'price_additional_bike_multiplier' => 0.8,  // 80% of base for 2nd+ bike (20% discount)
 
 		// Time window hours (HH:MM, 24h format)
 		'window_morning_start'     => '09:00',
@@ -328,7 +328,7 @@ final class TransportPricing {
 		);
 
 		// --- Bulk pricing for multiple bikes ---
-		$additional_multiplier = (float) ( $config['price_additional_bike_multiplier'] ?? 0.7 );
+		$additional_multiplier = (float) ( $config['price_additional_bike_multiplier'] ?? self::$DEFAULT_CONFIG['price_additional_bike_multiplier'] );
 		if ( $additional_multiplier <= 0 || $additional_multiplier > 1.0 ) {
 			$additional_multiplier = 1.0;
 		}
