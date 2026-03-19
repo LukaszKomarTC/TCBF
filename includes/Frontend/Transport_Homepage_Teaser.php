@@ -303,6 +303,7 @@ final class Transport_Homepage_Teaser {
 			<?php /* ---- Zone map ---- */ ?>
 			<div id="tcbf-transport-zone-map" class="tcbf-transport-info__map"></div>
 
+			<div class="tcbf-transport-info__table-wrap">
 			<table class="tcbf-transport-info__table">
 				<thead>
 					<tr>
@@ -338,6 +339,7 @@ final class Transport_Homepage_Teaser {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 			<p><?php echo esc_html( self::tr(
 				'[:en]Custom locations outside these zones? No problem — we can still reach you. The system will calculate a per-km surcharge based on your distance from the nearest zone.'
 				. '[:es]¿Tu ubicación está fuera de estas zonas? Sin problema — podemos llegar igualmente. El sistema calculará un suplemento por km basado en tu distancia a la zona más cercana.[:]'
@@ -345,6 +347,7 @@ final class Transport_Homepage_Teaser {
 
 			<?php /* ------- PRICING ------- */ ?>
 			<h3><?php echo esc_html( self::tr( '[:en]Pricing[:es]Precios[:]' ) ); ?></h3>
+			<div class="tcbf-transport-info__table-wrap">
 			<table class="tcbf-transport-info__table">
 				<thead>
 					<tr>
@@ -384,6 +387,7 @@ final class Transport_Homepage_Teaser {
 					</tr>
 				</tbody>
 			</table>
+			</div>
 
 			<p><?php echo wp_kses_post( self::tr(
 				'[:en]<strong>Multiple bikes?</strong> The first bike is charged at full price. Each additional bike in the same transport is charged at <strong>' . (int) ( $bulk_multiplier * 100 ) . '% of the base price</strong> — a ' . (int) $bulk_discount_pct . '% discount per extra bike.'
@@ -401,6 +405,7 @@ final class Transport_Homepage_Teaser {
 			<?php /* ------- SURCHARGES (settings-driven, non-zero only) ------- */ ?>
 			<?php if ( ! empty( $surcharges ) ) : ?>
 			<h3><?php echo esc_html( self::tr( '[:en]Surcharges[:es]Suplementos[:]' ) ); ?></h3>
+			<div class="tcbf-transport-info__table-wrap">
 			<table class="tcbf-transport-info__table">
 				<thead>
 					<tr>
@@ -419,6 +424,7 @@ final class Transport_Homepage_Teaser {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 			<?php endif; ?>
 
 			<?php /* ------- TIME WINDOWS (from settings) ------- */ ?>
@@ -427,6 +433,7 @@ final class Transport_Homepage_Teaser {
 				'[:en]When configuring transport, you choose a time window for each direction:'
 				. '[:es]Al configurar el transporte, eliges una franja horaria para cada trayecto:[:]'
 			) ); ?></p>
+			<div class="tcbf-transport-info__table-wrap">
 			<table class="tcbf-transport-info__table tcbf-transport-info__table--compact">
 				<thead>
 					<tr>
@@ -454,6 +461,7 @@ final class Transport_Homepage_Teaser {
 					</tr>
 				</tbody>
 			</table>
+			</div>
 			<p><strong><?php echo esc_html( self::tr(
 				'[:en]Capacity is limited[:es]La capacidad es limitada[:]'
 			) ); ?></strong> — <?php echo esc_html( self::tr(
