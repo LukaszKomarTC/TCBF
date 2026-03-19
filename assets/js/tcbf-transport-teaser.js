@@ -2,7 +2,8 @@
  * TCBF Transport Info — Zone map initialisation
  *
  * Renders a read-only Leaflet map showing coverage zones.
- * No popup open/close logic — PopupMaker handles that.
+ * Defers rendering until the PopupMaker popup is visible so Leaflet
+ * can correctly measure the container dimensions.
  */
 (function () {
 	'use strict';
@@ -10,9 +11,16 @@
 	/** Zone circle colours (rotate through these) */
 	var ZONE_COLORS = ['#1a6b3a', '#2980b9', '#c0392b', '#8e44ad', '#d35400', '#16a085'];
 
+	var mapInitialised = false;
+
 	function initMap() {
+		if (mapInitialised) return;
+
 		var mapEl = document.getElementById('tcbf-transport-zone-map');
 		if (!mapEl || typeof L === 'undefined') return;
+
+		// Don't init if container is hidden (zero dimensions) — wait for popup open.
+		if (mapEl.offsetParent === null) return;
 
 		var zones = (typeof tcbfTeaserZones !== 'undefined') ? tcbfTeaserZones : [];
 		if (!zones.length) {
@@ -39,6 +47,8 @@
 			mapEl.style.display = 'none';
 			return;
 		}
+
+		mapInitialised = true;
 
 		var map = L.map(mapEl, {
 			scrollWheelZoom: false,
@@ -81,23 +91,39 @@
 			}).addTo(map);
 		});
 
-		// When PopupMaker reveals the content, Leaflet may need a size recalculation.
-		// Listen for the container becoming visible and invalidate.
-		var observer = new MutationObserver(function () {
-			if (mapEl.offsetParent !== null) {
-				map.invalidateSize();
-			}
+		// After first render inside the popup, Leaflet may still need a size
+		// recalculation (e.g. CSS transitions). Schedule one more invalidation.
+		setTimeout(function () { map.invalidateSize(); map.fitBounds(bounds, { padding: [30, 30] }); }, 300);
+	}
+
+	function onReady() {
+		// Try immediately (works if map is NOT inside a hidden popup).
+		initMap();
+
+		// PopupMaker fires 'pumAfterOpen' on the document when a popup opens.
+		// This is the most reliable hook for knowing the container is visible.
+		jQuery(document).on('pumAfterOpen', function () {
+			initMap();
 		});
-		var popupEl = mapEl.closest('.pum-container') || mapEl.closest('[aria-modal]');
-		if (popupEl) {
-			observer.observe(popupEl, { attributes: true, attributeFilter: ['class', 'style', 'aria-hidden'] });
+
+		// Fallback: MutationObserver on the popup container.
+		var mapEl = document.getElementById('tcbf-transport-zone-map');
+		if (mapEl) {
+			var popupEl = mapEl.closest('.pum-container') || mapEl.closest('.pum') || mapEl.closest('[aria-modal]');
+			if (popupEl) {
+				var observer = new MutationObserver(function () {
+					if (mapEl.offsetParent !== null) {
+						initMap();
+					}
+				});
+				observer.observe(popupEl, { attributes: true, attributeFilter: ['class', 'style', 'aria-hidden'] });
+			}
 		}
 	}
 
-	// Initialise when DOM is ready
 	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', initMap);
+		document.addEventListener('DOMContentLoaded', onReady);
 	} else {
-		initMap();
+		onReady();
 	}
 })();

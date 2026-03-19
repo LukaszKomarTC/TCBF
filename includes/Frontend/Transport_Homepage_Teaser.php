@@ -66,7 +66,7 @@ final class Transport_Homepage_Teaser {
 		wp_enqueue_script(
 			'tcbf-transport-teaser',
 			TC_BF_URL . 'assets/js/tcbf-transport-teaser.js',
-			[ 'leaflet' ],
+			[ 'leaflet', 'jquery' ],
 			defined('TC_BF_VERSION') ? TC_BF_VERSION : null,
 			true
 		);
@@ -108,7 +108,7 @@ final class Transport_Homepage_Teaser {
 		wp_enqueue_script(
 			'tcbf-transport-teaser',
 			TC_BF_URL . 'assets/js/tcbf-transport-teaser.js',
-			[ 'leaflet' ],
+			[ 'leaflet', 'jquery' ],
 			defined('TC_BF_VERSION') ? TC_BF_VERSION : null,
 			true
 		);
