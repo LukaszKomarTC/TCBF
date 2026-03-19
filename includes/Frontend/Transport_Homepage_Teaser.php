@@ -118,6 +118,11 @@ final class Transport_Homepage_Teaser {
 
 	/**
 	 * Pass zone data to JS for the map
+	 *
+	 * Uses wp_add_inline_script instead of wp_localize_script because
+	 * wp_localize_script converts sequential PHP arrays into JS objects
+	 * (e.g. {"0": {…}, "1": {…}}) rather than arrays, which breaks
+	 * Array methods like .forEach and .length in the map init code.
 	 */
 	private static function localize_zone_data() : void {
 		$zones = TransportZones::get_zones();
@@ -131,7 +136,11 @@ final class Transport_Homepage_Teaser {
 				'radius_km' => (float) ( $z['radius_km'] ?? 0 ),
 			];
 		}
-		wp_localize_script( 'tcbf-transport-teaser', 'tcbfTeaserZones', $zone_data );
+		wp_add_inline_script(
+			'tcbf-transport-teaser',
+			'var tcbfTeaserZones = ' . wp_json_encode( array_values( $zone_data ) ) . ';',
+			'before'
+		);
 	}
 
 	/**

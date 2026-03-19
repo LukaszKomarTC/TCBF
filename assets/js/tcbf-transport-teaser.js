@@ -22,7 +22,8 @@
 		// Don't init if container is hidden (zero dimensions) — wait for popup open.
 		if (mapEl.offsetParent === null) return;
 
-		var zones = (typeof tcbfTeaserZones !== 'undefined') ? tcbfTeaserZones : [];
+		var raw = (typeof tcbfTeaserZones !== 'undefined') ? tcbfTeaserZones : [];
+		var zones = Array.isArray(raw) ? raw : Object.values(raw);
 		if (!zones.length) {
 			mapEl.style.display = 'none';
 			return;
