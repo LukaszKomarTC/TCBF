@@ -9,8 +9,9 @@ if ( ! defined('ABSPATH') ) exit;
 /**
  * Transport Homepage Teaser
  *
- * Renders a bilingual (EN/ES) teaser section + detailed popup for the
- * transport rental addon. Designed to be placed on the homepage via shortcode.
+ * Renders bilingual (EN/ES) transport info content for use inside PopupMaker.
+ * The shortcode outputs clean informational HTML — no teaser card, no popup
+ * wrapper. PopupMaker handles the popup chrome (overlay, close button, etc.).
  *
  * Usage: [tcbf_transport_teaser]
  *
