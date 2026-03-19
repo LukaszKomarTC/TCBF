@@ -8,7 +8,7 @@
 (function () {
 	'use strict';
 
-	var DEBUG = true;
+	var DEBUG = false;
 	function dbg(msg, data) {
 		if (!DEBUG) return;
 		if (data !== undefined) {
@@ -38,30 +38,6 @@
 			if (!mapEl) dbg('BLOCKED: #tcbf-transport-zone-map not found in DOM');
 			if (typeof L === 'undefined') dbg('BLOCKED: Leaflet (L) not loaded');
 			return;
-		}
-
-		// Show debug info on the map placeholder
-		mapEl.style.border = '3px dashed red';
-		mapEl.setAttribute('data-debug', 'Map container found');
-
-		dbg('offsetParent:', mapEl.offsetParent);
-		dbg('offsetWidth:', mapEl.offsetWidth);
-		dbg('offsetHeight:', mapEl.offsetHeight);
-		dbg('getBoundingClientRect:', mapEl.getBoundingClientRect());
-		dbg('computed display:', window.getComputedStyle(mapEl).display);
-		dbg('computed visibility:', window.getComputedStyle(mapEl).visibility);
-
-		// Walk up DOM to find any hidden ancestors
-		var el = mapEl;
-		while (el) {
-			var style = window.getComputedStyle(el);
-			if (style.display === 'none') {
-				dbg('HIDDEN ANCESTOR (display:none):', { tag: el.tagName, id: el.id, class: el.className });
-			}
-			if (style.visibility === 'hidden') {
-				dbg('HIDDEN ANCESTOR (visibility:hidden):', { tag: el.tagName, id: el.id, class: el.className });
-			}
-			el = el.parentElement;
 		}
 
 		// Don't init if container is hidden (zero dimensions) — wait for popup open.
@@ -101,8 +77,6 @@
 		}
 
 		mapInitialised = true;
-		dbg('SUCCESS: Initialising Leaflet map now!');
-		mapEl.style.border = '3px solid green';
 
 		var map = L.map(mapEl, {
 			scrollWheelZoom: false,

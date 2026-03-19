@@ -301,12 +301,7 @@ final class Transport_Homepage_Teaser {
 			) ); ?></p>
 
 			<?php /* ---- Zone map ---- */ ?>
-			<div id="tcbf-transport-zone-map" class="tcbf-transport-info__map" style="border: 3px dashed red; position: relative;">
-				<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,0,0,0.1); color: red; padding: 12px 20px; border-radius: 6px; font-weight: bold; font-size: 14px; text-align: center; z-index: 9999; pointer-events: none;">
-					DEBUG: Map should render here<br>
-					<span style="font-size: 11px; font-weight: normal;">Check browser console for [TCBF-MAP] logs</span>
-				</div>
-			</div>
+			<div id="tcbf-transport-zone-map" class="tcbf-transport-info__map"></div>
 
 			<table class="tcbf-transport-info__table">
 				<thead>
