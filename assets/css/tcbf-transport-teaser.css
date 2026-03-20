@@ -15,7 +15,16 @@
 	max-height: 70vh;
 	overflow-y: auto;
 	overflow-x: hidden;
-	padding-right: 40px;
+}
+
+/* ---- Close button — inset, visible above content ---- */
+
+.pum-close,
+.popmake-close {
+	margin: 30px !important;
+	background: #fff !important;
+	padding: 8px !important;
+	border-radius: 50% !important;
 }
 
 /* ================================================================
