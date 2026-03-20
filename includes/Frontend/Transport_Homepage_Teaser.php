@@ -176,15 +176,9 @@ final class Transport_Homepage_Teaser {
 
 		$base_delivery = isset( $cfg['base_delivery'] )   ? $cfg['base_delivery']   : 45.0;
 		$base_both     = isset( $cfg['base_both'] )        ? $cfg['base_both']        : 75.0;
-		$bundle_save   = ( $base_delivery * 2 ) - $base_both;
-		$per_km        = isset( $cfg['per_km_rate'] )      ? $cfg['per_km_rate']      : 1.20;
 		$surcharge_night    = isset( $cfg['surcharge_night'] )    ? $cfg['surcharge_night']    : 15.0;
 		$surcharge_box      = isset( $cfg['surcharge_bike_box'] ) ? $cfg['surcharge_bike_box'] : 10.0;
 		$surcharge_remote   = isset( $cfg['surcharge_remote'] )   ? $cfg['surcharge_remote']   : 20.0;
-		$bulk_multiplier    = isset( $cfg['price_additional_bike_multiplier'] ) ? $cfg['price_additional_bike_multiplier'] : 0.8;
-		$bulk_discount_pct  = round( ( 1 - $bulk_multiplier ) * 100 );
-		$min_dist_charge    = isset( $cfg['min_distance_charge'] ) ? $cfg['min_distance_charge'] : 25.0;
-		$max_dist_charge    = isset( $cfg['max_distance_charge'] ) ? $cfg['max_distance_charge'] : 200.0;
 
 		// Time windows from settings
 		$window_morning_start   = isset( $cfg['window_morning_start'] )   ? $cfg['window_morning_start']   : '09:00';
@@ -200,11 +194,6 @@ final class Transport_Homepage_Teaser {
 		$fmt = function( $v ) {
 			return self::format_price( $v );
 		};
-
-		// Example: 3 bikes delivery
-		$ex_bike2 = $base_delivery * $bulk_multiplier;
-		$ex_total = $base_delivery + $ex_bike2 + $ex_bike2;
-		$ex_without = $base_delivery * 3;
 
 		// Pull zone list from configuration
 		$zone_cfg = class_exists( '\\TC_BF\\Domain\\TransportZones' )
@@ -345,63 +334,6 @@ final class Transport_Homepage_Teaser {
 				. '[:es]¿Tu ubicación está fuera de estas zonas? Sin problema — podemos llegar igualmente. El sistema calculará un suplemento por km basado en tu distancia a la zona más cercana.[:]'
 			) ); ?></p>
 
-			<?php /* ------- PRICING ------- */ ?>
-			<h3><?php echo esc_html( self::tr( '[:en]Pricing[:es]Precios[:]' ) ); ?></h3>
-			<div class="tcbf-transport-info__table-wrap">
-			<table class="tcbf-transport-info__table">
-				<thead>
-					<tr>
-						<th><?php echo esc_html( self::tr( '[:en]Service[:es]Servicio[:]' ) ); ?></th>
-						<th><?php echo esc_html( self::tr( '[:en]Price[:es]Precio[:]' ) ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr>
-						<td>
-							<strong><?php echo esc_html( self::tr( '[:en]Delivery only[:es]Solo entrega[:]' ) ); ?></strong>
-							<span class="tcbf-transport-info__table-sub"><?php echo esc_html( self::tr( '[:en](we bring the bike to you)[:es](llevamos la bici hasta ti)[:]' ) ); ?></span>
-						</td>
-						<td><?php echo esc_html( $fmt( $base_delivery ) ); ?></td>
-					</tr>
-					<tr>
-						<td>
-							<strong><?php echo esc_html( self::tr( '[:en]Pickup only[:es]Solo recogida[:]' ) ); ?></strong>
-							<span class="tcbf-transport-info__table-sub"><?php echo esc_html( self::tr( '[:en](we collect the bike from you)[:es](recogemos la bici)[:]' ) ); ?></span>
-						</td>
-						<td><?php echo esc_html( $fmt( $base_delivery ) ); ?></td>
-					</tr>
-					<tr>
-						<td>
-							<strong><?php echo esc_html( self::tr( '[:en]Both directions[:es]Ambos trayectos[:]' ) ); ?></strong>
-							<span class="tcbf-transport-info__table-sub"><?php echo esc_html( self::tr( '[:en](delivery + pickup)[:es](entrega + recogida)[:]' ) ); ?></span>
-						</td>
-						<td>
-							<?php echo esc_html( $fmt( $base_both ) ); ?>
-							<span class="tcbf-transport-info__save">
-								<?php echo esc_html( self::tr(
-									'[:en](you save ' . $fmt( $bundle_save ) . ')'
-									. '[:es](te ahorras ' . $fmt( $bundle_save ) . ')[:]'
-								) ); ?>
-							</span>
-						</td>
-					</tr>
-				</tbody>
-			</table>
-			</div>
-
-			<p><?php echo wp_kses_post( self::tr(
-				'[:en]<strong>Multiple bikes?</strong> The first bike is charged at full price. Each additional bike in the same transport is charged at <strong>' . (int) ( $bulk_multiplier * 100 ) . '% of the base price</strong> — a ' . (int) $bulk_discount_pct . '% discount per extra bike.'
-				. '[:es]<strong>¿Varias bicis?</strong> La primera bici se cobra a precio completo. Cada bici adicional en el mismo transporte tiene un <strong>' . (int) $bulk_discount_pct . '% de descuento</strong> sobre el precio base (se cobra al ' . (int) ( $bulk_multiplier * 100 ) . '%).[:]'
-			) ); ?></p>
-			<p class="tcbf-transport-info__example"><?php echo wp_kses_post( self::tr(
-				'[:en]<strong>Example:</strong> 3 bikes, delivery only = ' . $fmt( $base_delivery ) . ' + ' . $fmt( $ex_bike2 ) . ' + ' . $fmt( $ex_bike2 ) . ' = <strong>' . $fmt( $ex_total ) . '</strong> (instead of ' . $fmt( $ex_without ) . ')'
-				. '[:es]<strong>Ejemplo:</strong> 3 bicis, solo entrega = ' . $fmt( $base_delivery ) . ' + ' . $fmt( $ex_bike2 ) . ' + ' . $fmt( $ex_bike2 ) . ' = <strong>' . $fmt( $ex_total ) . '</strong> (en lugar de ' . $fmt( $ex_without ) . ')[:]'
-			) ); ?></p>
-			<p><?php echo wp_kses_post( self::tr(
-				'[:en]<strong>Outside coverage zones:</strong> An additional distance surcharge of <strong>' . $fmt( $per_km ) . '/km</strong> is added based on your distance beyond the nearest zone boundary (minimum ' . $fmt( $min_dist_charge ) . ', maximum ' . $fmt( $max_dist_charge ) . ' per direction).'
-				. '[:es]<strong>Fuera de las zonas de cobertura:</strong> Se aplica un suplemento de <strong>' . $fmt( $per_km ) . '/km</strong> según la distancia desde el límite de la zona más cercana (mínimo ' . $fmt( $min_dist_charge ) . ', máximo ' . $fmt( $max_dist_charge ) . ' por trayecto).[:]'
-			) ); ?></p>
-
 			<?php /* ------- SURCHARGES (settings-driven, non-zero only) ------- */ ?>
 			<?php if ( ! empty( $surcharges ) ) : ?>
 			<h3><?php echo esc_html( self::tr( '[:en]Surcharges[:es]Suplementos[:]' ) ); ?></h3>
@@ -503,8 +435,8 @@ final class Transport_Homepage_Teaser {
 			<?php /* ------- QUICK SUMMARY ------- */ ?>
 			<div class="tcbf-transport-info__summary">
 				<p><?php echo esc_html( self::tr(
-					'[:en]Book your rental bike → Add transport → Choose delivery, pickup, or both → Enter your address → Pick your time slot → Done. We handle the rest.'
-					. '[:es]Reserva tu bici de alquiler → Añade transporte → Elige entrega, recogida o ambos → Introduce tu dirección → Escoge tu franja horaria → Listo. Nosotros nos encargamos del resto.[:]'
+					'[:en]Add bicycle(s) to the cart, add transport (cart level), choose delivery/pickup/both, enter your address, pick your time slot — done!'
+					. '[:es]Añade bicicleta(s) al carrito, añade transporte (a nivel de carrito), elige entrega/recogida/ambos, introduce tu dirección, escoge tu franja horaria — ¡listo![:]'
 				) ); ?></p>
 			</div>
 
