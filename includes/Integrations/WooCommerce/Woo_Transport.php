@@ -1134,7 +1134,7 @@ final class Woo_Transport {
 
 		switch ( $state ) {
 			case 'not_configured':
-				echo esc_html( Woo::translate( '[:en]Have your bikes delivered to your accommodation[:es]Recibe tus bicicletas en tu alojamiento[:]' ) );
+				echo esc_html( Woo::translate( "[:en]You'll pick up and return bikes at our shop. Want delivery instead?[:es]Recogerás y devolverás las bicicletas en nuestra tienda. ¿Prefieres entrega a domicilio?[:]" ) );
 				break;
 			case 'partial':
 				$configured = (int) ( $summary['delivery_count'] ?? 0 );
