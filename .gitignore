@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Playwright
+playwright-report/
+test-results/
+tests/.auth/wp-session.json
+
+# Environment (contains credentials)
+.env.playwright
+
+# OS
+.DS_Store
+Thumbs.db

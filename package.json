@@ -1,0 +1,27 @@
+{
+  "name": "tcbf",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test:seo": "npx playwright test --project=seo",
+    "test:seo:mobile": "npx playwright test --project=seo-mobile",
+    "test:e2e": "npx playwright test --project=wp-auth --project=e2e",
+    "test:all": "npx playwright test",
+    "test:report": "npx playwright show-report"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:43105/git/LukaszKomarTC/TCBF"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "dotenv": "^17.3.1"
+  }
+}
