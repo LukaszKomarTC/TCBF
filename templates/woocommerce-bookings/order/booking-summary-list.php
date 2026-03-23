@@ -151,7 +151,7 @@ if ( $tcbf_event_title === '' && $product ) {
 				),
 			)
 		);
-		if ( wc_should_convert_timezone( $booking ) ) :
+		if ( function_exists( 'wc_should_convert_timezone' ) && wc_should_convert_timezone( $booking ) ) :
 			/* translators: %s: timezone name */
 			echo ' ' . esc_html( sprintf( __( 'in timezone: %s', 'woocommerce-bookings' ), $booking_timezone ) );
 		endif;
