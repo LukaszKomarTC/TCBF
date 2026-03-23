@@ -2833,8 +2833,6 @@ class Woo_OrderMeta {
 		} catch ( \Exception $e ) {
 			// Booking may be corrupted - return empty
 		}
-
-		return '';
 	}
 
 	/**

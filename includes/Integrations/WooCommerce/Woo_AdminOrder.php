@@ -31,13 +31,6 @@ class Woo_AdminOrder {
 		// Admin CSS + JS (grouping logic)
 		add_action( 'admin_head', [ __CLASS__, 'admin_css' ] );
 		add_action( 'admin_footer', [ __CLASS__, 'admin_grouping_js' ] );
-
-		// Compatibility shim: wc_should_convert_timezone() may not exist in
-		// newer WC Bookings versions. Define a safe stub to prevent fatal errors
-		// in both the default WC Bookings template and our override.
-		if ( ! \function_exists( 'wc_should_convert_timezone' ) ) {
-			require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/compat-wc-bookings.php';
-		}
 	}
 
 	/* =================================================================
