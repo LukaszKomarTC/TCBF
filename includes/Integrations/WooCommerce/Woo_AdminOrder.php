@@ -32,49 +32,11 @@ class Woo_AdminOrder {
 		add_action( 'admin_head', [ __CLASS__, 'admin_css' ] );
 		add_action( 'admin_footer', [ __CLASS__, 'admin_grouping_js' ] );
 
-		// Suppress WC Bookings' default booking display in admin order items.
-		// TCBF's Booking Summary meta box + inline badges already show all booking info.
-		// The default WC Bookings display can cause critical errors when rendering
-		// booking meta that contains raw multilingual strings.
-		add_action( 'admin_init', [ __CLASS__, 'suppress_wc_bookings_admin_display' ], 20 );
-	}
-
-	/**
-	 * Remove WC Bookings' woocommerce_after_order_itemmeta callback.
-	 *
-	 * WC Bookings registers a callback on woocommerce_after_order_itemmeta to
-	 * render booking details (status, dates, meta) under each order line item.
-	 * Since TCBF provides its own Booking Summary meta box and inline badges,
-	 * this display is redundant and can cause PHP errors with multilingual meta.
-	 */
-	public static function suppress_wc_bookings_admin_display() : void {
-		global $wp_filter;
-
-		if ( ! isset( $wp_filter['woocommerce_after_order_itemmeta'] ) ) {
-			return;
-		}
-
-		$hook = $wp_filter['woocommerce_after_order_itemmeta'];
-
-		foreach ( $hook->callbacks as $priority => $callbacks ) {
-			foreach ( $callbacks as $id => $callback ) {
-				$func = $callback['function'] ?? null;
-				if ( ! $func ) {
-					continue;
-				}
-
-				// Match WC Bookings callbacks by class name
-				$class_name = '';
-				if ( is_array( $func ) && is_object( $func[0] ) ) {
-					$class_name = get_class( $func[0] );
-				} elseif ( is_array( $func ) && is_string( $func[0] ) ) {
-					$class_name = $func[0];
-				}
-
-				if ( $class_name !== '' && strpos( $class_name, 'WC_Booking' ) !== false ) {
-					$hook->remove_filter( 'woocommerce_after_order_itemmeta', $func, $priority );
-				}
-			}
+		// Compatibility shim: wc_should_convert_timezone() may not exist in
+		// newer WC Bookings versions. Define a safe stub to prevent fatal errors
+		// in both the default WC Bookings template and our override.
+		if ( ! \function_exists( 'wc_should_convert_timezone' ) ) {
+			require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/compat-wc-bookings.php';
 		}
 	}
 
