@@ -64,8 +64,9 @@ final class SEOPressAdapter {
         $meta = [];
 
         foreach (self::META_KEYS as $field => $meta_key) {
-            $value = get_post_meta($post_id, $meta_key, true);
-            $meta[$field] = $value !== '' ? $value : null;
+            $raw   = get_post_meta($post_id, $meta_key, true);
+            $exists = metadata_exists('post', $post_id, $meta_key);
+            $meta[$field] = $exists ? $raw : null;
         }
 
         // Add computed fields.
@@ -100,13 +101,15 @@ final class SEOPressAdapter {
             ];
         }
 
+        $existed  = metadata_exists('post', $post_id, $meta_key);
         $previous = get_post_meta($post_id, $meta_key, true);
 
         $result = update_post_meta($post_id, $meta_key, $value);
 
         return [
             'success'        => $result !== false,
-            'previous_value' => $previous !== '' ? $previous : null,
+            'previous_value' => $existed ? $previous : null,
+            'field_existed'  => $existed,
             'meta_key'       => $meta_key,
         ];
     }
@@ -148,17 +151,28 @@ final class SEOPressAdapter {
      * @param mixed  $previous_value The value to restore (null = delete).
      * @return bool
      */
-    public function rollback_field(int $post_id, string $field, mixed $previous_value): bool {
+    /**
+     * Rollback a field to its previous state.
+     *
+     * @param int    $post_id        WordPress post ID.
+     * @param string $field          Our canonical field name.
+     * @param mixed  $previous_value The value to restore.
+     * @param bool   $field_existed  Whether the field existed before the action.
+     * @return bool
+     */
+    public function rollback_field(int $post_id, string $field, mixed $previous_value, bool $field_existed = true): bool {
         $meta_key = self::META_KEYS[$field] ?? null;
 
         if (! $meta_key) {
             return false;
         }
 
-        if ($previous_value === null || $previous_value === '') {
+        // Field didn't exist before — remove it entirely.
+        if (! $field_existed) {
             return delete_post_meta($post_id, $meta_key);
         }
 
+        // Field existed with a value (including empty string) — restore it.
         return update_post_meta($post_id, $meta_key, $previous_value) !== false;
     }
 

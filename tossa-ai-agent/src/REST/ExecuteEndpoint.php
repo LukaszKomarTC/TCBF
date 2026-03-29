@@ -209,6 +209,33 @@ final class ExecuteEndpoint {
         $action_id = $request->get_param('action_id');
         $table     = $wpdb->prefix . 'tossa_seo_actions';
 
+        // Check for immutable rejection (truth firewall block).
+        $action = $wpdb->get_row(
+            $wpdb->prepare("SELECT status, error_message FROM {$table} WHERE action_id = %s", $action_id),
+            ARRAY_A
+        );
+
+        if (! $action) {
+            return new \WP_REST_Response([
+                'success' => false,
+                'message' => 'Action not found.',
+            ], 404);
+        }
+
+        // Block approval of immutably rejected actions (truth firewall violations).
+        if ('rejected' === $action['status'] && str_starts_with($action['error_message'] ?? '', '[IMMUTABLE]')) {
+            $this->logger->log('warning', 'execute_endpoint', 'immutable_rejection_bypass_attempt', [
+                'action_id' => $action_id,
+                'user_id'   => get_current_user_id(),
+                'reason'    => $action['error_message'],
+            ]);
+
+            return new \WP_REST_Response([
+                'success' => false,
+                'message' => 'This action was blocked by the Truth Firewall and cannot be approved. Reason: ' . $action['error_message'],
+            ], 403);
+        }
+
         $updated = $wpdb->update(
             $table,
             [
@@ -225,7 +252,7 @@ final class ExecuteEndpoint {
         if (! $updated) {
             return new \WP_REST_Response([
                 'success' => false,
-                'message' => 'Action not found or not in proposed status.',
+                'message' => "Action not in 'proposed' status (current: '{$action['status']}').",
             ], 400);
         }
 

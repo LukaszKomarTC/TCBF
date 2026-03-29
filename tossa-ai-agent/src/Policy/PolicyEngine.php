@@ -54,9 +54,23 @@ final class PolicyEngine {
                 'requires_approval' => false,
                 'warnings'          => $truth_result['warnings'],
                 'effective_tier'    => 'C',
+                'rejection_immutable' => true, // Cannot be overridden by manual approval.
             ];
         }
         $warnings = array_merge($warnings, $truth_result['warnings']);
+
+        // 1b. Auto-translation block check.
+        $translate_result = $this->truth->check_auto_translate($action);
+        if ($translate_result['blocked']) {
+            return [
+                'allowed'           => false,
+                'reason'            => $translate_result['reason'],
+                'requires_approval' => false,
+                'warnings'          => $warnings,
+                'effective_tier'    => 'C',
+                'rejection_immutable' => true,
+            ];
+        }
 
         // 2. Risk classification may escalate the tier.
         $effective_tier = $this->risk->classify($action);

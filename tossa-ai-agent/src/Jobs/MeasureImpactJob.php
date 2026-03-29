@@ -40,6 +40,11 @@ final class MeasureImpactJob {
             return;
         }
 
+        // Idempotency: skip if already verified.
+        if (! empty($action['verified_at'])) {
+            return;
+        }
+
         $entity_id = (int) $action['entity_id'];
 
         if (! $entity_id) {

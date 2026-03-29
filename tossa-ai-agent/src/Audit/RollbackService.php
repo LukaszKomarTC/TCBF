@@ -58,9 +58,14 @@ final class RollbackService {
         $entity_id = (int) $action['entity_id'];
         $errors    = [];
 
-        // Rollback each field to its previous value.
-        foreach ($rollback_data as $field => $previous_value) {
-            $success = $this->seopress->rollback_field($entity_id, $field, $previous_value);
+        // Rollback each field to its previous state.
+        foreach ($rollback_data as $field => $info) {
+            // Support both new format {value, existed} and legacy format (plain value).
+            if (is_array($info) && array_key_exists('value', $info)) {
+                $success = $this->seopress->rollback_field($entity_id, $field, $info['value'], $info['existed'] ?? true);
+            } else {
+                $success = $this->seopress->rollback_field($entity_id, $field, $info);
+            }
 
             if (! $success) {
                 $errors[] = "Failed to rollback field: {$field}";

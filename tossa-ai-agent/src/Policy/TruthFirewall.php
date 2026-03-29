@@ -179,13 +179,18 @@ final class TruthFirewall {
      */
     private function check_multilingual(array $action): array {
         $warnings = [];
-        $payload  = $action['payload'] ?? [];
+
+        // Only check if multilingual enforcement is enabled.
+        if (! get_option('tossa_agent_multilingual_check', true)) {
+            return $warnings;
+        }
+
+        $payload = $action['payload'] ?? [];
 
         if (is_string($payload)) {
             $payload = json_decode($payload, true) ?: [];
         }
 
-        // Flag if content mixes languages (basic heuristic).
         $content = $this->extract_content($action);
         if (empty($content)) {
             return $warnings;
@@ -197,5 +202,37 @@ final class TruthFirewall {
         }
 
         return $warnings;
+    }
+
+    /**
+     * Check if an action is an auto-translation that should be blocked.
+     *
+     * @return array{blocked: bool, reason: string}
+     */
+    public function check_auto_translate(array $action): array {
+        if (! get_option('tossa_agent_block_auto_translate', true)) {
+            return ['blocked' => false, 'reason' => ''];
+        }
+
+        $action_type = $action['action_type'] ?? '';
+        $payload     = $action['payload'] ?? [];
+
+        if (is_string($payload)) {
+            $payload = json_decode($payload, true) ?: [];
+        }
+
+        // Block if the action is flagged as auto-translation.
+        $is_translation = ($payload['is_translation'] ?? false)
+            || str_contains($action_type, 'translate')
+            || str_contains($action_type, 'translation');
+
+        if ($is_translation) {
+            return [
+                'blocked' => true,
+                'reason'  => 'Auto-translation of SEO metadata is blocked. Translations must be human-reviewed.',
+            ];
+        }
+
+        return ['blocked' => false, 'reason' => ''];
     }
 }

@@ -31,6 +31,15 @@ final class SEOAuditJob {
             return;
         }
 
+        // Idempotency: skip if an audit is already running.
+        $running = get_transient('tossa_agent_audit_running');
+        if ($running) {
+            $logger->log('info', 'seo_audit_job', 'skipped_already_running', [
+                'running_audit_id' => $running,
+            ]);
+            return;
+        }
+
         $mode = $policy->get_execution_mode();
         if ('analysis-only' !== $mode && 'propose-and-approve' !== $mode && 'full' !== $mode) {
             return;

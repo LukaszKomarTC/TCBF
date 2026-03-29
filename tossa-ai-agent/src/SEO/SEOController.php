@@ -151,7 +151,11 @@ final class SEOController {
                     'payload_json'    => wp_json_encode($action['payload'] ?? []),
                     'before_json'     => wp_json_encode($action['before'] ?? []),
                     'status'          => $verdict['allowed'] ? 'proposed' : 'rejected',
-                    'error_message'   => $verdict['allowed'] ? null : $verdict['reason'],
+                    'error_message'   => $verdict['allowed'] ? null : (
+                        ($verdict['rejection_immutable'] ?? false)
+                            ? '[IMMUTABLE] ' . $verdict['reason']
+                            : $verdict['reason']
+                    ),
                 ],
                 ['%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%s', '%s', '%s', '%s']
             );

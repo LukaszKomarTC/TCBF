@@ -34,21 +34,35 @@ final class MetadataWriter {
     public function execute(string $action_id): array {
         global $wpdb;
         $table  = $wpdb->prefix . 'tossa_seo_actions';
+
+        // Atomic status transition: approved → executing.
+        // This prevents duplicate execution if the job runs twice.
+        $updated = $wpdb->update(
+            $table,
+            ['status' => 'executing'],
+            ['action_id' => $action_id, 'status' => 'approved'],
+            ['%s'],
+            ['%s', '%s']
+        );
+
+        if (! $updated) {
+            // Either not found, or not in 'approved' status (already executing/executed).
+            $action = $wpdb->get_row(
+                $wpdb->prepare("SELECT status FROM {$table} WHERE action_id = %s", $action_id),
+                ARRAY_A
+            );
+            $current = $action['status'] ?? 'not found';
+            return ['success' => false, 'message' => "Cannot execute: action status is '{$current}', expected 'approved'.", 'verified' => null];
+        }
+
         $action = $wpdb->get_row(
             $wpdb->prepare("SELECT * FROM {$table} WHERE action_id = %s", $action_id),
             ARRAY_A
         );
 
-        if (! $action) {
-            return ['success' => false, 'message' => 'Action not found.', 'verified' => null];
-        }
-
-        if ('approved' !== $action['status']) {
-            return ['success' => false, 'message' => "Action status is '{$action['status']}', expected 'approved'.", 'verified' => null];
-        }
-
         // Only execute Tier A actions automatically in v1.
         if ('A' !== $action['safety_tier']) {
+            $wpdb->update($table, ['status' => 'approved'], ['action_id' => $action_id]);
             return ['success' => false, 'message' => 'Only Tier A actions can be auto-executed in v1.', 'verified' => null];
         }
 
@@ -57,9 +71,6 @@ final class MetadataWriter {
 
         // Capture before state.
         $before = $this->seopress->get_meta($entity_id);
-
-        // Mark as executing.
-        $wpdb->update($table, ['status' => 'executing'], ['action_id' => $action_id]);
 
         // Execute field writes.
         $fields_to_write = $this->extract_fields_from_payload($action['action_type'], $payload);
@@ -93,10 +104,14 @@ final class MetadataWriter {
         // Capture after state.
         $after = $this->seopress->get_meta($entity_id);
 
-        // Build rollback payload.
+        // Build rollback payload with field existence tracking.
         $rollback = [];
         foreach ($fields_to_write as $field => $value) {
-            $rollback[$field] = $result['before_snapshot'][$field];
+            $field_result = $result['results'][$field] ?? [];
+            $rollback[$field] = [
+                'value'  => $field_result['previous_value'] ?? null,
+                'existed' => $field_result['field_existed'] ?? true,
+            ];
         }
 
         // Update action record.
@@ -164,8 +179,13 @@ final class MetadataWriter {
 
         $entity_id = (int) $action['entity_id'];
 
-        foreach ($rollback_data as $field => $previous_value) {
-            $this->seopress->rollback_field($entity_id, $field, $previous_value);
+        foreach ($rollback_data as $field => $info) {
+            // Support both new format {value, existed} and legacy format (plain value).
+            if (is_array($info) && array_key_exists('value', $info)) {
+                $this->seopress->rollback_field($entity_id, $field, $info['value'], $info['existed'] ?? true);
+            } else {
+                $this->seopress->rollback_field($entity_id, $field, $info);
+            }
         }
 
         $wpdb->update(
