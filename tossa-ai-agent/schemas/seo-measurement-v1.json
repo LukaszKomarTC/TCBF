@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SEO Measurement",
+  "description": "A before/after measurement for an executed SEO action.",
+  "type": "object",
+  "required": ["action_id", "metric_name", "measurement_window_start", "measurement_window_end"],
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "description": "The action this measurement relates to."
+    },
+    "metric_name": {
+      "type": "string",
+      "description": "Name of the metric being measured.",
+      "examples": [
+        "render_verification", "gsc_clicks", "gsc_impressions", "gsc_ctr",
+        "gsc_avg_position", "psi_performance", "psi_lcp", "psi_cls",
+        "internal_link_count", "indexed_status"
+      ]
+    },
+    "measurement_window_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "measurement_window_end": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "before_value": {
+      "type": ["string", "number", "null"]
+    },
+    "after_value": {
+      "type": ["string", "number", "null"]
+    },
+    "delta": {
+      "type": ["number", "null"],
+      "description": "Numeric change (after - before)."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence in the measurement attribution."
+    },
+    "evidence_source": {
+      "type": "string",
+      "enum": ["gsc", "psi", "crawl", "render_verifier", "manual"]
+    },
+    "notes": {
+      "type": ["string", "null"]
+    }
+  }
+}

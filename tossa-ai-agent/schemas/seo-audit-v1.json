@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SEO Audit Result",
+  "description": "Structured output from Claude SEO audit analysis — sent from VPS to WordPress via callback webhook.",
+  "type": "object",
+  "required": ["audit_id", "summary", "overall_score", "issues", "actions", "model", "tokens_in", "tokens_out"],
+  "properties": {
+    "audit_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The audit ID this result belongs to."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Human-readable summary of the audit findings."
+    },
+    "overall_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Overall SEO health score."
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["issue_type", "severity", "description"],
+        "properties": {
+          "issue_type": {
+            "type": "string",
+            "enum": [
+              "missing_title", "missing_description", "duplicate_title", "duplicate_description",
+              "title_too_long", "title_too_short", "description_too_long", "description_too_short",
+              "missing_canonical", "missing_focus_keyword", "thin_content", "orphan_page",
+              "missing_social_meta", "noindex_issue", "broken_link", "slow_page",
+              "missing_heading", "heading_hierarchy", "missing_alt_text",
+              "internal_link_opportunity", "cannibalization", "missing_schema"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "warning", "info"]
+          },
+          "description": { "type": "string" },
+          "entity_type": { "type": "string" },
+          "entity_id": { "type": ["integer", "null"] },
+          "evidence_source": {
+            "type": "string",
+            "enum": ["gsc", "psi", "crawl", "wp_content", "manual_rule", "llm_inference"]
+          }
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "seo-action-v1.json" }
+    },
+    "model": { "type": "string" },
+    "tokens_in": { "type": "integer" },
+    "tokens_out": { "type": "integer" },
+    "cost_usd": { "type": "number" }
+  }
+}
