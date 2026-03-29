@@ -1,0 +1,18 @@
+{
+  "name": "tossa-vps-agent",
+  "version": "0.1.0",
+  "description": "Minimal VPS agent for Tossa AI Agent — receives site inventory, runs Claude SEO audit, returns structured actions.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

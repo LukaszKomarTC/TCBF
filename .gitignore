@@ -8,6 +8,8 @@ tests/.auth/wp-session.json
 
 # Environment (contains credentials)
 .env.playwright
+.env
+tossa-vps-agent/.env
 
 # OS
 .DS_Store
