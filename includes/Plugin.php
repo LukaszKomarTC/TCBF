@@ -9,6 +9,7 @@ require_once TC_BF_PATH . 'includes/Support/Logger.php';
 require_once TC_BF_PATH . 'includes/Domain/EventConfig.php';
 require_once TC_BF_PATH . 'includes/Domain/Ledger.php';
 require_once TC_BF_PATH . 'includes/Domain/PartnerResolver.php';
+require_once TC_BF_PATH . 'includes/Domain/UrlCouponHandler.php';
 require_once TC_BF_PATH . 'includes/Domain/Entry_State.php';
 require_once TC_BF_PATH . 'includes/Domain/Entry_Expiry_Job.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Partner.php';
@@ -406,6 +407,9 @@ final class Plugin {
 
 		// Settled status fires WC___settled event (future use for invoice settlement)
 		add_action('woocommerce_order_status_settled',    [ $this, 'woo_fire_gf_settled_notifications' ], 20, 2);
+		// ---- URL coupon handler: catch ?apply_coupon= from partner portal links.
+		Domain\UrlCouponHandler::init();
+
 		// ---- Partner coupon: auto-apply partner coupon for logged-in partners (legacy parity)
 		// Run late on wp_loaded so WC()->cart is available.
 		add_action('wp_loaded', [ $this, 'maybe_auto_apply_partner_coupon' ], 30);
