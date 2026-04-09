@@ -46,6 +46,25 @@ final class UrlCouponHandler {
 
 		// Also try to apply from cookie on wp_loaded (after WC cart init).
 		add_action( 'wp_loaded', [ __CLASS__, 'apply_from_cookie' ], 25 );
+
+		// Clear cookie when user removes the coupon via WC cart UI (including WC AJAX).
+		add_action( 'woocommerce_removed_coupon', [ __CLASS__, 'on_coupon_removed' ] );
+	}
+
+	/**
+	 * When a coupon is removed via the WC cart, clear our cookie so it doesn't re-apply.
+	 *
+	 * @param string $code The coupon code that was removed.
+	 */
+	public static function on_coupon_removed( $code ) : void {
+		$code = PartnerResolver::normalize_partner_code( (string) $code );
+		$cookie_code = isset( $_COOKIE[ self::COOKIE_NAME ] )
+			? PartnerResolver::normalize_partner_code( $_COOKIE[ self::COOKIE_NAME ] )
+			: '';
+
+		if ( $code !== '' && $code === $cookie_code ) {
+			self::clear_cookie();
+		}
 	}
 
 	/**
