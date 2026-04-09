@@ -6,7 +6,7 @@ if ( ! defined('ABSPATH') ) exit;
 /**
  * URL Coupon Handler
  *
- * Catches coupon codes passed via URL query parameter (e.g. ?tcbf_coupon=PARTNER_CODE)
+ * Catches coupon codes passed via URL query parameter (e.g. ?apply_coupon=PARTNER_CODE)
  * and applies them to the WooCommerce session/cart.
  *
  * This supports the partner portal workflow where external sites link to service pages
@@ -14,7 +14,7 @@ if ( ! defined('ABSPATH') ) exit;
  * picks it up via "Way 1" (coupon already in session/cart).
  *
  * Flow:
- * 1. Client clicks button on partner portal → arrives at e.g. /rental/?tcbf_coupon=HOTEL_ABC
+ * 1. Client clicks button on partner portal → arrives at e.g. /rental/?apply_coupon=HOTEL_ABC
  * 2. This handler reads the param, stores it in a cookie + WC session
  * 3. On redirect (clean URL), WC session has the coupon → PartnerResolver Way 1 detects it
  *
@@ -25,7 +25,7 @@ final class UrlCouponHandler {
 	/**
 	 * URL query parameter name.
 	 */
-	const QUERY_PARAM = 'tcbf_coupon';
+	const QUERY_PARAM = 'apply_coupon';
 
 	/**
 	 * Cookie name for coupon persistence across session init.
@@ -41,15 +41,11 @@ final class UrlCouponHandler {
 	 * Register hooks.
 	 */
 	public static function init() : void {
-		// Capture URL param early on init (before caching/redirects interfere).
-		// We store in cookie here; actual cart application happens on wp_loaded.
-		add_action( 'init', [ __CLASS__, 'capture_url_coupon' ], 5 );
+		// Run on template_redirect so WC is fully initialized and we can redirect cleanly.
+		add_action( 'template_redirect', [ __CLASS__, 'handle_url_coupon' ], 5 );
 
-		// Apply from cookie on wp_loaded (after WC cart init).
+		// Also try to apply from cookie on wp_loaded (after WC cart init).
 		add_action( 'wp_loaded', [ __CLASS__, 'apply_from_cookie' ], 25 );
-
-		// Redirect to clean URL after WC is ready (so session persists before redirect).
-		add_action( 'template_redirect', [ __CLASS__, 'redirect_clean_url' ], 5 );
 
 		// Clear cookie when user removes the coupon via WC cart UI (including WC AJAX).
 		add_action( 'woocommerce_removed_coupon', [ __CLASS__, 'on_coupon_removed' ] );
@@ -72,14 +68,13 @@ final class UrlCouponHandler {
 	}
 
 	/**
-	 * Step 1 (init): Capture ?tcbf_coupon= from URL early and store in cookie.
+	 * Handle incoming ?apply_coupon= parameter.
 	 *
-	 * Runs on init (priority 5) — before caching plugins, redirects, or
-	 * template loading can interfere. WC may not have a session yet, so we
-	 * only persist to a cookie here. Cart application happens in apply_from_cookie().
+	 * Stores the code in a cookie, then redirects to the clean URL
+	 * (so bookmarks/back-button don't re-trigger application).
 	 */
-	public static function capture_url_coupon() : void {
-		if ( is_admin() ) {
+	public static function handle_url_coupon() : void {
+		if ( is_admin() || wp_doing_ajax() || ( defined('REST_REQUEST') && REST_REQUEST ) ) {
 			return;
 		}
 
@@ -110,33 +105,18 @@ final class UrlCouponHandler {
 			}
 		}
 
-		// Set cookie so coupon persists across the redirect.
+		// Set cookie so coupon persists even if WC session isn't ready yet.
 		setcookie( self::COOKIE_NAME, $code, time() + self::COOKIE_TTL, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
-		// Also make it available in current request for apply_from_cookie().
-		$_COOKIE[ self::COOKIE_NAME ] = $code;
+
+		// Try to apply immediately if WC cart is available.
+		self::apply_coupon_to_cart( $code );
 
 		\TC_BF\Support\Logger::log( 'url_coupon.captured', [
 			'code' => $code,
 			'referer' => isset( $_SERVER['HTTP_REFERER'] ) ? sanitize_url( $_SERVER['HTTP_REFERER'] ) : '',
 		] );
-	}
 
-	/**
-	 * Step 2 (template_redirect): Redirect to clean URL after coupon has been applied.
-	 *
-	 * By this point apply_from_cookie() has already run (wp_loaded priority 25)
-	 * and applied the coupon to the WC session/cart. Now we strip the query param
-	 * so bookmarks/back-button don't re-trigger.
-	 */
-	public static function redirect_clean_url() : void {
-		if ( is_admin() ) {
-			return;
-		}
-
-		if ( empty( $_GET[ self::QUERY_PARAM ] ) ) {
-			return;
-		}
-
+		// Redirect to clean URL (strip the query param).
 		$clean_url = remove_query_arg( self::QUERY_PARAM );
 		wp_safe_redirect( $clean_url, 302 );
 		exit;
