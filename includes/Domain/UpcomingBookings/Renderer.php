@@ -188,13 +188,9 @@ final class Renderer {
 			$h .= '</div>';
 		}
 
-		// Date/time
-		if ( ! empty( $r->event['start_fmt'] ) ) {
-			$h .= '<div style="font-size:13px;color:#50575e;margin-bottom:6px;"><strong>' . esc_html__( 'When:', 'tc-booking-flow' ) . '</strong> ' . esc_html( $r->event['start_fmt'] );
-			if ( ! empty( $r->event['end_fmt'] ) && $r->event['end_fmt'] !== $r->event['start_fmt'] ) {
-				$h .= ' → ' . esc_html( $r->event['end_fmt'] );
-			}
-			$h .= '</div>';
+		// Date/time — prefer a compact, full-day-friendly rendering.
+		if ( ! empty( $r->event['start'] ) ) {
+			$h .= '<div style="font-size:13px;color:#50575e;margin-bottom:6px;"><strong>' . esc_html__( 'When:', 'tc-booking-flow' ) . '</strong> ' . esc_html( self::format_when( (int) $r->event['start'], (int) $r->event['end'] ) ) . '</div>';
 		}
 
 		// Customer
@@ -277,6 +273,46 @@ final class Renderer {
 
 		$h .= '</div>';
 		return $h;
+	}
+
+	/**
+	 * Format a compact human "When:" string from start/end timestamps.
+	 *
+	 * Rules:
+	 *  - Full-day booking (00:00:00 → 23:59:59 same day or consecutive full days): hide times.
+	 *  - Same day, partial time: "25 Apr 2026 09:00 → 17:00"
+	 *  - Multi-day: "24 Apr 2026 → 26 Apr 2026"
+	 *  - Single timestamp: "25 Apr 2026 09:00"
+	 */
+	private static function format_when( int $start, int $end ) : string {
+		if ( $start <= 0 ) {
+			return '';
+		}
+		$fmt_date = get_option( 'date_format' );
+
+		if ( $end <= 0 || $end === $start ) {
+			return date_i18n( $fmt_date . ' H:i', $start );
+		}
+
+		$start_y_m_d = date_i18n( 'Y-m-d', $start );
+		$end_y_m_d   = date_i18n( 'Y-m-d', $end );
+		$start_his   = date_i18n( 'His', $start );
+		$end_his     = date_i18n( 'His', $end );
+
+		$is_full_day = ( $start_his === '000000' && $end_his === '235959' );
+
+		if ( $is_full_day ) {
+			if ( $start_y_m_d === $end_y_m_d ) {
+				return date_i18n( $fmt_date, $start );
+			}
+			return date_i18n( $fmt_date, $start ) . ' → ' . date_i18n( $fmt_date, $end );
+		}
+
+		// Partial times.
+		if ( $start_y_m_d === $end_y_m_d ) {
+			return date_i18n( $fmt_date . ' H:i', $start ) . ' → ' . date_i18n( 'H:i', $end );
+		}
+		return date_i18n( $fmt_date . ' H:i', $start ) . ' → ' . date_i18n( $fmt_date . ' H:i', $end );
 	}
 
 	/**

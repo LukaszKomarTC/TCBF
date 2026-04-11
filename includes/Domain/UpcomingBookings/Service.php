@@ -161,40 +161,45 @@ final class Service {
 	}
 
 	/**
-	 * Iterate order items and populate participant/transport/event data on $record.
+	 * Iterate order items, build per-item records via Woo_OrderMeta::build_item_record,
+	 * then group them by rider (tc_group_id or _gf_entry_id) so one row in the digest
+	 * corresponds to one real person, not one line item.
 	 */
 	private static function hydrate_items( \WC_Order $order, BookingRecord $record ) : void {
-		$event_ids_seen = [];
+		$item_records = [];
 
-		foreach ( $order->get_items() as $item ) {
+		foreach ( $order->get_items() as $item_id => $item ) {
 			if ( ! is_a( $item, 'WC_Order_Item_Product' ) ) {
 				continue;
 			}
+			$ir = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::build_item_record( $order, (int) $item_id, $item );
+			$item_records[] = $ir;
+		}
 
-			$scope = (string) $item->get_meta( '_tc_scope', true );
-			if ( $scope === '' ) {
-				$scope = (string) $item->get_meta( 'tc_scope', true );
+		if ( empty( $item_records ) ) {
+			return;
+		}
+
+		// Hoist the event title/id from the first item that has one (usually a participation item).
+		foreach ( $item_records as $ir ) {
+			if ( empty( $record->event['id'] ) && ! empty( $ir['event_id'] ) ) {
+				$record->event['id']    = (int) $ir['event_id'];
+				$record->event['title'] = $ir['event_title'] !== '' ? $ir['event_title'] : (string) $ir['product_name'];
 			}
+		}
 
-			// Event title / id fallback: many items carry _event_title.
-			$event_id    = (int) $item->get_meta( '_event_id', true );
-			$event_title = (string) $item->get_meta( '_event_title', true );
-
-			if ( $event_id > 0 && ! in_array( $event_id, $event_ids_seen, true ) ) {
-				$event_ids_seen[] = $event_id;
-				if ( empty( $record->event['id'] ) ) {
-					$record->event['id']    = $event_id;
-					$record->event['title'] = $event_title !== '' ? $event_title : get_the_title( $event_id );
-				}
+		// Process transport items into a single consolidated transport block.
+		foreach ( $item_records as $ir ) {
+			if ( ! empty( $ir['is_transport'] ) ) {
+				self::merge_transport( $record, $ir );
 			}
+		}
 
-			if ( $scope === 'transport' ) {
-				self::hydrate_transport_item( $item, $record );
-				continue;
-			}
+		// Group non-transport items into rider groups for the participant table.
+		$groups = self::group_items_by_rider( $item_records );
 
-			// Participant / rental item
-			$participant = self::extract_participant_from_item( $item );
+		foreach ( $groups as $group_items ) {
+			$participant = self::merge_group_into_participant( $group_items );
 			if ( $participant ) {
 				$record->participants[] = $participant;
 			}
@@ -202,78 +207,126 @@ final class Service {
 	}
 
 	/**
-	 * Extract a participant info block from a WC order item.
+	 * Group item records by rider. Preference order:
+	 *   1. tc_group_id (TCBF's canonical grouping: participation + rental of same rider)
+	 *   2. _gf_entry_id (same form submission = same rider)
+	 *   3. individual item (fallback)
 	 *
-	 * @return array|null
+	 * Transport items are excluded.
+	 *
+	 * @param array $item_records Item records from build_item_record()
+	 * @return array<string, array[]> Groups, keyed by a synthetic group key
 	 */
-	private static function extract_participant_from_item( \WC_Order_Item_Product $item ) : ?array {
-		// Name: several possible meta keys (depends on form version).
-		$name = (string) $item->get_meta( '_tcbf_participant_name', true );
-		if ( $name === '' ) {
-			$name = (string) $item->get_meta( 'participant', true );
+	private static function group_items_by_rider( array $item_records ) : array {
+		$groups = [];
+		$fallback_counter = 0;
+
+		foreach ( $item_records as $ir ) {
+			if ( ! empty( $ir['is_transport'] ) ) {
+				continue;
+			}
+			// Skip items with no identifying info at all.
+			if ( empty( $ir['participant'] ) && empty( $ir['bicycle'] ) && empty( $ir['pedals'] ) && empty( $ir['helmet'] ) && empty( $ir['product_name'] ) ) {
+				continue;
+			}
+
+			$group_id = (int) ( $ir['group_id'] ?? 0 );
+			$entry_id = (int) ( $ir['entry_id'] ?? 0 );
+
+			if ( $group_id > 0 ) {
+				$key = 'g:' . $group_id;
+			} elseif ( $entry_id > 0 ) {
+				$key = 'e:' . $entry_id . ':' . ( $ir['participant'] ?: 'unknown' );
+			} else {
+				$key = 'i:' . ( $fallback_counter++ );
+			}
+
+			if ( ! isset( $groups[ $key ] ) ) {
+				$groups[ $key ] = [];
+			}
+			$groups[ $key ][] = $ir;
 		}
-		if ( $name === '' ) {
-			$name = (string) $item->get_meta( '_participant_name', true );
+
+		return $groups;
+	}
+
+	/**
+	 * Merge a group of item records (all belonging to the same rider) into one
+	 * participant entry. Fields are picked from whichever item has them.
+	 *
+	 * @param array $group Array of item_record arrays
+	 * @return array|null Participant record, or null if nothing useful.
+	 */
+	private static function merge_group_into_participant( array $group ) : ?array {
+		$name   = '';
+		$bike   = '';
+		$size   = '';
+		$pedals = '';
+		$helmet = '';
+
+		foreach ( $group as $ir ) {
+			if ( $name === '' && ! empty( $ir['participant'] ) ) {
+				$name = (string) $ir['participant'];
+			}
+			// Bike model: prefer the rental item's _bicycle, then any non-empty.
+			if ( $bike === '' && ! empty( $ir['bicycle'] ) ) {
+				$bike = (string) $ir['bicycle'];
+			}
+			if ( $size === '' && ! empty( $ir['size'] ) ) {
+				$size = (string) $ir['size'];
+			}
+			if ( $pedals === '' && ! empty( $ir['pedals'] ) ) {
+				$pedals = (string) $ir['pedals'];
+			}
+			if ( $helmet === '' && ! empty( $ir['helmet'] ) ) {
+				$helmet = (string) $ir['helmet'];
+			}
 		}
 
-		// Bike
-		$bike = (string) $item->get_meta( '_bicycle', true );
-		if ( $bike === '' ) {
-			$bike = (string) $item->get_meta( 'bicycle', true );
+		// Combine bike + size for display.
+		$bike_display = $bike;
+		if ( $bike !== '' && $size !== '' && stripos( $bike, $size ) === false ) {
+			$bike_display = $bike . ' — ' . $size;
 		}
 
-		// Rental type (ROAD/MTB/eMTB/GRAVEL)
-		$rental_type = (string) $item->get_meta( '_rental_type', true );
-
-		// Pedals / helmet — live in GF lead stored on _gravity_forms_history.
-		$gf_lead = self::get_gf_lead_from_item( $item );
-		$pedals  = isset( $gf_lead[60] ) ? (string) $gf_lead[60] : '';
-		$helmet  = isset( $gf_lead[61] ) ? (string) $gf_lead[61] : '';
-
-		// If the item has literally no participant info, skip it.
-		if ( $name === '' && $bike === '' && $pedals === '' && empty( $gf_lead ) ) {
+		// If literally nothing was gathered, skip the row.
+		if ( $name === '' && $bike === '' && $pedals === '' && $helmet === '' ) {
 			return null;
 		}
 
 		return [
 			'name'        => $name,
-			'bike'        => $bike,
-			'bike_size'   => '',
+			'bike'        => $bike_display,
+			'bike_size'   => $size,
 			'pedals'      => $pedals,
 			'helmet'      => $helmet,
-			'rental_type' => $rental_type,
+			'rental_type' => '',
 		];
 	}
 
 	/**
-	 * Populate $record->transport from a transport-scope item.
+	 * Merge a transport item record into the record's transport block.
 	 */
-	private static function hydrate_transport_item( \WC_Order_Item_Product $item, BookingRecord $record ) : void {
-		$type    = (string) $item->get_meta( '_tcbf_transport_type', true );
-		$date    = (string) $item->get_meta( '_tcbf_transport_service_date', true );
-		$window  = (string) $item->get_meta( '_tcbf_transport_window', true );
-		$zone    = (string) $item->get_meta( '_tcbf_transport_zone_name', true );
-		$address = (string) $item->get_meta( '_tcbf_transport_address', true );
-		$price   = (float) $item->get_meta( '_tcbf_transport_price', true );
-
-		// If a previous transport item already set the record, merge; otherwise initialize.
+	private static function merge_transport( BookingRecord $record, array $ir ) : void {
 		if ( ! is_array( $record->transport ) ) {
 			$record->transport = [
 				'present' => true,
-				'type'    => $type,
-				'date'    => $date,
-				'window'  => $window,
-				'zone'    => $zone,
-				'address' => $address,
-				'price'   => $price,
+				'type'    => (string) ( $ir['transport_type'] ?? '' ),
+				'date'    => (string) ( $ir['transport_date'] ?? '' ),
+				'window'  => (string) ( $ir['transport_window'] ?? '' ),
+				'zone'    => (string) ( $ir['transport_zone'] ?? '' ),
+				'address' => (string) ( $ir['transport_address'] ?? '' ),
+				'price'   => 0.0,
 			];
-		} else {
-			// Append — pipe-separated for multi-leg transport (delivery + return).
-			$record->transport['type']    = self::merge_string( $record->transport['type'], $type );
-			$record->transport['date']    = self::merge_string( $record->transport['date'], $date );
-			$record->transport['window']  = self::merge_string( $record->transport['window'], $window );
-			$record->transport['price'] += $price;
+			return;
 		}
+
+		// Multi-leg transport (delivery + return). Merge each field.
+		$record->transport['type']    = self::merge_string( $record->transport['type'],    (string) ( $ir['transport_type'] ?? '' ) );
+		$record->transport['date']    = self::merge_string( $record->transport['date'],    (string) ( $ir['transport_date'] ?? '' ) );
+		$record->transport['window']  = self::merge_string( $record->transport['window'],  (string) ( $ir['transport_window'] ?? '' ) );
+		$record->transport['zone']    = self::merge_string( $record->transport['zone'],    (string) ( $ir['transport_zone'] ?? '' ) );
+		$record->transport['address'] = self::merge_string( $record->transport['address'], (string) ( $ir['transport_address'] ?? '' ) );
 	}
 
 	/**
@@ -325,21 +378,6 @@ final class Service {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Fetch the GF lead array from an order item's _gravity_forms_history meta.
-	 *
-	 * Mirrors Woo_OrderMeta::get_gf_lead_from_item() to avoid a cross-class private call.
-	 *
-	 * @return array GF lead (field_id => value) or empty array.
-	 */
-	private static function get_gf_lead_from_item( \WC_Order_Item_Product $item ) : array {
-		$history = $item->get_meta( '_gravity_forms_history', true );
-		if ( is_array( $history ) && ! empty( $history['_gravity_form_lead'] ) && is_array( $history['_gravity_form_lead'] ) ) {
-			return $history['_gravity_form_lead'];
-		}
-		return [];
 	}
 
 	/**
