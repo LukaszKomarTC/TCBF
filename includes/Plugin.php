@@ -18,6 +18,7 @@ require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Issue_Detector.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Priority_Scorer.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Service.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Renderer.php';
+require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Diagnostics.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Partner.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Validation.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Discount_Rounding.php';

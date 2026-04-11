@@ -3,6 +3,7 @@ namespace TC_BF\Admin;
 
 use TC_BF\Domain\UpcomingBookings\Service;
 use TC_BF\Domain\UpcomingBookings\Renderer;
+use TC_BF\Domain\UpcomingBookings\Diagnostics;
 
 if ( ! defined('ABSPATH') ) exit;
 
@@ -96,6 +97,22 @@ final class Admin_Upcoming_Bookings {
 					<?php endif; ?>
 				</p>
 			</form>
+
+			<?php
+			$debug_mode = ! empty( $_GET['tcbf_debug'] );
+			$debug_url  = add_query_arg( 'tcbf_debug', '1' );
+			?>
+			<p style="margin:8px 0;">
+				<?php if ( ! $debug_mode ) : ?>
+					<a href="<?php echo esc_url( $debug_url ); ?>" class="button button-secondary">🔧 <?php esc_html_e( 'Show diagnostics', 'tc-booking-flow' ); ?></a>
+				<?php else : ?>
+					<a href="<?php echo esc_url( remove_query_arg( 'tcbf_debug' ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Hide diagnostics', 'tc-booking-flow' ); ?></a>
+				<?php endif; ?>
+			</p>
+
+			<?php if ( $debug_mode ) : ?>
+				<?php echo Diagnostics::render( $date_obj ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+			<?php endif; ?>
 
 			<?php if ( $generated ) : ?>
 				<div id="tcbf-report" style="margin-top:20px;">
