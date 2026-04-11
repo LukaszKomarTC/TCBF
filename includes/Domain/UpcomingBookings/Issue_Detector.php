@@ -61,17 +61,27 @@ final class Issue_Detector {
 			];
 		}
 
-		// 5. At least one participant missing pedal type
-		if ( ! empty( $record->participants ) ) {
-			foreach ( $record->participants as $p ) {
-				if ( empty( $p['pedals'] ) ) {
-					$issues[] = [
-						'code'  => self::ISSUE_MISSING_PEDALS,
-						'label' => __( 'Pedal type missing', 'tc-booking-flow' ),
-					];
+		// 5. At least one rider missing pedal type (across tour packs and standalone rentals)
+		$missing_pedals = false;
+		foreach ( $record->tour_packs as $pack ) {
+			if ( empty( $pack['pedals'] ) ) {
+				$missing_pedals = true;
+				break;
+			}
+		}
+		if ( ! $missing_pedals ) {
+			foreach ( $record->standalone_rentals as $rental ) {
+				if ( empty( $rental['pedals'] ) ) {
+					$missing_pedals = true;
 					break;
 				}
 			}
+		}
+		if ( $missing_pedals ) {
+			$issues[] = [
+				'code'  => self::ISSUE_MISSING_PEDALS,
+				'label' => __( 'Pedal type missing', 'tc-booking-flow' ),
+			];
 		}
 
 		$record->issues = $issues;

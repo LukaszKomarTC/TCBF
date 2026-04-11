@@ -205,30 +205,80 @@ final class Renderer {
 		}
 		$h .= '</div>';
 
-		// Participants table
-		if ( ! empty( $r->participants ) ) {
-			$h .= '<div style="margin-top:10px;">';
-			$h .= '<div style="font-size:12px;font-weight:600;color:#646970;text-transform:uppercase;margin-bottom:4px;">' . esc_html__( 'Participants', 'tc-booking-flow' ) . '</div>';
-			$h .= '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-			$h .= '<tr style="background:#f6f7f7;text-align:left;">';
-			$h .= '<th style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html__( 'Name', 'tc-booking-flow' ) . '</th>';
-			$h .= '<th style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html__( 'Bike', 'tc-booking-flow' ) . '</th>';
-			$h .= '<th style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html__( 'Pedals', 'tc-booking-flow' ) . '</th>';
-			$h .= '<th style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html__( 'Helmet', 'tc-booking-flow' ) . '</th>';
-			$h .= '</tr>';
-			foreach ( $r->participants as $p ) {
-				$h .= '<tr>';
-				$h .= '<td style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html( $p['name'] !== '' ? $p['name'] : '—' ) . '</td>';
-				$h .= '<td style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html( $p['bike'] !== '' ? $p['bike'] : '—' ) . '</td>';
-				$h .= '<td style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html( $p['pedals'] !== '' ? $p['pedals'] : '—' ) . '</td>';
-				$h .= '<td style="padding:6px 8px;border:1px solid #dcdcde;">' . esc_html( $p['helmet'] !== '' ? $p['helmet'] : '—' ) . '</td>';
-				$h .= '</tr>';
+		// === Tour Packs ===
+		foreach ( $r->tour_packs as $pack ) {
+			$h .= '<div style="margin-top:10px;background:#f6fbf6;border:1px solid #c6e5c4;border-radius:4px;padding:10px;">';
+			$h .= '<div style="font-size:12px;font-weight:600;color:#2c5e2a;text-transform:uppercase;margin-bottom:6px;">🚴 ' . esc_html__( 'Tour', 'tc-booking-flow' ) . '</div>';
+			$h .= '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+			if ( $pack['event_title'] !== '' ) {
+				$h .= self::row( __( 'Event', 'tc-booking-flow' ), $pack['event_title'] );
+			}
+			if ( $pack['event_date'] !== '' ) {
+				$h .= self::row( __( 'Date', 'tc-booking-flow' ), $pack['event_date'] );
+			}
+			if ( $pack['participant'] !== '' ) {
+				$h .= self::row( __( 'Participant', 'tc-booking-flow' ), '<strong>' . esc_html( $pack['participant'] ) . '</strong>', false );
+			}
+			if ( $pack['rental_bike'] !== '' ) {
+				$bike_text = $pack['rental_bike'];
+				if ( $pack['rental_size'] !== '' ) {
+					$bike_text .= ' — ' . __( 'Size', 'tc-booking-flow' ) . ' ' . $pack['rental_size'];
+				}
+				$h .= self::row( __( 'Rental bike', 'tc-booking-flow' ), $bike_text );
+			}
+			if ( $pack['pedals'] !== '' ) {
+				$h .= self::row( __( 'Pedals', 'tc-booking-flow' ), $pack['pedals'] );
+			}
+			if ( $pack['helmet'] !== '' ) {
+				$h .= self::row( __( 'Helmet', 'tc-booking-flow' ), $pack['helmet'] );
 			}
 			$h .= '</table>';
 			$h .= '</div>';
 		}
 
-		// Transport
+		// === Standalone Rentals ===
+		foreach ( $r->standalone_rentals as $rental ) {
+			$h .= '<div style="margin-top:10px;background:#f5f7fa;border:1px solid #c3cfe2;border-radius:4px;padding:10px;">';
+			$h .= '<div style="font-size:12px;font-weight:600;color:#3c5478;text-transform:uppercase;margin-bottom:6px;">🚲 ' . esc_html__( 'Standalone Rental', 'tc-booking-flow' ) . '</div>';
+			$h .= '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+			if ( $rental['product_name'] !== '' ) {
+				$h .= self::row( __( 'Product', 'tc-booking-flow' ), '<strong>' . esc_html( $rental['product_name'] ) . '</strong>', false );
+			}
+			if ( $rental['customer'] !== '' ) {
+				$h .= self::row( __( 'Customer', 'tc-booking-flow' ), $rental['customer'] );
+			}
+			if ( $rental['dates'] !== '' ) {
+				$h .= self::row( __( 'Dates', 'tc-booking-flow' ), $rental['dates'] );
+			}
+			if ( $rental['size'] !== '' ) {
+				$h .= self::row( __( 'Size', 'tc-booking-flow' ), $rental['size'] );
+			}
+			if ( $rental['pedals'] !== '' ) {
+				$h .= self::row( __( 'Pedals', 'tc-booking-flow' ), $rental['pedals'] );
+			}
+			if ( $rental['helmet'] !== '' ) {
+				$h .= self::row( __( 'Helmet', 'tc-booking-flow' ), $rental['helmet'] );
+			}
+			if ( ! empty( $rental['transports'] ) ) {
+				$leg_html = '';
+				foreach ( $rental['transports'] as $leg ) {
+					$bits = [ '<strong>' . esc_html( $leg['label'] ) . '</strong>' ];
+					if ( $leg['date'] !== '' )   $bits[] = esc_html( $leg['date'] );
+					if ( $leg['window'] !== '' ) $bits[] = esc_html( ucfirst( $leg['window'] ) );
+					if ( $leg['zone'] !== '' )   $bits[] = esc_html( $leg['zone'] );
+					$leg_html .= '<div style="margin-bottom:4px;">' . implode( ' &middot; ', $bits );
+					if ( $leg['address'] !== '' ) {
+						$leg_html .= '<br><span style="color:#646970;font-size:12px;">' . esc_html( $leg['address'] ) . '</span>';
+					}
+					$leg_html .= '</div>';
+				}
+				$h .= self::row( '🚚 ' . __( 'Transport', 'tc-booking-flow' ), $leg_html, false );
+			}
+			$h .= '</table>';
+			$h .= '</div>';
+		}
+
+		// === Unmatched / Global Transport ===
 		if ( is_array( $r->transport ) && ! empty( $r->transport['present'] ) ) {
 			$h .= '<div style="margin-top:10px;background:#f0f6fc;border:1px solid #c3dcf4;border-radius:4px;padding:10px;">';
 			$h .= '<div style="font-size:12px;font-weight:600;color:#2271b1;text-transform:uppercase;margin-bottom:4px;">🚚 ' . esc_html__( 'Transport', 'tc-booking-flow' ) . '</div>';
@@ -273,6 +323,20 @@ final class Renderer {
 
 		$h .= '</div>';
 		return $h;
+	}
+
+	/**
+	 * Render a label/value table row used inside the Tour and Standalone Rental sections.
+	 *
+	 * @param string $label    Label text (will be escaped).
+	 * @param string $value    Value text — pre-escaped if $escape is false.
+	 * @param bool   $escape   Whether to escape $value with esc_html. Default true.
+	 */
+	private static function row( string $label, string $value, bool $escape = true ) : string {
+		return '<tr>'
+			. '<td style="padding:3px 8px 3px 0;color:#646970;width:35%;vertical-align:top;font-size:12px;">' . esc_html( $label ) . '</td>'
+			. '<td style="padding:3px 0;color:#1d2327;vertical-align:top;">' . ( $escape ? esc_html( $value ) : $value ) . '</td>'
+			. '</tr>';
 	}
 
 	/**

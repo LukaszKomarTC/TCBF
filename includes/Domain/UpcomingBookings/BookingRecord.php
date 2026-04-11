@@ -55,15 +55,47 @@ final class BookingRecord {
 	];
 
 	/**
-	 * Participants on this order. Each entry:
+	 * Tour Packs on this order — pack group = one rider's participation + rental
+	 * for an event/tour. Mirrors the "Tour" section of the admin order page.
+	 *
+	 * Each entry:
 	 * [
-	 *   'name'       => string,
-	 *   'bike'       => string,   // model + size
-	 *   'bike_size'  => string,
-	 *   'pedals'     => string,
-	 *   'helmet'     => string,
-	 *   'rental_type'=> string,
+	 *   'event_id'      => int,
+	 *   'event_title'   => string,
+	 *   'event_date'    => string,   // formatted booking date
+	 *   'participant'   => string,   // rider name
+	 *   'rental_bike'   => string,   // rental product name (e.g. "SCOTT Aspect eRIDE 910 (eBike MTB)")
+	 *   'rental_size'   => string,   // bike size (S/M/L/XL)
+	 *   'pedals'        => string,
+	 *   'helmet'        => string,
 	 * ]
+	 *
+	 * @var array<int, array>
+	 */
+	public $tour_packs = [];
+
+	/**
+	 * Standalone Rentals on this order — WC Bookings rentals NOT part of a tour pack.
+	 * Mirrors the "Standalone Rental" section of the admin order page.
+	 *
+	 * Each entry:
+	 * [
+	 *   'product_name' => string,   // bike name e.g. "SCOTT Addict 50 (Road)"
+	 *   'customer'     => string,   // rider name
+	 *   'dates'        => string,   // formatted date range
+	 *   'size'         => string,
+	 *   'pedals'       => string,
+	 *   'helmet'       => string,
+	 *   'transports'   => array<int, array>  // matched transport legs (subset of $transport_items)
+	 * ]
+	 *
+	 * @var array<int, array>
+	 */
+	public $standalone_rentals = [];
+
+	/**
+	 * @deprecated Use $tour_packs and $standalone_rentals instead.
+	 *             Kept temporarily for backward compatibility with old renderer.
 	 *
 	 * @var array<int, array>
 	 */

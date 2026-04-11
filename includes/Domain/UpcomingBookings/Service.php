@@ -162,150 +162,181 @@ final class Service {
 
 	/**
 	 * Iterate order items, build per-item records via Woo_OrderMeta::build_item_record,
-	 * then group them by rider (tc_group_id or _gf_entry_id) so one row in the digest
-	 * corresponds to one real person, not one line item.
+	 * categorize them into pack groups / standalone rentals / transport, then materialize
+	 * BookingRecord::$tour_packs, $standalone_rentals, $transport.
+	 *
+	 * Mirrors the categorization logic in Woo_AdminOrder::render_meta_box() so the
+	 * digest visually matches the admin order page.
 	 */
 	private static function hydrate_items( \WC_Order $order, BookingRecord $record ) : void {
-		$item_records = [];
+		$item_records      = [];
+		$pack_groups       = []; // tc_group_id => [item records]
+		$standalone_rental = []; // standalone WC Bookings rentals
+		$transport_records = [];
 
-		foreach ( $order->get_items() as $item_id => $item ) {
-			if ( ! is_a( $item, 'WC_Order_Item_Product' ) ) {
+		foreach ( $order->get_items( 'line_item' ) as $item_id => $item ) {
+			if ( ! ( $item instanceof \WC_Order_Item_Product ) ) {
 				continue;
 			}
-			$ir = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::build_item_record( $order, (int) $item_id, $item );
-			$item_records[] = $ir;
+			$rec = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::build_item_record( $order, (int) $item_id, $item );
+			$item_records[] = $rec;
+
+			if ( ! empty( $rec['is_transport'] ) ) {
+				$transport_records[] = $rec;
+			} elseif ( (int) $rec['group_id'] > 0 ) {
+				$pack_groups[ (int) $rec['group_id'] ][] = $rec;
+			} else {
+				$standalone_rental[] = $rec;
+			}
 		}
 
 		if ( empty( $item_records ) ) {
 			return;
 		}
 
-		// Hoist the event title/id from the first item that has one (usually a participation item).
-		foreach ( $item_records as $ir ) {
-			if ( empty( $record->event['id'] ) && ! empty( $ir['event_id'] ) ) {
-				$record->event['id']    = (int) $ir['event_id'];
-				$record->event['title'] = $ir['event_title'] !== '' ? $ir['event_title'] : (string) $ir['product_name'];
+		// Hoist a primary event title for the card header from the first pack with one.
+		foreach ( $pack_groups as $pack_items ) {
+			foreach ( $pack_items as $rec ) {
+				if ( empty( $record->event['id'] ) && ! empty( $rec['event_id'] ) ) {
+					$record->event['id']    = (int) $rec['event_id'];
+					$record->event['title'] = $rec['event_title'] !== '' ? (string) $rec['event_title'] : (string) $rec['product_name'];
+					break 2;
+				}
 			}
 		}
 
-		// Process transport items into a single consolidated transport block.
-		foreach ( $item_records as $ir ) {
-			if ( ! empty( $ir['is_transport'] ) ) {
-				self::merge_transport( $record, $ir );
+		// Match transports to standalone rentals — same logic as Woo_AdminOrder.
+		$rental_transport_map = []; // rental item_id => [transport records]
+		$claimed_transport    = [];
+		foreach ( $standalone_rental as $rental ) {
+			foreach ( $transport_records as $ti => $transport ) {
+				if ( isset( $claimed_transport[ $ti ] ) ) {
+					continue;
+				}
+				$match = false;
+				if ( (int) $rental['entry_id'] > 0 && (int) $transport['entry_id'] === (int) $rental['entry_id'] ) {
+					$match = true;
+				} elseif ( (int) $transport['transport_parent_product_id'] > 0
+					&& (int) $transport['transport_parent_product_id'] === (int) $rental['product_id'] ) {
+					$match = true;
+				} elseif ( (int) $rental['event_id'] > 0
+					&& (int) $transport['event_id'] === (int) $rental['event_id']
+					&& $transport['participant'] !== ''
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( (int) $transport['transport_parent_product_id'] <= 0
+					&& (int) $rental['event_id'] <= 0
+					&& $transport['participant'] !== ''
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				}
+				if ( $match ) {
+					$rental_transport_map[ (int) $rental['item_id'] ][] = $transport;
+					$claimed_transport[ $ti ] = true;
+				}
 			}
 		}
 
-		// Group non-transport items into rider groups for the participant table.
-		$groups = self::group_items_by_rider( $item_records );
-
-		foreach ( $groups as $group_items ) {
-			$participant = self::merge_group_into_participant( $group_items );
-			if ( $participant ) {
-				$record->participants[] = $participant;
+		// === Build $tour_packs ===
+		foreach ( $pack_groups as $gid => $pack_items ) {
+			$parent   = null;
+			$children = [];
+			foreach ( $pack_items as $rec ) {
+				if ( $rec['role'] === 'parent' ) {
+					$parent = $rec;
+				} else {
+					$children[] = $rec;
+				}
 			}
+			$ref = $parent ?: $pack_items[0];
+
+			$pack = [
+				'event_id'    => (int) $ref['event_id'],
+				'event_title' => (string) $ref['event_title'],
+				'event_date'  => (string) $ref['booking_date'],
+				'participant' => (string) $ref['participant'],
+				'rental_bike' => '',
+				'rental_size' => '',
+				'pedals'      => (string) $ref['pedals'],
+				'helmet'      => (string) $ref['helmet'],
+			];
+
+			// Pull bike/size/pedals/helmet from the rental child.
+			foreach ( $children as $child ) {
+				if ( $child['scope'] === 'rental' ) {
+					$pack['rental_bike'] = (string) $child['product_name'];
+					$pack['rental_size'] = (string) $child['size'];
+					if ( $pack['pedals'] === '' && $child['pedals'] !== '' ) {
+						$pack['pedals'] = (string) $child['pedals'];
+					}
+					if ( $pack['helmet'] === '' && $child['helmet'] !== '' ) {
+						$pack['helmet'] = (string) $child['helmet'];
+					}
+					break;
+				}
+			}
+
+			$record->tour_packs[] = $pack;
+		}
+
+		// === Build $standalone_rentals ===
+		foreach ( $standalone_rental as $rental ) {
+			$dates = (string) $rental['booking_date'];
+			if ( ! empty( $rental['end_date'] ) && $rental['end_date'] !== $dates ) {
+				$dates .= ' → ' . $rental['end_date'];
+			}
+			if ( ! empty( $rental['duration'] ) ) {
+				$dates .= ' (' . $rental['duration'] . ')';
+			}
+
+			$transports = $rental_transport_map[ (int) $rental['item_id'] ] ?? [];
+			$transport_legs = [];
+			foreach ( $transports as $t ) {
+				$transport_legs[] = self::format_transport_leg( $t );
+			}
+
+			$record->standalone_rentals[] = [
+				'product_name' => (string) $rental['product_name'],
+				'customer'     => (string) $rental['participant'],
+				'dates'        => $dates,
+				'size'         => (string) $rental['size'],
+				'pedals'       => (string) $rental['pedals'],
+				'helmet'       => (string) $rental['helmet'],
+				'transports'   => $transport_legs,
+			];
+		}
+
+		// === Build $transport (only unmatched) ===
+		$unmatched_transport = [];
+		foreach ( $transport_records as $ti => $t ) {
+			if ( ! isset( $claimed_transport[ $ti ] ) ) {
+				$unmatched_transport[] = $t;
+			}
+		}
+		foreach ( $unmatched_transport as $t ) {
+			self::merge_transport( $record, $t );
 		}
 	}
 
 	/**
-	 * Group item records by rider. Preference order:
-	 *   1. tc_group_id (TCBF's canonical grouping: participation + rental of same rider)
-	 *   2. _gf_entry_id (same form submission = same rider)
-	 *   3. individual item (fallback)
-	 *
-	 * Transport items are excluded.
-	 *
-	 * @param array $item_records Item records from build_item_record()
-	 * @return array<string, array[]> Groups, keyed by a synthetic group key
+	 * Format a single transport leg into a compact array for rendering.
 	 */
-	private static function group_items_by_rider( array $item_records ) : array {
-		$groups = [];
-		$fallback_counter = 0;
-
-		foreach ( $item_records as $ir ) {
-			if ( ! empty( $ir['is_transport'] ) ) {
-				continue;
-			}
-			// Skip items with no identifying info at all.
-			if ( empty( $ir['participant'] ) && empty( $ir['bicycle'] ) && empty( $ir['pedals'] ) && empty( $ir['helmet'] ) && empty( $ir['product_name'] ) ) {
-				continue;
-			}
-
-			$group_id = (int) ( $ir['group_id'] ?? 0 );
-			$entry_id = (int) ( $ir['entry_id'] ?? 0 );
-
-			if ( $group_id > 0 ) {
-				$key = 'g:' . $group_id;
-			} elseif ( $entry_id > 0 ) {
-				$key = 'e:' . $entry_id . ':' . ( $ir['participant'] ?: 'unknown' );
-			} else {
-				$key = 'i:' . ( $fallback_counter++ );
-			}
-
-			if ( ! isset( $groups[ $key ] ) ) {
-				$groups[ $key ] = [];
-			}
-			$groups[ $key ][] = $ir;
-		}
-
-		return $groups;
-	}
-
-	/**
-	 * Merge a group of item records (all belonging to the same rider) into one
-	 * participant entry. Fields are picked from whichever item has them.
-	 *
-	 * @param array $group Array of item_record arrays
-	 * @return array|null Participant record, or null if nothing useful.
-	 */
-	private static function merge_group_into_participant( array $group ) : ?array {
-		$name   = '';
-		$bike   = '';
-		$size   = '';
-		$pedals = '';
-		$helmet = '';
-
-		foreach ( $group as $ir ) {
-			if ( $name === '' && ! empty( $ir['participant'] ) ) {
-				$name = (string) $ir['participant'];
-			}
-			// Bike model: prefer the rental item's _bicycle, then any non-empty.
-			if ( $bike === '' && ! empty( $ir['bicycle'] ) ) {
-				$bike = (string) $ir['bicycle'];
-			}
-			if ( $size === '' && ! empty( $ir['size'] ) ) {
-				$size = (string) $ir['size'];
-			}
-			if ( $pedals === '' && ! empty( $ir['pedals'] ) ) {
-				$pedals = (string) $ir['pedals'];
-			}
-			if ( $helmet === '' && ! empty( $ir['helmet'] ) ) {
-				$helmet = (string) $ir['helmet'];
-			}
-		}
-
-		// Combine bike + size for display.
-		$bike_display = $bike;
-		if ( $bike !== '' && $size !== '' && stripos( $bike, $size ) === false ) {
-			$bike_display = $bike . ' — ' . $size;
-		}
-
-		// If literally nothing was gathered, skip the row.
-		if ( $name === '' && $bike === '' && $pedals === '' && $helmet === '' ) {
-			return null;
-		}
-
+	private static function format_transport_leg( array $t ) : array {
+		$type   = (string) ( $t['transport_type'] ?? '' );
+		$label  = ( $type === 'delivery' ) ? __( 'Delivery', 'tc-booking-flow' )
+			: ( ( $type === 'return' ) ? __( 'Return pickup', 'tc-booking-flow' ) : ucfirst( $type ) );
 		return [
-			'name'        => $name,
-			'bike'        => $bike_display,
-			'bike_size'   => $size,
-			'pedals'      => $pedals,
-			'helmet'      => $helmet,
-			'rental_type' => '',
+			'type'    => $type,
+			'label'   => $label,
+			'date'    => (string) ( $t['transport_date'] ?? '' ),
+			'window'  => (string) ( $t['transport_window'] ?? '' ),
+			'zone'    => (string) ( $t['transport_zone'] ?? '' ),
+			'address' => (string) ( $t['transport_address'] ?? '' ),
 		];
 	}
 
 	/**
-	 * Merge a transport item record into the record's transport block.
+	 * Merge a single (unmatched) transport item record into the record's transport block.
 	 */
 	private static function merge_transport( BookingRecord $record, array $ir ) : void {
 		if ( ! is_array( $record->transport ) ) {
@@ -321,7 +352,6 @@ final class Service {
 			return;
 		}
 
-		// Multi-leg transport (delivery + return). Merge each field.
 		$record->transport['type']    = self::merge_string( $record->transport['type'],    (string) ( $ir['transport_type'] ?? '' ) );
 		$record->transport['date']    = self::merge_string( $record->transport['date'],    (string) ( $ir['transport_date'] ?? '' ) );
 		$record->transport['window']  = self::merge_string( $record->transport['window'],  (string) ( $ir['transport_window'] ?? '' ) );
