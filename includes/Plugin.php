@@ -17,6 +17,7 @@ require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Query.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Issue_Detector.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Priority_Scorer.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Service.php';
+require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Renderer.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Partner.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Validation.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Discount_Rounding.php';
@@ -134,6 +135,7 @@ final class Plugin {
 			\TC_BF\Admin\Settings::init();
 			\TC_BF\Admin\Settings_Transport::init();
 			\TC_BF\Admin\Partners::init();
+			\TC_BF\Admin\Admin_Upcoming_Bookings::init();
 		}
 
 		// ---- GF: dynamic EB% population (field 172)

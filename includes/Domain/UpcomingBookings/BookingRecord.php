@@ -62,8 +62,6 @@ final class BookingRecord {
 	 *   'bike_size'  => string,
 	 *   'pedals'     => string,
 	 *   'helmet'     => string,
-	 *   'shoes'      => string,
-	 *   'height'     => string,
 	 *   'rental_type'=> string,
 	 * ]
 	 *

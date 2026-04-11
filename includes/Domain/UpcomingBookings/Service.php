@@ -225,12 +225,10 @@ final class Service {
 		// Rental type (ROAD/MTB/eMTB/GRAVEL)
 		$rental_type = (string) $item->get_meta( '_rental_type', true );
 
-		// Pedals / helmet / shoes — live in GF lead stored on _gravity_forms_history.
+		// Pedals / helmet — live in GF lead stored on _gravity_forms_history.
 		$gf_lead = self::get_gf_lead_from_item( $item );
 		$pedals  = isset( $gf_lead[60] ) ? (string) $gf_lead[60] : '';
 		$helmet  = isset( $gf_lead[61] ) ? (string) $gf_lead[61] : '';
-		$shoes   = isset( $gf_lead[62] ) ? (string) $gf_lead[62] : '';
-		$height  = isset( $gf_lead[63] ) ? (string) $gf_lead[63] : '';
 
 		// If the item has literally no participant info, skip it.
 		if ( $name === '' && $bike === '' && $pedals === '' && empty( $gf_lead ) ) {
@@ -243,8 +241,6 @@ final class Service {
 			'bike_size'   => '',
 			'pedals'      => $pedals,
 			'helmet'      => $helmet,
-			'shoes'       => $shoes,
-			'height'      => $height,
 			'rental_type' => $rental_type,
 		];
 	}

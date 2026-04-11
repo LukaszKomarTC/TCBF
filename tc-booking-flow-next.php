@@ -20,6 +20,7 @@ require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-product-meta.php';
 require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-settings.php';
 require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-partners.php';
 require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-event-eb.php';
+require_once TC_BF_PATH . 'includes/Admin/Admin_Upcoming_Bookings.php';
 require_once TC_BF_PATH . 'includes/Plugin.php';
 require_once TC_BF_PATH . 'includes/class-tc-bf-sc-event-extras.php';
 require_once TC_BF_PATH . 'includes/sc-event-template-functions.php';
