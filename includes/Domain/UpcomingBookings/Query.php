@@ -83,31 +83,121 @@ final class Query {
 	 * Uses WC_Booking_Data_Store::get_bookings_in_date_range() which is the
 	 * canonical WC Bookings API for date-range queries.
 	 *
+	 * NOTE: Return format varies across WC Bookings versions. We use a raw
+	 * postmeta SQL fallback when the data store returns an unrecognized shape
+	 * (e.g., associative array keyed by booking ID, or array of WC_Booking
+	 * objects that intval to 1). See normalize_booking_ids().
+	 *
 	 * @param int $start_ts Unix timestamp (inclusive)
 	 * @param int $end_ts   Unix timestamp (inclusive)
 	 * @return int[] Booking IDs
 	 */
 	private static function query_bookings_in_range( int $start_ts, int $end_ts ) : array {
-		if ( ! class_exists( '\WC_Booking_Data_Store' ) ) {
-			\TC_BF\Support\Logger::log( 'upcoming_bookings.query.no_data_store', [], 'warning' );
+		// Try the WC Bookings data store first.
+		if ( class_exists( '\WC_Booking_Data_Store' ) ) {
+			try {
+				$raw = \WC_Booking_Data_Store::get_bookings_in_date_range( $start_ts, $end_ts, 0, true );
+				$normalized = self::normalize_booking_ids( $raw );
+				if ( ! empty( $normalized ) ) {
+					return $normalized;
+				}
+			} catch ( \Throwable $e ) {
+				\TC_BF\Support\Logger::log( 'upcoming_bookings.query.data_store_exception', [
+					'message' => $e->getMessage(),
+				], 'warning' );
+			}
+		}
+
+		// Fallback: raw postmeta query on _booking_start.
+		return self::query_bookings_raw( $start_ts, $end_ts );
+	}
+
+	/**
+	 * Normalize booking IDs from whatever WC Bookings returned.
+	 *
+	 * Handles these possible return shapes:
+	 *  - array of integers [1234, 1235, ...] — use as-is
+	 *  - array of numeric strings ['1234', '1235', ...] — cast
+	 *  - associative array [1234 => [...data], 1235 => [...]] — use keys
+	 *  - array of WC_Booking objects — extract ->get_id()
+	 *  - array of associative arrays [ ['id' => 1234, ...], ... ]
+	 *
+	 * @param mixed $raw
+	 * @return int[] Unique booking IDs
+	 */
+	private static function normalize_booking_ids( $raw ) : array {
+		if ( ! is_array( $raw ) || empty( $raw ) ) {
 			return [];
 		}
 
-		try {
-			// WC_Booking_Data_Store::get_bookings_in_date_range( $start, $end, $product_ids, $check_in_cart )
-			$ids = \WC_Booking_Data_Store::get_bookings_in_date_range( $start_ts, $end_ts, null, false );
-			if ( ! is_array( $ids ) ) {
-				return [];
+		$ids = [];
+		$all_values_scalar = true;
+
+		foreach ( $raw as $key => $value ) {
+			if ( is_object( $value ) ) {
+				$all_values_scalar = false;
+				if ( method_exists( $value, 'get_id' ) ) {
+					$id = (int) $value->get_id();
+					if ( $id > 0 ) $ids[] = $id;
+				}
+				continue;
 			}
-			return array_map( 'intval', $ids );
-		} catch ( \Throwable $e ) {
-			\TC_BF\Support\Logger::log( 'upcoming_bookings.query.exception', [
-				'message' => $e->getMessage(),
-				'start'   => $start_ts,
-				'end'     => $end_ts,
-			], 'error' );
+
+			if ( is_array( $value ) ) {
+				$all_values_scalar = false;
+				// Prefer 'id' from inner array if present, otherwise fall back to outer key.
+				if ( isset( $value['id'] ) && (int) $value['id'] > 0 ) {
+					$ids[] = (int) $value['id'];
+				} elseif ( is_int( $key ) || ctype_digit( (string) $key ) ) {
+					$ids[] = (int) $key;
+				}
+				continue;
+			}
+
+			// Scalar value — could be the ID itself.
+			if ( is_numeric( $value ) && (int) $value > 0 ) {
+				$ids[] = (int) $value;
+			}
+		}
+
+		// Edge case: if all values were scalar but none were numeric, try keys.
+		if ( empty( $ids ) && $all_values_scalar ) {
+			foreach ( array_keys( $raw ) as $key ) {
+				if ( is_int( $key ) || ctype_digit( (string) $key ) ) {
+					$k = (int) $key;
+					if ( $k > 0 ) $ids[] = $k;
+				}
+			}
+		}
+
+		return array_values( array_unique( $ids ) );
+	}
+
+	/**
+	 * Raw postmeta fallback query — selects booking IDs whose _booking_start
+	 * postmeta falls within the given Unix timestamp range (converted to YmdHis).
+	 *
+	 * @return int[]
+	 */
+	private static function query_bookings_raw( int $start_ts, int $end_ts ) : array {
+		global $wpdb;
+
+		$start_ymd = gmdate( 'YmdHis', $start_ts );
+		$end_ymd   = gmdate( 'YmdHis', $end_ts );
+
+		$ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT post_id FROM {$wpdb->postmeta}
+			 WHERE meta_key = '_booking_start'
+			 AND meta_value BETWEEN %s AND %s",
+			$start_ymd,
+			$end_ymd
+		) );
+
+		if ( ! is_array( $ids ) ) {
 			return [];
 		}
+
+		return array_map( 'intval', $ids );
 	}
 
 	/**
