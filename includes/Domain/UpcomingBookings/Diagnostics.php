@@ -104,25 +104,30 @@ final class Diagnostics {
 		$h .= '• Day range (UTC timestamps): <code>' . $range['start'] . ' → ' . $range['end'] . '</code><br>';
 		$h .= '• Day range (human): <code>' . date_i18n( 'Y-m-d H:i:s', $range['start'] ) . ' → ' . date_i18n( 'Y-m-d H:i:s', $range['end'] ) . '</code><br>';
 
-		// Try both invocation styles
+		// Try both invocation styles — show actual IDs to detect signature/filter quirks.
+		$ids_from_data_store = [];
 		if ( class_exists( '\WC_Booking_Data_Store' ) && method_exists( '\WC_Booking_Data_Store', 'get_bookings_in_date_range' ) ) {
 			try {
 				$ids_null_false = \WC_Booking_Data_Store::get_bookings_in_date_range( $range['start'], $range['end'], null, false );
-				$h .= '• Query(null, false): returned <strong>' . count( (array) $ids_null_false ) . '</strong> IDs<br>';
+				$ids_null_false = is_array( $ids_null_false ) ? array_map( 'intval', $ids_null_false ) : [];
+				$h .= '• Query(null, false): returned <strong>' . count( $ids_null_false ) . '</strong> IDs → <code>' . esc_html( implode( ', ', array_slice( $ids_null_false, 0, 30 ) ) ) . '</code><br>';
+				$ids_from_data_store = $ids_null_false;
 			} catch ( \Throwable $e ) {
 				$h .= '• ⚠ Query(null, false) exception: ' . esc_html( $e->getMessage() ) . '<br>';
 			}
 
 			try {
 				$ids_zero_true = \WC_Booking_Data_Store::get_bookings_in_date_range( $range['start'], $range['end'], 0, true );
-				$h .= '• Query(0, true): returned <strong>' . count( (array) $ids_zero_true ) . '</strong> IDs<br>';
+				$ids_zero_true = is_array( $ids_zero_true ) ? array_map( 'intval', $ids_zero_true ) : [];
+				$h .= '• Query(0, true): returned <strong>' . count( $ids_zero_true ) . '</strong> IDs → <code>' . esc_html( implode( ', ', array_slice( $ids_zero_true, 0, 30 ) ) ) . '</code><br>';
 			} catch ( \Throwable $e ) {
 				$h .= '• ⚠ Query(0, true) exception: ' . esc_html( $e->getMessage() ) . '<br>';
 			}
 
 			try {
 				$ids_zero_false = \WC_Booking_Data_Store::get_bookings_in_date_range( $range['start'], $range['end'], 0, false );
-				$h .= '• Query(0, false): returned <strong>' . count( (array) $ids_zero_false ) . '</strong> IDs<br>';
+				$ids_zero_false = is_array( $ids_zero_false ) ? array_map( 'intval', $ids_zero_false ) : [];
+				$h .= '• Query(0, false): returned <strong>' . count( $ids_zero_false ) . '</strong> IDs → <code>' . esc_html( implode( ', ', array_slice( $ids_zero_false, 0, 30 ) ) ) . '</code><br>';
 			} catch ( \Throwable $e ) {
 				$h .= '• ⚠ Query(0, false) exception: ' . esc_html( $e->getMessage() ) . '<br>';
 			}
@@ -275,6 +280,36 @@ final class Diagnostics {
 				$h .= '</tr>';
 			}
 			$h .= '</table>';
+		}
+
+		// 8. End-to-end Service trace — call the real pipeline and report counts at each stage.
+		$h .= '<h3 style="margin:12px 0 4px 0;font-size:13px;">8. Service::build_report_for_date trace</h3>';
+		try {
+			$starts_on_ids      = Query::find_bookings_starting_on( $date );
+			$starts_on_by_order = Query::group_by_order( $starts_on_ids );
+			$active_on_ids      = Query::find_bookings_active_on( $date );
+			$active_by_order    = Query::group_by_order( $active_on_ids );
+
+			$h .= '• Query::find_bookings_starting_on returned: <strong>' . count( $starts_on_ids ) . '</strong> IDs → <code>' . esc_html( implode( ', ', array_slice( $starts_on_ids, 0, 30 ) ) ) . '</code><br>';
+			$h .= '• Query::group_by_order (starts-on) produced: <strong>' . count( $starts_on_by_order ) . '</strong> orders<br>';
+			if ( ! empty( $starts_on_by_order ) ) {
+				foreach ( $starts_on_by_order as $oid => $bids ) {
+					$h .= '&nbsp;&nbsp;• Order <code>' . esc_html( $oid ) . '</code> → bookings <code>' . esc_html( implode( ', ', $bids ) ) . '</code><br>';
+				}
+			}
+			$h .= '• Query::find_bookings_active_on returned: <strong>' . count( $active_on_ids ) . '</strong> IDs → <code>' . esc_html( implode( ', ', array_slice( $active_on_ids, 0, 30 ) ) ) . '</code><br>';
+			$h .= '• Query::group_by_order (active-on) produced: <strong>' . count( $active_by_order ) . '</strong> orders<br>';
+
+			$records = Service::build_report_for_date( $date, true );
+			$h .= '• Service::build_report_for_date returned: <strong>' . count( $records ) . '</strong> BookingRecord objects<br>';
+			if ( ! empty( $records ) ) {
+				foreach ( $records as $rec ) {
+					$h .= '&nbsp;&nbsp;• Order ' . esc_html( $rec->order_number ) . ' category=' . esc_html( $rec->category ) . ' participants=' . count( $rec->participants ) . ' transport=' . ( is_array( $rec->transport ) ? 'yes' : 'no' ) . ' issues=' . count( $rec->issues ) . '<br>';
+				}
+			}
+		} catch ( \Throwable $e ) {
+			$h .= '• ⚠ Exception: ' . esc_html( $e->getMessage() ) . '<br>';
+			$h .= '• File: ' . esc_html( $e->getFile() ) . ':' . esc_html( (string) $e->getLine() ) . '<br>';
 		}
 
 		$h .= '</div>';
