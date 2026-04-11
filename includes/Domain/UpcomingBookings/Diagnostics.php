@@ -178,6 +178,105 @@ final class Diagnostics {
 			$h .= '• ⚠ No upcoming bookings found in the next 14 days via raw query<br>';
 		}
 
+		// 7. Pipeline trace — walk each booking ID through Service's hydration
+		$h .= '<h3 style="margin:12px 0 4px 0;font-size:13px;">7. Pipeline trace for target date</h3>';
+		$trace_ids = isset( $raw_ids ) && is_array( $raw_ids ) ? array_map( 'intval', $raw_ids ) : [];
+		if ( empty( $trace_ids ) ) {
+			$h .= '• (no booking IDs from section 5 to trace)<br>';
+		} else {
+			$h .= '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;">';
+			$h .= '<tr style="background:#f6f7f7;">';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">Booking ID</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">Booking load</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">Booking status</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">get_order_id()</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">post_parent</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">_booking_order_item_id</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">wc_get_order</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">Items</th>';
+			$h .= '<th style="padding:4px;border:1px solid #ccc;text-align:left;">Scopes seen</th>';
+			$h .= '</tr>';
+
+			foreach ( $trace_ids as $bid ) {
+				$load_ok = '?';
+				$bstatus = '?';
+				$oid     = '?';
+				$pparent = '?';
+				$oimeta  = '?';
+				$order_ok = '?';
+				$items_n  = '?';
+				$scopes   = '?';
+
+				try {
+					$booking = new \WC_Booking( $bid );
+					if ( $booking && $booking->get_id() ) {
+						$load_ok = '✅';
+						$bstatus = (string) $booking->get_status();
+
+						// WC_Booking::get_order_id()
+						if ( method_exists( $booking, 'get_order_id' ) ) {
+							$oid = (int) $booking->get_order_id();
+						}
+					} else {
+						$load_ok = '❌';
+					}
+				} catch ( \Throwable $e ) {
+					$load_ok = '❌ ' . substr( $e->getMessage(), 0, 60 );
+				}
+
+				// Raw post_parent
+				$post = get_post( $bid );
+				if ( $post ) {
+					$pparent = (int) $post->post_parent;
+				}
+
+				// Raw meta _booking_order_item_id
+				$oimeta = (string) get_post_meta( $bid, '_booking_order_item_id', true );
+				if ( $oimeta === '' ) $oimeta = '—';
+
+				// Attempt wc_get_order using the best available order ID
+				$candidate_order_id = is_int( $oid ) && $oid > 0 ? $oid : ( is_int( $pparent ) && $pparent > 0 ? $pparent : 0 );
+				if ( $candidate_order_id > 0 && function_exists( 'wc_get_order' ) ) {
+					try {
+						$order = wc_get_order( $candidate_order_id );
+						if ( $order && is_a( $order, 'WC_Order' ) ) {
+							$order_ok = '✅ ' . $order->get_status();
+							$items    = $order->get_items();
+							$items_n  = (string) count( $items );
+							$seen     = [];
+							foreach ( $items as $item ) {
+								if ( ! is_a( $item, 'WC_Order_Item_Product' ) ) continue;
+								$sc = (string) $item->get_meta( '_tc_scope', true );
+								if ( $sc === '' ) $sc = (string) $item->get_meta( 'tc_scope', true );
+								if ( $sc === '' ) $sc = '(none)';
+								$seen[] = $sc;
+							}
+							$scopes = esc_html( implode( ', ', $seen ) );
+						} else {
+							$order_ok = '❌ wc_get_order null';
+						}
+					} catch ( \Throwable $e ) {
+						$order_ok = '❌ ' . substr( $e->getMessage(), 0, 60 );
+					}
+				} else {
+					$order_ok = '❌ no order id';
+				}
+
+				$h .= '<tr>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $bid ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $load_ok ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $bstatus ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $oid ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $pparent ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $oimeta ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $order_ok ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . esc_html( (string) $items_n ) . '</td>';
+				$h .= '<td style="padding:4px;border:1px solid #ccc;">' . $scopes . '</td>';
+				$h .= '</tr>';
+			}
+			$h .= '</table>';
+		}
+
 		$h .= '</div>';
 		return $h;
 	}
