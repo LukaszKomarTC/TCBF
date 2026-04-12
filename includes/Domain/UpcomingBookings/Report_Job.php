@@ -171,7 +171,20 @@ final class Report_Job {
 	 * @return bool
 	 */
 	private static function send_html_email( array $to, string $subject, string $html ) : bool {
-		$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
+		// Use WooCommerce's configured From address/name if available,
+		// otherwise fall back to the site admin email. Without a proper
+		// From header many servers reject mail() outright.
+		$from_name  = function_exists( 'WC' ) && WC()->mailer()
+			? WC()->mailer()->get_from_name()
+			: get_bloginfo( 'name' );
+		$from_email = function_exists( 'WC' ) && WC()->mailer()
+			? WC()->mailer()->get_from_address()
+			: get_option( 'admin_email' );
+
+		$headers = [
+			'Content-Type: text/html; charset=UTF-8',
+			'From: ' . $from_name . ' <' . $from_email . '>',
+		];
 
 		// Capture wp_mail errors for logging.
 		$mail_error = null;
