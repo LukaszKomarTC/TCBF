@@ -63,15 +63,30 @@ final class Admin_Upcoming_Bookings {
 			$recipients = [ $custom_email ];
 		}
 
+		// Capture mail errors for the admin notice.
+		$mail_error_msg = '';
+		$error_capture = function( $wp_error ) use ( &$mail_error_msg ) {
+			if ( $wp_error instanceof \WP_Error ) {
+				$mail_error_msg = $wp_error->get_error_message();
+			}
+		};
+		add_action( 'wp_mail_failed', $error_capture );
+
 		$sent = Report_Job::send_report( $date_obj, $recipients );
 
-		$redirect_url = add_query_arg( [
+		remove_action( 'wp_mail_failed', $error_capture );
+
+		$args = [
 			'page'           => self::MENU_SLUG,
 			'tcbf_generated' => '1',
 			'tcbf_date'      => $date_str,
 			'tcbf_include_active' => '1',
 			'tcbf_sent'      => $sent ? '1' : '0',
-		], admin_url( 'tools.php' ) );
+		];
+		if ( ! $sent && $mail_error_msg !== '' ) {
+			$args['tcbf_mail_error'] = urlencode( $mail_error_msg );
+		}
+		$redirect_url = add_query_arg( $args, admin_url( 'tools.php' ) );
 
 		wp_safe_redirect( $redirect_url );
 		exit;
@@ -114,7 +129,13 @@ final class Admin_Upcoming_Bookings {
 						if ( $send_ok ) {
 							esc_html_e( 'Report sent successfully.', 'tc-booking-flow' );
 						} else {
-							esc_html_e( 'Failed to send report. Check that recipients are configured and wp_mail is working.', 'tc-booking-flow' );
+							esc_html_e( 'Failed to send report.', 'tc-booking-flow' );
+							$mail_error = isset( $_GET['tcbf_mail_error'] ) ? sanitize_text_field( wp_unslash( $_GET['tcbf_mail_error'] ) ) : '';
+							if ( $mail_error !== '' ) {
+								echo '<br><strong>' . esc_html__( 'Error:', 'tc-booking-flow' ) . '</strong> ' . esc_html( $mail_error );
+							} else {
+								echo '<br>' . esc_html__( 'Check that recipients are configured and wp_mail is working.', 'tc-booking-flow' );
+							}
 						}
 						?>
 					</p>

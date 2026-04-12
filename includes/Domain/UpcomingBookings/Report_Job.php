@@ -172,7 +172,28 @@ final class Report_Job {
 	 */
 	private static function send_html_email( array $to, string $subject, string $html ) : bool {
 		$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
-		return (bool) wp_mail( implode( ', ', $to ), $subject, $html, $headers );
+
+		// Capture wp_mail errors for logging.
+		$mail_error = null;
+		$error_handler = function( $wp_error ) use ( &$mail_error ) {
+			$mail_error = $wp_error;
+		};
+		add_action( 'wp_mail_failed', $error_handler );
+
+		$result = wp_mail( $to, $subject, $html, $headers );
+
+		remove_action( 'wp_mail_failed', $error_handler );
+
+		if ( ! $result && $mail_error instanceof \WP_Error ) {
+			\TC_BF\Support\Logger::log( 'digest.wp_mail_failed', [
+				'error_code'    => $mail_error->get_error_code(),
+				'error_message' => $mail_error->get_error_message(),
+				'to'            => implode( ', ', $to ),
+				'subject'       => $subject,
+			], 'error' );
+		}
+
+		return (bool) $result;
 	}
 
 	/* =========================================================
