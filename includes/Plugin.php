@@ -19,6 +19,7 @@ require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Priority_Scorer.php'
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Service.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Renderer.php';
 require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Diagnostics.php';
+require_once TC_BF_PATH . 'includes/Domain/UpcomingBookings/Report_Job.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Partner.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Validation.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Discount_Rounding.php';
@@ -138,6 +139,9 @@ final class Plugin {
 			\TC_BF\Admin\Partners::init();
 			\TC_BF\Admin\Admin_Upcoming_Bookings::init();
 		}
+
+		// Daily digest scheduler (runs on frontend + admin — must register the AS hook globally).
+		Domain\UpcomingBookings\Report_Job::init();
 
 		// ---- GF: dynamic EB% population (field 172)
 		add_filter('gform_field_value_early_booking_discount_pct', [ $this, 'gf_populate_eb_pct' ]);
