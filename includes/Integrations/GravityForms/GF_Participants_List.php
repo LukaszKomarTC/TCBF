@@ -173,20 +173,26 @@ final class GF_Participants_List {
 			}
 		}
 
-		// Public view: filter entries to show only paid and in_cart states
+		// Public view: hide only entries in clearly terminal/invalid states.
+		// Entries with empty/missing tcbf_state (legacy rows created before the state
+		// machine existed) are treated as visible. Forward-compatible: any new state
+		// defaults to visible unless explicitly added to $hidden_states.
 		if ( $is_public_view ) {
-			$allowed_states = [
-				\TC_BF\Domain\Entry_State::STATE_PAID,
-				\TC_BF\Domain\Entry_State::STATE_IN_CART,
+			$hidden_states = [
+				\TC_BF\Domain\Entry_State::STATE_REMOVED,
+				\TC_BF\Domain\Entry_State::STATE_EXPIRED,
+				\TC_BF\Domain\Entry_State::STATE_CANCELLED,
+				\TC_BF\Domain\Entry_State::STATE_REFUNDED,
+				\TC_BF\Domain\Entry_State::STATE_PAYMENT_FAILED,
 			];
 
-			$entries = array_values( array_filter( $entries, function( $entry ) use ( $allowed_states ) {
+			$entries = array_values( array_filter( $entries, function( $entry ) use ( $hidden_states ) {
 				$entry_id = isset( $entry['id'] ) ? (int) $entry['id'] : 0;
 				if ( $entry_id <= 0 ) {
 					return false; // Exclude entries without valid ID
 				}
 				$state = self::get_entry_state( $entry_id );
-				return in_array( $state, $allowed_states, true );
+				return ! in_array( $state, $hidden_states, true );
 			} ) );
 		}
 
