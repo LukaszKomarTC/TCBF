@@ -1315,7 +1315,7 @@ final class Woo_Transport {
 	 * Fires via woocommerce_order_item_meta_end. Shows service type, date,
 	 * window, address, and zone for transport line items in emails.
 	 */
-	public static function render_order_item_transport_meta( int $item_id, $item, $order, bool $plain_text = false ) : void {
+	public static function render_order_item_transport_meta( $item_id, $item, $order, $plain_text = false ) : void {
 
 		if ( ! $item instanceof \WC_Order_Item_Product ) {
 			return;
