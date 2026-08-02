@@ -24,6 +24,7 @@ require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Te
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Field_Population.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_MergeTagCurrency.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_BookingsCompat.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderMeta.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Notifications.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_StatusPolicy.php';
@@ -353,6 +354,12 @@ final class Plugin {
 		// ---- Transport: per-bike transport addon (toggle, address picker, cart items)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_Transport') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_Transport::init();
+		}
+
+		// ---- WC Bookings compat: backfill '_booking_id' on cart items so
+		// WC_Booking_Cart_Manager's unguarded reads stop emitting PHP 8 warnings
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_BookingsCompat') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_BookingsCompat::init();
 		}
 
 		// ---- Entry Expiry Job: scheduled cron to expire abandoned carts

@@ -560,6 +560,10 @@ final class Woo_Transport {
 
 		$cart_item_meta = [
 			'booking' => [
+				// Transport is a simple product with no WC booking record, but WC Bookings'
+				// cart manager reads ['booking']['_booking_id'] unguarded — keep the key
+				// present (NULL) so PHP 8 does not warn. See Woo_BookingsCompat.
+				'_booking_id'                 => null,
 				\TC_BF\Plugin::BK_SCOPE       => self::SCOPE_TRANSPORT,
 				\TC_BF\Plugin::BK_CUSTOM_COST => wc_format_decimal( $quote['per_bike_price'], 2 ),
 			],
