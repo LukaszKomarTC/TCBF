@@ -263,19 +263,44 @@ final class Settings {
 						<td>
 							<textarea class="large-text code" rows="5" name="<?php echo esc_attr(self::OPT_FORBIDDEN_PICKUP_DATES); ?>" id="<?php echo esc_attr(self::OPT_FORBIDDEN_PICKUP_DATES); ?>"><?php echo esc_textarea( (string) get_option(self::OPT_FORBIDDEN_PICKUP_DATES, '') ); ?></textarea>
 							<p class="description">
-								<?php echo esc_html__('Dates when bike rentals cannot START (pickup blocked). One entry per line: 2026-09-01 or 2026-08-17 - 2026-08-19. Rentals starting earlier may continue through and end (return) on these dates. Lines starting with # are ignored. Availability rules are not affected.', 'tc-booking-flow-next'); ?>
+								<?php echo esc_html__('Dates when bike rentals cannot START (pickup blocked). Strict format, one entry per line: a single date (2026-09-01) or a range (2026-08-17 - 2026-08-19; reversed ranges are auto-swapped). Lines starting with # are comments. A save containing any invalid line is rejected and the previous value kept. Rentals starting earlier may continue through and end (return) on these dates. Availability rules are not affected.', 'tc-booking-flow-next'); ?>
 							</p>
+							<?php
+							$fp_parsed = \TC_BF\Integrations\WooCommerce\Woo_ForbiddenPickup::parse_config( (string) get_option(self::OPT_FORBIDDEN_PICKUP_DATES, '') );
+							if ( $fp_parsed['ranges'] ) {
+								$fp_labels = array_map( function( $r ) {
+									return $r['start'] === $r['end'] ? $r['start'] : $r['start'] . ' → ' . $r['end'];
+								}, $fp_parsed['ranges'] );
+								echo '<p class="description"><strong>' . esc_html__('Currently active:', 'tc-booking-flow-next') . '</strong> ' . esc_html( implode( ', ', $fp_labels ) ) . '</p>';
+							}
+							?>
 						</td>
 					</tr>
 
 					<tr>
 						<th scope="row">
-							<label for="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>"><?php echo esc_html__('Rental category IDs', 'tc-booking-flow-next'); ?></label>
+							<?php echo esc_html__('Rental categories', 'tc-booking-flow-next'); ?>
 						</th>
 						<td>
-							<input type="text" class="regular-text" name="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>" id="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_RENTAL_CATEGORY_IDS, '207,208,209,219') ); ?>" />
+							<?php
+							$selected_cats = array_filter( array_map( 'absint', explode( ',', (string) get_option(self::OPT_RENTAL_CATEGORY_IDS, '207,208,209,219') ) ) );
+							$all_cats = get_terms( [ 'taxonomy' => 'product_cat', 'hide_empty' => false, 'orderby' => 'name' ] );
+							?>
+							<input type="hidden" name="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>" value="" />
+							<?php if ( is_array( $all_cats ) && $all_cats ) : ?>
+								<fieldset style="max-height: 220px; overflow-y: auto; border: 1px solid #c3c4c7; padding: 8px 12px; background: #fff;">
+									<?php foreach ( $all_cats as $cat ) : ?>
+										<label style="display: block; margin: 2px 0;">
+											<input type="checkbox" name="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>[]" value="<?php echo esc_attr( (string) $cat->term_id ); ?>" <?php checked( in_array( (int) $cat->term_id, $selected_cats, true ) ); ?> />
+											<?php echo esc_html( $cat->name . ' (' . $cat->term_id . ')' ); ?>
+										</label>
+									<?php endforeach; ?>
+								</fieldset>
+							<?php else : ?>
+								<p><?php echo esc_html__('No product categories found.', 'tc-booking-flow-next'); ?></p>
+							<?php endif; ?>
 							<p class="description">
-								<?php echo esc_html__('Comma-separated product_cat term IDs treated as bike rental categories. Only products in these categories are subject to the pickup restriction.', 'tc-booking-flow-next'); ?>
+								<?php echo esc_html__('Product categories treated as bike rentals. Only products in the checked categories are subject to the pickup restriction. Unchecking all disables the restriction for every product.', 'tc-booking-flow-next'); ?>
 							</p>
 						</td>
 					</tr>
@@ -464,19 +489,87 @@ final class Settings {
 			'default'           => 55,
 		]);
 
-		// TCBF: Forbidden pickup dates (textarea; invalid lines kept visible, parser skips them)
+		// TCBF: Forbidden pickup dates. Strict validation: a save containing any
+		// malformed line is rejected whole (previous value retained) with a
+		// settings error listing the bad lines, so a typo can never silently
+		// become a different restriction.
 		register_setting('tc_bf_settings', self::OPT_FORBIDDEN_PICKUP_DATES, [
 			'type'              => 'string',
-			'sanitize_callback' => function($v){ return sanitize_textarea_field( (string) $v ); },
+			'sanitize_callback' => function($v){
+				$v      = sanitize_textarea_field( (string) $v );
+				$parsed = \TC_BF\Integrations\WooCommerce\Woo_ForbiddenPickup::parse_config( $v );
+
+				if ( $parsed['invalid'] ) {
+					add_settings_error(
+						self::OPT_FORBIDDEN_PICKUP_DATES,
+						'tcbf_forbidden_pickup_invalid',
+						sprintf(
+							/* translators: %s: list of rejected config lines */
+							__( 'Forbidden pickup dates were NOT saved. Each line must be a single date (2026-09-01) or a range (2026-08-17 - 2026-08-19). Invalid lines: %s', 'tc-booking-flow-next' ),
+							'"' . implode( '", "', array_map( 'esc_html', $parsed['invalid'] ) ) . '"'
+						),
+						'error'
+					);
+					return (string) get_option( self::OPT_FORBIDDEN_PICKUP_DATES, '' );
+				}
+
+				if ( $parsed['ranges'] ) {
+					$labels = array_map( function( $r ) {
+						return $r['start'] === $r['end'] ? $r['start'] : $r['start'] . ' → ' . $r['end'];
+					}, $parsed['ranges'] );
+					add_settings_error(
+						self::OPT_FORBIDDEN_PICKUP_DATES,
+						'tcbf_forbidden_pickup_active',
+						sprintf(
+							/* translators: %s: list of active forbidden pickup ranges */
+							__( 'Forbidden pickup dates saved. Active restrictions: %s', 'tc-booking-flow-next' ),
+							implode( ', ', $labels )
+						),
+						'updated'
+					);
+				}
+
+				return $v;
+			},
 			'default'           => '',
 		]);
 
-		// TCBF: Rental category IDs (CSV of product_cat term IDs)
+		// TCBF: Rental category IDs. Checkbox UI posts an array of term IDs;
+		// stored as CSV. Unknown terms are dropped with a warning. An
+		// explicitly empty selection is allowed and disables the restriction.
 		register_setting('tc_bf_settings', self::OPT_RENTAL_CATEGORY_IDS, [
 			'type'              => 'string',
 			'sanitize_callback' => function($v){
-				$ids = array_values( array_filter( array_map( 'absint', explode( ',', (string) $v ) ) ) );
-				return $ids ? implode( ',', $ids ) : '207,208,209,219';
+				$raw = is_array( $v ) ? $v : explode( ',', (string) $v );
+				$ids = array_values( array_unique( array_filter( array_map( 'absint', $raw ) ) ) );
+
+				$valid = [];
+				$unknown = [];
+				foreach ( $ids as $id ) {
+					$term = get_term( $id, 'product_cat' );
+					if ( $term && ! is_wp_error( $term ) ) { $valid[] = $id; } else { $unknown[] = $id; }
+				}
+				if ( $unknown ) {
+					add_settings_error(
+						self::OPT_RENTAL_CATEGORY_IDS,
+						'tcbf_rental_cats_unknown',
+						sprintf(
+							/* translators: %s: list of unknown product category IDs */
+							__( 'Ignored unknown product category IDs: %s', 'tc-booking-flow-next' ),
+							implode( ', ', $unknown )
+						),
+						'warning'
+					);
+				}
+				if ( ! $valid ) {
+					add_settings_error(
+						self::OPT_RENTAL_CATEGORY_IDS,
+						'tcbf_rental_cats_empty',
+						__( 'No rental categories selected — the pickup restriction currently applies to no products.', 'tc-booking-flow-next' ),
+						'warning'
+					);
+				}
+				return implode( ',', $valid );
 			},
 			'default'           => '207,208,209,219',
 		]);
