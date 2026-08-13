@@ -24,6 +24,10 @@ final class Settings {
 	const OPT_PARTICIPANTS_PRIVACY_MODE   = 'tcbf_participants_privacy_mode';
 	const OPT_PARTICIPANTS_EVENT_UID_FIELD = 'tcbf_participants_event_uid_field_id';
 
+	// TCBF: Forbidden pickup dates for bike rentals (start date only; returns unaffected)
+	const OPT_FORBIDDEN_PICKUP_DATES = 'tcbf_forbidden_pickup_dates';
+	const OPT_RENTAL_CATEGORY_IDS    = 'tcbf_rental_category_ids';
+
 	public static function init() : void {
 		add_action('admin_menu', [__CLASS__, 'menu']);
 		add_action('admin_init', [__CLASS__, 'register_settings']);
@@ -254,6 +258,30 @@ final class Settings {
 
 					<tr>
 						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_FORBIDDEN_PICKUP_DATES); ?>"><?php echo esc_html__('Forbidden pickup dates', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<textarea class="large-text code" rows="5" name="<?php echo esc_attr(self::OPT_FORBIDDEN_PICKUP_DATES); ?>" id="<?php echo esc_attr(self::OPT_FORBIDDEN_PICKUP_DATES); ?>"><?php echo esc_textarea( (string) get_option(self::OPT_FORBIDDEN_PICKUP_DATES, '') ); ?></textarea>
+							<p class="description">
+								<?php echo esc_html__('Dates when bike rentals cannot START (pickup blocked). One entry per line: 2026-09-01 or 2026-08-17 - 2026-08-19. Rentals starting earlier may continue through and end (return) on these dates. Lines starting with # are ignored. Availability rules are not affected.', 'tc-booking-flow-next'); ?>
+							</p>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>"><?php echo esc_html__('Rental category IDs', 'tc-booking-flow-next'); ?></label>
+						</th>
+						<td>
+							<input type="text" class="regular-text" name="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>" id="<?php echo esc_attr(self::OPT_RENTAL_CATEGORY_IDS); ?>" value="<?php echo esc_attr( (string) get_option(self::OPT_RENTAL_CATEGORY_IDS, '207,208,209,219') ); ?>" />
+							<p class="description">
+								<?php echo esc_html__('Comma-separated product_cat term IDs treated as bike rental categories. Only products in these categories are subject to the pickup restriction.', 'tc-booking-flow-next'); ?>
+							</p>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row">
 							<label for="<?php echo esc_attr(self::OPT_DEBUG); ?>"><?php echo esc_html__('Debug Mode', 'tc-booking-flow-next'); ?></label>
 						</th>
 						<td>
@@ -434,6 +462,23 @@ final class Settings {
 			'type'              => 'integer',
 			'sanitize_callback' => function($v){ return absint($v); },
 			'default'           => 55,
+		]);
+
+		// TCBF: Forbidden pickup dates (textarea; invalid lines kept visible, parser skips them)
+		register_setting('tc_bf_settings', self::OPT_FORBIDDEN_PICKUP_DATES, [
+			'type'              => 'string',
+			'sanitize_callback' => function($v){ return sanitize_textarea_field( (string) $v ); },
+			'default'           => '',
+		]);
+
+		// TCBF: Rental category IDs (CSV of product_cat term IDs)
+		register_setting('tc_bf_settings', self::OPT_RENTAL_CATEGORY_IDS, [
+			'type'              => 'string',
+			'sanitize_callback' => function($v){
+				$ids = array_values( array_filter( array_map( 'absint', explode( ',', (string) $v ) ) ) );
+				return $ids ? implode( ',', $ids ) : '207,208,209,219';
+			},
+			'default'           => '207,208,209,219',
 		]);
 	}
 

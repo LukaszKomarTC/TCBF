@@ -32,6 +32,7 @@ require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderStatus.php
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OfflineGateway.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Pack_Grouping.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Transport.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_ForbiddenPickup.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_MyAccount.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_PartnerCheckout.php';
@@ -360,6 +361,11 @@ final class Plugin {
 		// WC_Booking_Cart_Manager's unguarded reads stop emitting PHP 8 warnings
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_BookingsCompat') ) {
 			\TC_BF\Integrations\WooCommerce\Woo_BookingsCompat::init();
+		}
+
+		// ---- Forbidden pickup dates: block rental START on configured dates (server-side)
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_ForbiddenPickup') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_ForbiddenPickup::init();
 		}
 
 		// ---- Entry Expiry Job: scheduled cron to expire abandoned carts
