@@ -61,6 +61,11 @@ final class Woo_ForbiddenPickup {
 
 	const MSG_UNRESOLVED = '[:en]We couldn\'t validate the selected pickup date. Please select the rental dates again.[:es]No hemos podido validar la fecha de recogida seleccionada. Por favor, selecciona de nuevo las fechas de alquiler.[:]';
 
+	// Per-language PHP date format for the notice dates, resolved through the
+	// same qTranslate selection as the message so they cannot diverge:
+	// EN "17 August 2026", ES "17 de agosto de 2026" (\d\e = literal "de").
+	const DATE_FORMAT = '[:en]j F Y[:es]j \d\e F \d\e Y[:]';
+
 	/** @var array<int,array{start:string,end:string}>|null */
 	private static $ranges_cache = null;
 
@@ -143,10 +148,16 @@ final class Woo_ForbiddenPickup {
 	 * @return string
 	 */
 	public static function build_blocked_message( array $range ) : string {
+		$date_format = Woo::translate( self::DATE_FORMAT );
+		if ( strpos( $date_format, '[:' ) !== false ) {
+			// qTranslate absent: fall back to a plain format rather than
+			// feeding raw language tags into date_i18n.
+			$date_format = 'j F Y';
+		}
 		// Noon UTC keeps the calendar date stable under date_i18n for any
 		// realistic site timezone offset.
-		$fmt = function( string $ymd ) : string {
-			return date_i18n( 'j F Y', (int) strtotime( $ymd . ' 12:00:00 UTC' ) );
+		$fmt = function( string $ymd ) use ( $date_format ) : string {
+			return date_i18n( $date_format, (int) strtotime( $ymd . ' 12:00:00 UTC' ) );
 		};
 		$next = ( new \DateTime( $range['end'] . ' 12:00:00', new \DateTimeZone( 'UTC' ) ) )
 			->modify( '+1 day' )->format( 'Y-m-d' );

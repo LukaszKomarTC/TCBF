@@ -315,7 +315,11 @@ env_multi_range( 'es' );
 post_start_date( 2026, 8, 18 );
 FP::validate( true, RENTAL, 1 );
 $msg = last_notice();
-check( 'notice: ES output selected and filled', strpos( $msg, 'La recogida de bicicletas' ) !== false && strpos( $msg, '17 August 2026' ) !== false && strpos( $msg, '[:' ) === false );
+check( 'notice: ES output selected and filled', strpos( $msg, 'La recogida de bicicletas' ) !== false && strpos( $msg, '[:' ) === false );
+// ES dates use the "j de F de Y" phrasing. The date_i18n stub renders English
+// month names, so we assert the "de … de" structure; the localized month
+// ("agosto") is staging-verified.
+check( 'notice: ES dates use "de … de" phrasing', strpos( $msg, '17 de August de 2026' ) !== false && strpos( $msg, '20 de August de 2026' ) !== false );
 
 env_with_config();
 $GLOBALS['__test']['options']['tcbf_forbidden_pickup_dates'] = '2026-09-01';
