@@ -9,6 +9,7 @@ require_once TC_BF_PATH . 'includes/Support/Logger.php';
 require_once TC_BF_PATH . 'includes/Domain/EventConfig.php';
 require_once TC_BF_PATH . 'includes/Domain/Ledger.php';
 require_once TC_BF_PATH . 'includes/Domain/PartnerResolver.php';
+require_once TC_BF_PATH . 'includes/Domain/UrlCouponHandler.php';
 require_once TC_BF_PATH . 'includes/Domain/Entry_State.php';
 require_once TC_BF_PATH . 'includes/Domain/Entry_Expiry_Job.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Partner.php';
@@ -21,14 +22,22 @@ require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notifications_L
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Config.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Notification_Templates.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_Field_Population.php';
+require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_MergeTagCurrency.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_BookingsCompat.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderMeta.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Notifications.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_StatusPolicy.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OrderStatus.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_OfflineGateway.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Pack_Grouping.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_Transport.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_ForbiddenPickup.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Template_Loader.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_MyAccount.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_PartnerCheckout.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_AdminOrder.php';
+require_once TC_BF_PATH . 'includes/Frontend/Transport_Homepage_Teaser.php';
 
 /**
  * TC Booking Flow Plugin Main Class (Orchestrator)
@@ -120,6 +129,7 @@ final class Plugin {
 		if ( is_admin() ) {
 			\TC_BF\Admin\Product_Meta::init();
 			\TC_BF\Admin\Settings::init();
+			\TC_BF\Admin\Settings_Transport::init();
 			\TC_BF\Admin\Partners::init();
 		}
 
@@ -128,6 +138,11 @@ final class Plugin {
 
 		// ---- GF: partners enabled flag for booking products (field 30)
 		add_filter('gform_field_value_partners_enabled', [ $this, 'gf_populate_partners_enabled' ]);
+
+		// ---- GF: participant language (field 206) - auto-populate with current qTranslate language
+		add_filter('gform_field_value_participant_language', function() {
+			return \TC_BF\Domain\NotificationLanguage::get_current_language();
+		});
 
 		// ---- GF: server-side validation (tamper-proof + self-heal)
 		add_filter('gform_validation', [ $this, 'gf_validation' ], 10, 1);
@@ -152,6 +167,12 @@ final class Plugin {
 			add_action( 'wp_enqueue_scripts', [ \TC_BF\Integrations\GravityForms\GF_Participants_List::class, 'enqueue_assets' ], 20 );
 		}
 
+		// Transport Homepage Teaser: [tcbf_transport_teaser] shortcode for homepage
+		if ( class_exists('\\TC_BF\\Frontend\\Transport_Homepage_Teaser') ) {
+			\TC_BF\Frontend\Transport_Homepage_Teaser::register();
+			add_action( 'wp_enqueue_scripts', [ \TC_BF\Frontend\Transport_Homepage_Teaser::class, 'enqueue_assets' ], 20 );
+		}
+
 		// GF Notifications Ledger: track notification send/fail for participant info status
 		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_Notifications_Ledger') ) {
 			\TC_BF\Integrations\GravityForms\GF_Notifications_Ledger::init();
@@ -160,6 +181,11 @@ final class Plugin {
 		// GF Field Population: populate derived/masked fields at submission
 		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_Field_Population') ) {
 			\TC_BF\Integrations\GravityForms\GF_Field_Population::init();
+		}
+
+		// GF Merge Tag Currency: :tcbf_eur modifier for Euro formatting in notifications
+		if ( class_exists('\\TC_BF\\Integrations\\GravityForms\\GF_MergeTagCurrency') ) {
+			\TC_BF\Integrations\GravityForms\GF_MergeTagCurrency::init();
 		}
 
 		add_filter('gform_pre_submission_filter',  [ $this, 'gf_partner_prepare_form' ], 10, 1);
@@ -173,6 +199,11 @@ final class Plugin {
 		// ---- GF: submission to cart (single source of truth)
 		add_action('gform_after_submission', [ $this, 'gf_after_submission_add_to_cart' ], 10, 2);
 
+		// ---- Notification Language: capture submission language on GF entry
+		add_action('gform_after_submission', function( $entry, $form ) {
+			\TC_BF\Domain\NotificationLanguage::on_gf_submission( $entry, $form );
+		}, 5, 2);
+
 		// ---- Woo Bookings: override booking cost when we pass _custom_cost (existing behavior)
 		add_filter('woocommerce_bookings_calculated_booking_cost', [ $this, 'woo_override_booking_cost' ], 11, 3);
 
@@ -184,6 +215,10 @@ final class Plugin {
 
 		// ---- Cart display: show booking meta to the customer
 		add_filter('woocommerce_get_item_data', [ $this, 'woo_cart_item_data' ], 20, 2);
+
+		// ---- Cart display: lock quantity for booking products and specific categories
+		add_filter('woocommerce_cart_item_quantity', [ Integrations\WooCommerce\Woo::class, 'lock_cart_item_quantity' ], 20, 3);
+		add_filter('woocommerce_widget_cart_item_quantity', [ Integrations\WooCommerce\Woo::class, 'lock_cart_item_quantity' ], 20, 3);
 
 		// ---- Cart display: hide WooCommerce Bookings meta fields we don't want to show
 		add_filter('woocommerce_order_item_display_meta_key', [ $this, 'woo_filter_cart_meta_labels' ], 10, 3);
@@ -197,19 +232,46 @@ final class Plugin {
 		// ---- Order view: render enhanced discount/commission blocks after order table
 		add_action('woocommerce_order_details_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_enhanced_blocks' ], 10, 1);
 
+		// ---- My Account orders list: remove "Order again" for booking orders
+		add_filter('woocommerce_my_account_my_orders_actions', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'filter_order_again_action' ], 10, 2);
+
 		// ---- Order view: hide Woo's generic Discount row (we show partner discount in enhanced blocks)
 		add_filter('woocommerce_get_order_item_totals', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'filter_order_totals_hide_discount' ], 10, 3);
 
 		// ---- Email: render TCBF Summary block before order table
 		add_action('woocommerce_email_before_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_summary_block' ], 10, 4);
 
+		// ---- Email: render inline booking details per item (participant, event, date, EB badge, pack footers)
+		add_action('woocommerce_order_item_meta_end', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_item_booking_details' ], 10, 4);
+
+		// ---- Email: show original (pre-EB) price in the WC product table price column for EB items
+		add_filter('woocommerce_order_formatted_line_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_email_line_subtotal' ], 10, 3);
+
 		// ---- Email: render enhanced discount/commission blocks after order table (with visibility rules)
 		add_action('woocommerce_email_after_order_table', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'render_email_enhanced_blocks' ], 10, 4);
+
+		// ---- Order flow: booking products don't need processing — let payment_complete() go straight to completed
+		add_filter('woocommerce_order_item_needs_processing', [ Integrations\WooCommerce\Woo_Notifications::class, 'booking_item_skip_processing' ], 10, 3);
+
+		// ---- Email: suppress WC "Processing" email for orders with bookings (safety net)
+		add_filter('woocommerce_email_enabled_customer_processing_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'suppress_processing_email_for_bookings' ], 10, 2);
+
+		// ---- Email subjects: localize WooCommerce email subjects with qTranslate support
+		add_filter('woocommerce_email_subject_customer_completed_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_completed_order_subject' ], 10, 2);
+		add_filter('woocommerce_email_subject_new_order', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_new_order_subject' ], 10, 2);
+		add_filter('woocommerce_email_subject_booking_reminder', [ Integrations\WooCommerce\Woo_Notifications::class, 'filter_booking_reminder_subject' ], 10, 2);
+
+		// ---- Email locale switching: switch WP locale and qTranslate language based on recipient
+		add_action('woocommerce_email_setup_locale', [ Integrations\WooCommerce\Woo_Notifications::class, 'setup_email_locale' ], 10, 1);
+		add_action('woocommerce_email_restore_locale', [ Integrations\WooCommerce\Woo_Notifications::class, 'restore_email_locale' ], 10, 1);
 
 		// ---- Template Loader: WooCommerce + Bookings template overrides (theme wins, can be disabled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Template_Loader') ) {
 			\TC_BF\Integrations\WooCommerce\Template_Loader::init();
 		}
+
+		// ---- Product Brief: booking rules & price table above short description
+		\TC_BF\Integrations\WooCommerce\Woo_ProductBrief::init();
 
 		// ---- Order Status: register custom order statuses (invoiced, settled)
 		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderStatus') ) {
@@ -221,13 +283,54 @@ final class Plugin {
 			\TC_BF\Integrations\WooCommerce\Woo_OfflineGateway::init();
 		}
 
+		// ---- My Account: enhanced orders table for hotel partners
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_MyAccount') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_MyAccount::init();
+		}
+
+		// ---- Partner Checkout: simplified checkout for hotel partners
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_PartnerCheckout') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_PartnerCheckout::init();
+		}
+
+		// ---- Admin Order: structured booking summary meta box + item badges + hidden custom fields
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_AdminOrder') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_AdminOrder::init();
+		}
+
+		// ---- Notification Language: user profile fields (admin + My Account)
+		add_action( 'show_user_profile', function( $user ) {
+			\TC_BF\Domain\NotificationLanguage::render_user_profile_field( $user );
+		} );
+		add_action( 'edit_user_profile', function( $user ) {
+			\TC_BF\Domain\NotificationLanguage::render_user_profile_field( $user );
+		} );
+		add_action( 'personal_options_update', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_user_profile_field( (int) $user_id );
+		} );
+		add_action( 'edit_user_profile_update', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_user_profile_field( (int) $user_id );
+		} );
+		add_action( 'woocommerce_edit_account_form', function() {
+			\TC_BF\Domain\NotificationLanguage::render_my_account_field();
+		} );
+		add_action( 'woocommerce_save_account_details', function( $user_id ) {
+			\TC_BF\Domain\NotificationLanguage::save_my_account_field( (int) $user_id );
+		} );
+
 		// ---- Cart display: render participant and pack badges after item name (priority 10 = shows first)
 		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_render_pack_badges' ], 10, 2);
 
-		// ---- Cart display: show EB discount badge after item name (priority 15 = shows after participant badge)
-		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
-		add_action('woocommerce_after_mini_cart_item_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
-		add_action('woocommerce_checkout_cart_item_product_name', [ $this, 'woo_cart_item_eb_badge' ], 15, 2);
+		// ---- Cart/checkout: show original price with strikethrough for EB, bold for non-EB
+		add_filter('woocommerce_cart_item_price', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_price' ], 10, 3);
+		add_filter('woocommerce_cart_item_subtotal', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'override_cart_item_subtotal' ], 10, 3);
+
+		// ---- Mini cart context flag: lets price overrides apply mini-cart-only logic
+		add_action('woocommerce_before_mini_cart', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'set_mini_cart_context' ]);
+		add_action('woocommerce_after_mini_cart', [ Integrations\WooCommerce\Woo_OrderMeta::class, 'clear_mini_cart_context' ]);
+
+		// ---- Cart display: show per-item EB summary block (base price, discount, total) after item name
+		add_action('woocommerce_after_cart_item_name', [ $this, 'woo_cart_item_eb_summary' ], 20, 2);
 
 		// ---- Cart display: add event link to participation items (title)
 		add_filter('woocommerce_cart_item_name', [ $this, 'woo_add_pack_badge_to_title' ], 10, 3);
@@ -249,6 +352,22 @@ final class Plugin {
 			\TC_BF\Integrations\WooCommerce\Pack_Grouping::init();
 		}
 
+		// ---- Transport: per-bike transport addon (toggle, address picker, cart items)
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_Transport') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_Transport::init();
+		}
+
+		// ---- WC Bookings compat: backfill '_booking_id' on cart items so
+		// WC_Booking_Cart_Manager's unguarded reads stop emitting PHP 8 warnings
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_BookingsCompat') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_BookingsCompat::init();
+		}
+
+		// ---- Forbidden pickup dates: block rental START on configured dates (server-side)
+		if ( class_exists('\\TC_BF\\Integrations\\WooCommerce\\Woo_ForbiddenPickup') ) {
+			\TC_BF\Integrations\WooCommerce\Woo_ForbiddenPickup::init();
+		}
+
 		// ---- Entry Expiry Job: scheduled cron to expire abandoned carts
 		if ( class_exists('\\TC_BF\\Domain\\Entry_Expiry_Job') ) {
 			\TC_BF\Domain\Entry_Expiry_Job::init();
@@ -266,6 +385,11 @@ final class Plugin {
 		// ---- Entry State: set checkout guard when order is being created
 		add_action('woocommerce_checkout_order_processed', [ $this, 'entry_state_set_checkout_guard' ], 5, 3);
 
+		// ---- Notification Language: capture customer language on order
+		add_action('woocommerce_checkout_order_processed', function( $order_id, $posted_data, $order ) {
+			\TC_BF\Domain\NotificationLanguage::on_checkout_order_processed( (int) $order_id, $posted_data, $order );
+		}, 6, 3);
+
 		// ---- Entry State: mark entries as paid when payment succeeds
 		add_action('woocommerce_payment_complete', [ $this, 'entry_state_mark_paid' ], 25, 1);
 		add_action('woocommerce_order_status_processing', [ $this, 'entry_state_mark_paid' ], 25, 2);
@@ -280,6 +404,14 @@ final class Plugin {
 		// ---- GF notifications: custom event + fire on paid-equivalent statuses
 		// Paid-equivalent: processing, completed, invoiced (see Woo_StatusPolicy)
 		add_filter('gform_notification_events', [ $this, 'gf_register_notification_events' ], 10, 1);
+		// Per-notification language switching (participant, partner, admin get different languages)
+		add_filter('gform_notification', function( $notification, $form, $entry ) {
+			return \TC_BF\Domain\NotificationLanguage::filter_notification_language( $notification, $form, $entry );
+		}, 5, 3);
+		add_action('woocommerce_gravityforms_entry_created', [ $this, 'bridge_gf_entry_id_to_order_item' ], 10, 5);
+		add_action('woocommerce_gravityforms_entry_created', function( $entry_id, $order_id, $order_item, $form_data, $lead_data ) {
+			\TC_BF\Domain\NotificationLanguage::on_gf_entry_linked_to_order( $entry_id, $order_id, $order_item, $form_data, $lead_data );
+		}, 15, 5);
 		add_action('woocommerce_payment_complete', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 1);
 		// All paid-equivalent statuses fire WC___paid event
 		add_action('woocommerce_order_status_processing', [ $this, 'woo_fire_gf_paid_notifications' ], 20, 2);
@@ -288,6 +420,9 @@ final class Plugin {
 
 		// Settled status fires WC___settled event (future use for invoice settlement)
 		add_action('woocommerce_order_status_settled',    [ $this, 'woo_fire_gf_settled_notifications' ], 20, 2);
+		// ---- URL coupon handler: catch ?apply_coupon= from partner portal links.
+		Domain\UrlCouponHandler::init();
+
 		// ---- Partner coupon: auto-apply partner coupon for logged-in partners (legacy parity)
 		// Run late on wp_loaded so WC()->cart is available.
 		add_action('wp_loaded', [ $this, 'maybe_auto_apply_partner_coupon' ], 30);
@@ -628,9 +763,16 @@ final class Plugin {
 		$start_month = (int) gmdate('n', $start_ts);
 		$start_day   = (int) gmdate('j', $start_ts);
 
-		// participant
+		// participant — GF name fields may be hidden for non-admin users via
+		// conditional logic, so fall back to the logged-in user's WP profile name.
 		$first = (string) rgar($entry, (string) self::GF_FIELD_FIRST_NAME);
 		$last  = (string) rgar($entry, (string) self::GF_FIELD_LAST_NAME);
+
+		if ( trim( $first . $last ) === '' && is_user_logged_in() ) {
+			$current_user = wp_get_current_user();
+			$first = (string) $current_user->first_name;
+			$last  = (string) $current_user->last_name;
+		}
 
 		$this->log('gf.participant_fields', [
 			'entry_id' => $entry_id,
@@ -1257,6 +1399,50 @@ final class Plugin {
 			echo "  padding-right: 0 !important;\n";
 			echo "}\n";
 
+			echo "\n/* Cart/checkout price styling: strikethrough EB, bold non-EB */\n";
+			echo ".tcbf-price-original {\n";
+			echo "  text-decoration: line-through;\n";
+			echo "  color: #1a1a1a;\n";
+			echo "  font-weight: 400;\n";
+			echo "}\n";
+			echo ".product-price .tcbf-price-final,\n";
+			echo ".product-total .tcbf-price-final {\n";
+			echo "  font-weight: 800;\n";
+			echo "  color: #1a1a1a;\n";
+			echo "}\n";
+
+			echo "\n/* Mini cart widget: white text on dark/green background */\n";
+			echo ".widget_shopping_cart .mini_cart_item a,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item a,\n";
+			echo ".widget_shopping_cart .mini_cart_item .quantity,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item .quantity,\n";
+			echo ".widget_shopping_cart .mini_cart_item .woocommerce-Price-amount,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item .woocommerce-Price-amount {\n";
+			echo "  color: #fff !important;\n";
+			echo "}\n";
+			echo ".widget_shopping_cart .mini_cart_item del .woocommerce-Price-amount,\n";
+			echo ".widget_shopping_cart_content .mini_cart_item del .woocommerce-Price-amount {\n";
+			echo "  color: rgba(255, 255, 255, 0.7) !important;\n";
+			echo "}\n";
+			echo ".widget_shopping_cart .tcbf-transport-item-name,\n";
+			echo ".widget_shopping_cart_content .tcbf-transport-item-name {\n";
+			echo "  color: #fff !important;\n";
+			echo "}\n";
+
+			echo "\n/* EB row with gradient badge + bold total in cart/checkout footers */\n";
+			echo ".tcbf-pack-footer-eb-row,\n";
+			echo ".tcbf-summary-eb-row {\n";
+			echo "  display: flex;\n";
+			echo "  justify-content: space-between;\n";
+			echo "  align-items: center;\n";
+			echo "  padding: 4px 0;\n";
+			echo "  margin-top: 4px;\n";
+			echo "}\n";
+			echo ".tcbf-pack-footer-total-value {\n";
+			echo "  font-weight: 800 !important;\n";
+			echo "  font-size: 16px !important;\n";
+			echo "}\n";
+
 			echo "\n/* Inline Pack Badge (in product title) */\n";
 			echo ".tcbf-pack-badge-inline {\n";
 			echo "  background: rgba(107, 114, 128, 0.12);\n";
@@ -1381,6 +1567,44 @@ final class Plugin {
 			echo "  font-size: 14px;\n";
 			echo "}\n";
 
+			echo "\n/* ===== Per-item EB summary (inline in product-name cell) ===== */\n";
+			echo ".tcbf-eb-summary {\n";
+			echo "  background: rgba(0, 0, 0, 0.02);\n";
+			echo "  border-left: 3px solid var(--tcbf-eb-purple, #7c3aed);\n";
+			echo "  padding: 8px 12px;\n";
+			echo "  margin-top: 10px;\n";
+			echo "  font-size: 13px;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line {\n";
+			echo "  display: flex;\n";
+			echo "  justify-content: space-between;\n";
+			echo "  align-items: center;\n";
+			echo "  padding: 2px 0;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__label {\n";
+			echo "  color: #6b7280;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__value {\n";
+			echo "  font-weight: 600;\n";
+			echo "  color: #374151;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__value--discount {\n";
+			echo "  color: var(--tcbf-eb-purple, #7c3aed);\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line--total {\n";
+			echo "  border-top: 1px solid rgba(0, 0, 0, 0.08);\n";
+			echo "  margin-top: 3px;\n";
+			echo "  padding-top: 5px;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line--total .tcbf-eb-summary__label {\n";
+			echo "  font-weight: 600;\n";
+			echo "  color: #374151;\n";
+			echo "}\n";
+			echo ".tcbf-eb-summary__line--total .tcbf-eb-summary__value {\n";
+			echo "  font-weight: 700;\n";
+			echo "  color: #111827;\n";
+			echo "}\n";
+
 			echo "\n/* ===== Pack UI Polish (Phase 9A/9C) ===== */\n";
 			echo "/* Product name cell: allow text to shrink without affecting thumbnail */\n";
 			echo ".woocommerce-cart-form__contents td.product-name {\n";
@@ -1414,9 +1638,17 @@ final class Plugin {
 			echo "  display: inline-flex;\n";
 			echo "}\n";
 
-			echo "\n/* Give price/subtotal breathing room from right edge */\n";
-			echo ".woocommerce-cart-form__contents td.product-price,\n";
+			echo "\n/* Hide qty & subtotal cells (always 1, price = subtotal) */\n";
+			echo ".woocommerce-cart-form__contents td.product-quantity,\n";
 			echo ".woocommerce-cart-form__contents td.product-subtotal {\n";
+			echo "  display: none !important;\n";
+			echo "}\n";
+			echo ".woocommerce-cart-form__contents th.product-quantity,\n";
+			echo ".woocommerce-cart-form__contents th.product-subtotal {\n";
+			echo "  display: none !important;\n";
+			echo "}\n";
+			echo "\n/* Give price breathing room from right edge */\n";
+			echo ".woocommerce-cart-form__contents td.product-price {\n";
 			echo "  padding-right: 14px !important;\n";
 			echo "}\n";
 
@@ -1424,6 +1656,11 @@ final class Plugin {
 			echo ".woocommerce-cart .woocommerce-cart-form .shop_table.cart {\n";
 			echo "  border-collapse: separate !important;\n";
 			echo "  border-spacing: 0 !important;\n";
+			echo "}\n";
+
+			echo "\n/* Actions row lost its top border due to border-collapse: separate */\n";
+			echo ".woocommerce-cart .woocommerce-cart-form .shop_table.cart td.actions {\n";
+			echo "  border-top: 2px solid rgba(0, 0, 0, 0.05) !important;\n";
 			echo "}\n";
 
 			echo "\n/* Partner Coupon Styling in Cart Totals */\n";
@@ -1530,69 +1767,190 @@ final class Plugin {
 			echo "  }\n";
 			echo "}\n";
 
-			echo "\n/* ===== Mobile/Tablet Refinement (Phase 9C) ===== */\n";
-			echo "/* Covers mobile + tablet: clean card layout + metrics bar */\n";
+			echo "\n/* ===== Mobile/Tablet Refinement (Phase 9D – Flexbox Metrics Bar) ===== */\n";
+			echo "/* Covers mobile + tablet: clean card layout with robust flexbox metrics */\n";
 			echo "@media (max-width: 1024px) {\n";
 			echo "\n";
-			echo "  /* Make each cart item a block/card */\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item {\n";
-			echo "    display: block;\n";
-			echo "    padding: 12px 0;\n";
+			echo "  /* Hide the table header on mobile/tablet */\n";
+			echo "  .woocommerce-cart .shop_table_responsive thead {\n";
+			echo "    display: none;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Default: stack all cells as blocks */\n";
+			echo "  /* Make each cart item a card */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item {\n";
+			echo "    display: flex;\n";
+			echo "    flex-wrap: wrap;\n";
+			echo "    align-items: flex-start;\n";
+			echo "    padding: 14px 0;\n";
+			echo "    position: relative;\n";
+			echo "    border-bottom: 1px solid var(--tcbf-divider-light, rgba(0,0,0,0.06));\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Reset all cells: block by default */\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td {\n";
 			echo "    display: block;\n";
 			echo "    width: 100%;\n";
 			echo "    box-sizing: border-box;\n";
+			echo "    border: none;\n";
+			echo "    padding: 4px 8px;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Keep remove cell compact */\n";
+			echo "  /* Remove button: position top-right corner */\n";
 			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-remove {\n";
+			echo "    position: absolute;\n";
+			echo "    top: 10px;\n";
+			echo "    right: 4px;\n";
 			echo "    width: auto;\n";
+			echo "    padding: 0;\n";
+			echo "    z-index: 2;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Metrics bar: Price/Qty/Subtotal in 3-column row */\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal {\n";
-			echo "    display: inline-block;\n";
-			echo "    width: 33.333%;\n";
-			echo "    vertical-align: top;\n";
-			echo "    padding: 10px 6px;\n";
-			echo "    text-align: center !important;\n";
+			echo "  /* Thumbnail: constrain width */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-thumbnail {\n";
+			echo "    width: auto;\n";
+			echo "    padding: 8px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-thumbnail img {\n";
+			echo "    max-width: 90px;\n";
+			echo "    height: auto;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Product name: full width */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-name {\n";
+			echo "    padding: 6px 8px;\n";
+			echo "    font-weight: 500;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "\n";
+			echo "  /* ---- Price column as standalone block ---- */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price {\n";
+			echo "    display: flex;\n";
+			echo "    flex-direction: column;\n";
+			echo "    align-items: center;\n";
+			echo "    justify-content: flex-start;\n";
+			echo "    flex: 1 1 0;\n";
+			echo "    min-width: 0;\n";   // allow shrinking below content size
+			echo "    padding: 10px 4px;\n";
+			echo "    text-align: center;\n";
+			echo "    overflow: hidden;\n";
+			echo "    text-overflow: ellipsis;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Caption from data-title attribute */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price::before {\n";
+			echo "    display: block;\n";
+			echo "    content: attr(data-title);\n";
+			echo "    font-size: 10px;\n";
+			echo "    font-weight: 600;\n";
+			echo "    text-transform: uppercase;\n";
+			echo "    letter-spacing: 0.5px;\n";
+			echo "    opacity: 0.55;\n";
+			echo "    margin-bottom: 4px;\n";
 			echo "    white-space: nowrap;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Captions from data-title attribute */\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price::before,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity::before,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal::before {\n";
-			echo "    display: block;\n";
-			echo "    content: attr(data-title);\n";
-			echo "    font-size: 11px;\n";
+			echo "  /* Price amounts: scale down gracefully */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .amount {\n";
+			echo "    display: inline-block;\n";
+			echo "    font-size: 14px;\n";
 			echo "    font-weight: 600;\n";
-			echo "    opacity: 0.7;\n";
-			echo "    margin-bottom: 4px;\n";
-			echo "    text-align: center;\n";
+			echo "    max-width: 100%;\n";
+			echo "    overflow: hidden;\n";
+			echo "    text-overflow: ellipsis;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  /* Values: keep neat */\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .amount,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-subtotal .amount {\n";
+			echo "  /* Strikethrough EB price: constrain within flex column */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original {\n";
 			echo "    display: inline-block;\n";
-			echo "    font-size: 14px;\n";
+			echo "    max-width: 100%;\n";
+			echo "    overflow: hidden;\n";
+			echo "    text-decoration: line-through;\n";
+			echo "    text-overflow: ellipsis;\n";
+			echo "    white-space: nowrap;\n";
+			echo "    font-size: 13px;\n";
+			echo "    opacity: 0.6;\n";
+			echo "  }\n";
+			echo "  /* line-through must also be on .amount children since inline-block escapes parent text-decoration */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original .amount {\n";
+			echo "    text-decoration: line-through;\n";
+			echo "    font-weight: 400;\n";
 			echo "  }\n";
 			echo "\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity .quantity,\n";
-			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-quantity input.qty {\n";
-			echo "    display: inline-block;\n";
-			echo "    font-size: 14px;\n";
-			echo "  }\n";
 			echo "\n";
-			echo "  /* Parent row: pad away from violet border (mobile + tablet) */\n";
-			echo "  tr.tcbf-pack-role-parent > td:not(.product-remove) {\n";
+			echo "  /* Parent row: pad away from border */\n";
+			echo "  tr.tcbf-pack-role-parent > td:not(.product-remove),\n";
+			echo "  tr.tcbf-cart-row--parent > td:not(.product-remove) {\n";
 			echo "    padding-left: 12px !important;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Child row: indented padding */\n";
+			echo "  tr.tcbf-cart-row--child > td:not(.product-remove) {\n";
+			echo "    padding-left: 20px !important;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Suppress ::before pseudo-elements on special rows */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row td::before,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-pack-separator td::before,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-pack-footer-row td::before {\n";
+			echo "    display: none !important;\n";
+			echo "    content: none !important;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Suppress ::before on thumbnail/remove cells */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-thumbnail::before,\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-remove::before {\n";
+			echo "    display: none !important;\n";
+			echo "    content: none !important;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Suppress ::before on product-name cell */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-name::before {\n";
+			echo "    display: none !important;\n";
+			echo "    content: none !important;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Pack footer / EB summary rows: full width in flex context */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-pack-footer-row {\n";
+			echo "    display: block;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-pack-footer-row td {\n";
+			echo "    display: block;\n";
+			echo "    width: 100%;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Separator rows */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-pack-separator {\n";
+			echo "    display: block;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.tcbf-pack-separator td {\n";
+			echo "    display: block;\n";
+			echo "  }\n";
+			echo "\n";
+			echo "  /* Actions row: full width */\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr td.actions {\n";
+			echo "    display: block;\n";
+			echo "    width: 100%;\n";
+			echo "  }\n";
+			echo "}\n";
+			echo "\n";
+			echo "/* ===== Small screens (≤480px) ===== */\n";
+			echo "@media (max-width: 480px) {\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .amount {\n";
+			echo "    font-size: 12px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price::before {\n";
+			echo "    font-size: 9px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-thumbnail img {\n";
+			echo "    max-width: 72px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original {\n";
+			echo "    text-decoration: line-through;\n";
+			echo "    font-size: 11px;\n";
+			echo "  }\n";
+			echo "  .woocommerce-cart .shop_table_responsive tr.cart_item td.product-price .tcbf-price-original .amount {\n";
+			echo "    text-decoration: line-through;\n";
+			echo "    font-weight: 400;\n";
 			echo "  }\n";
 			echo "}\n";
 		}
@@ -1862,7 +2220,7 @@ final class Plugin {
 		}
 
 		// For participation items (parent or no pack), make title link to event
-		if ( $scope !== 'rental' && $event_id > 0 ) {
+		if ( $scope !== 'rental' && $scope !== 'transport' && $event_id > 0 ) {
 			$event_url = get_permalink( $event_id );
 			if ( $event_url ) {
 				$product_name = '<a href="' . esc_url( $event_url ) . '">' . $product_name . '</a>';
@@ -2002,91 +2360,15 @@ final class Plugin {
 	}
 
 	/**
-	 * Render pack footer rows in cart table.
+	 * Render pack footer rows in cart table (legacy, now handled by woo_cart_item_eb_summary).
 	 *
-	 * Outputs footer rows with pack totals (base price, EB discount, pack total)
-	 * for each pack group. Uses JavaScript to position them after each pack's last item.
+	 * Per-item EB summaries are now rendered inline via the woocommerce_after_cart_item_name hook.
+	 * This method is kept as a no-op to avoid breaking the hook registration.
 	 */
 	public function woo_render_cart_pack_footers() {
-		// Skip if our cart template is loaded (it renders footers directly)
-		global $tcbf_cart_template_loaded;
-		if ( ! empty( $tcbf_cart_template_loaded ) ) {
-			return;
-		}
-
-		if ( ! class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' ) ) {
-			return;
-		}
-
-		$cart = WC()->cart;
-		if ( ! $cart ) {
-			return;
-		}
-
-		// Group cart items by tc_group_id
-		$groups = [];
-		foreach ( $cart->get_cart() as $cart_key => $cart_item ) {
-			$group_id = isset( $cart_item['tc_group_id'] ) ? (int) $cart_item['tc_group_id'] : 0;
-			if ( $group_id > 0 ) {
-				if ( ! isset( $groups[ $group_id ] ) ) {
-					$groups[ $group_id ] = [];
-				}
-				$groups[ $group_id ][] = $cart_item;
-			}
-		}
-
-		if ( empty( $groups ) ) {
-			return;
-		}
-
-		// Output footer rows for each pack group
-		foreach ( $groups as $group_id => $group_items ) {
-			$pack_totals = \TC_BF\Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( $group_items );
-
-			// Only show footer if pack has EB discount
-			if ( ! $pack_totals['has_eb'] ) {
-				continue;
-			}
-
-			?>
-			<tr class="tcbf-pack-footer-row" data-tcbf-group="<?php echo esc_attr( $group_id ); ?>">
-				<td colspan="6" class="tcbf-pack-footer-cell">
-					<div class="tcbf-pack-footer tcbf-pack-footer--cart">
-						<div class="tcbf-pack-footer-line tcbf-pack-footer-base">
-							<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['base_label'] ); ?></span>
-							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['base_price'] ) ); ?></span>
-						</div>
-						<?php if ( $pack_totals['eb_discount'] > 0 ) : ?>
-						<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">
-							<span class="tcbf-pack-footer-label"><?php esc_html_e( 'Early booking discount', 'tc-booking-flow-next' ); ?></span>
-							<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-<?php echo wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ); ?></span>
-						</div>
-						<?php endif; ?>
-						<div class="tcbf-pack-footer-line tcbf-pack-footer-total">
-							<span class="tcbf-pack-footer-label"><?php echo esc_html( $pack_totals['total_label'] ?? __( 'Pack total', 'tc-booking-flow-next' ) ); ?></span>
-							<span class="tcbf-pack-footer-value"><?php echo wp_kses_post( wc_price( $pack_totals['pack_total'] ) ); ?></span>
-						</div>
-					</div>
-				</td>
-			</tr>
-			<?php
-		}
-
-		// Output JavaScript to move footer rows after their pack's last item
-		?>
-		<script>
-		(function() {
-			document.querySelectorAll('.tcbf-pack-footer-row').forEach(function(footerRow) {
-				var groupId = footerRow.getAttribute('data-tcbf-group');
-				var packItems = document.querySelectorAll('tr.tcbf-pack-group-' + groupId);
-				if (packItems.length > 0) {
-					var lastItem = packItems[packItems.length - 1];
-					lastItem.parentNode.insertBefore(footerRow, lastItem.nextSibling);
-				}
-			});
-		})();
-		</script>
-		<?php
+		// Per-item EB summaries are now rendered inline via woo_cart_item_eb_summary
+		// hooked to woocommerce_after_cart_item_name at priority 20.
+		// This method is kept as a no-op to avoid breaking the hook registration.
 	}
 
 	/**
@@ -2156,6 +2438,84 @@ final class Plugin {
 		echo '</div>';
 	}
 
+	/**
+	 * Render per-item EB summary block (base price, EB discount, total) inside the product-name cell.
+	 * Only for non-transport cart items that have EB. Renders after the EB badge.
+	 */
+	public function woo_cart_item_eb_summary( $cart_item, $cart_item_key = null ) {
+		// Skip when custom cart template handles inline EB rendering
+		global $tcbf_cart_template_loaded;
+		if ( ! empty( $tcbf_cart_template_loaded ) ) {
+			return;
+		}
+
+		// Handle reversed params from mini-cart
+		if ( is_string( $cart_item ) && is_array( $cart_item_key ) ) {
+			$temp = $cart_item;
+			$cart_item = $cart_item_key;
+			$cart_item_key = $temp;
+		}
+
+		// Skip transport items
+		$scope = '';
+		if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Pack_Grouping' ) ) {
+			$scope = Integrations\WooCommerce\Pack_Grouping::get_scope( $cart_item );
+		}
+		if ( $scope === 'transport' ) {
+			return;
+		}
+
+		// Try BookingLedger data first (top-level cart item keys)
+		$base      = (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+		$eb_amount = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+		$total     = (float) ( $cart_item['_tcbf_ledger_total'] ?? 0 );
+
+		if ( $eb_amount > 0 && $base > 0 ) {
+			$base_label  = '[:en]Price before EB[:es]Precio antes de RA[:]';
+			$eb_label    = '[:en]Early booking discount[:es]Descuento reserva anticipada[:]';
+			$total_label = '[:en]Total[:es]Total[:]';
+			if ( function_exists( 'tc_sc_event_tr' ) ) {
+				$base_label  = tc_sc_event_tr( $base_label );
+				$eb_label    = tc_sc_event_tr( $eb_label );
+				$total_label = tc_sc_event_tr( $total_label );
+			}
+		} else {
+			// Fallback: try Woo_OrderMeta booking meta
+			if ( ! class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo_OrderMeta' ) ) {
+				return;
+			}
+			$item_totals = Integrations\WooCommerce\Woo_OrderMeta::calculate_cart_pack_totals( [ $cart_item ] );
+			if ( ! $item_totals['has_eb'] ) {
+				return;
+			}
+			$base        = $item_totals['base_price'];
+			$eb_amount   = $item_totals['eb_discount'];
+			$total       = $item_totals['pack_total'];
+			$base_label  = $item_totals['base_label'];
+			$eb_label    = __( 'Early booking discount', 'tc-booking-flow-next' );
+			$total_label = $item_totals['total_label'];
+		}
+
+		?>
+		<div class="tcbf-eb-summary">
+			<div class="tcbf-eb-summary__line">
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $base_label ); ?></span>
+				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $base ) ); ?></span>
+			</div>
+			<?php if ( $eb_amount > 0 ) : ?>
+			<div class="tcbf-eb-summary__line tcbf-eb-summary__line--discount">
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $eb_label ); ?></span>
+				<span class="tcbf-eb-summary__value tcbf-eb-summary__value--discount">-<?php echo wp_kses_post( wc_price( $eb_amount ) ); ?></span>
+			</div>
+			<?php endif; ?>
+			<div class="tcbf-eb-summary__line tcbf-eb-summary__line--total">
+				<span class="tcbf-eb-summary__label"><?php echo esc_html( $total_label ); ?></span>
+				<span class="tcbf-eb-summary__value"><?php echo wp_kses_post( wc_price( $total ) ); ?></span>
+			</div>
+		</div>
+		<?php
+	}
+
 	private function localize_text( string $text ) : string {
 		return Integrations\WooCommerce\Woo::localize_text($text);
 	}
@@ -2181,6 +2541,10 @@ final class Plugin {
 	}
 
 	// Woo_Notifications delegation
+	public function bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data ) : void {
+		Integrations\WooCommerce\Woo_Notifications::bridge_gf_entry_id_to_order_item( $entry_id, $order_id, $order_item, $form_data, $lead_data );
+	}
+
 	public function gf_register_notification_events( array $events ) : array {
 		return Integrations\WooCommerce\Woo_Notifications::gf_register_notification_events($events);
 	}

@@ -16,10 +16,10 @@ if ( ! defined('TC_BF_URL') ) define('TC_BF_URL', plugin_dir_url(__FILE__));
 // i18n
 if ( ! defined('TC_BF_TEXTDOMAIN') ) define('TC_BF_TEXTDOMAIN', 'tc-booking-flow-next');
 
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-product-meta.php';
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-settings.php';
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-partners.php';
-require_once TC_BF_PATH . 'includes/admin/class-tc-bf-admin-event-eb.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-product-meta.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-settings.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-partners.php';
+require_once TC_BF_PATH . 'includes/Admin/class-tc-bf-admin-event-eb.php';
 require_once TC_BF_PATH . 'includes/Plugin.php';
 require_once TC_BF_PATH . 'includes/class-tc-bf-sc-event-extras.php';
 require_once TC_BF_PATH . 'includes/sc-event-template-functions.php';
@@ -32,12 +32,22 @@ require_once TC_BF_PATH . 'includes/Admin/Admin_Event_Meta.php';
 // TCBF-13: Product EB Configuration (category-based EB rules for booking products)
 require_once TC_BF_PATH . 'includes/Domain/ProductEBConfig.php';
 require_once TC_BF_PATH . 'includes/Domain/BookingLedger.php';
+
+// Notification language resolver (determines customer/partner/admin notification language)
+require_once TC_BF_PATH . 'includes/Domain/NotificationLanguage.php';
 require_once TC_BF_PATH . 'includes/Admin/Admin_Product_Category_EB.php';
 require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_BookingLedger.php';
+require_once TC_BF_PATH . 'includes/Integrations/WooCommerce/Woo_ProductBrief.php';
 
 // TCBF-14: Product Partner Configuration (category-based partner enable/disable)
 require_once TC_BF_PATH . 'includes/Domain/ProductPartnerConfig.php';
 require_once TC_BF_PATH . 'includes/Admin/Admin_Product_Category_Partner.php';
+
+// Transport: zone-based transport pricing for bike rentals
+require_once TC_BF_PATH . 'includes/Domain/TransportZones.php';
+require_once TC_BF_PATH . 'includes/Domain/TransportPricing.php';
+require_once TC_BF_PATH . 'includes/Domain/TransportAvailability.php';
+require_once TC_BF_PATH . 'includes/Admin/Settings_Transport.php';
 
 // TCBF-14: GF Semantic Field Mapping (inputName-based field resolution)
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_FieldMap.php';

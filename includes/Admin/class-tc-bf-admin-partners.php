@@ -80,6 +80,7 @@ final class Partners {
 	public static function save_fields( int $user_id ) : void {
 		if ( ! self::can_manage() ) return;
 		if ( ! current_user_can( 'edit_user', $user_id ) ) return;
+		check_admin_referer( 'update-user_' . $user_id );
 
 		// Commission %
 		if ( isset( $_POST['tc_bf_partner_commission'] ) ) {
@@ -114,6 +115,33 @@ final class Partners {
 			if ( $raw === '' ) {
 				delete_user_meta( $user_id, self::META_COUPON_CODE );
 			} else {
+				// Validate uniqueness: no other user should have this coupon code
+				$existing = new \WP_User_Query( [
+					'number'     => 1,
+					'fields'     => 'ID',
+					'exclude'    => [ $user_id ],
+					'meta_query' => [
+						[
+							'key'     => self::META_COUPON_CODE,
+							'value'   => $raw,
+							'compare' => '=',
+						],
+					],
+				] );
+
+				if ( ! empty( $existing->get_results() ) ) {
+					add_action( 'user_profile_update_errors', function( $errors ) use ( $raw ) {
+						$errors->add( 'tc_bf_duplicate_code',
+							sprintf(
+								/* translators: %s: coupon code */
+								__( 'Partner coupon code "%s" is already assigned to another partner.', 'tc-booking-flow' ),
+								esc_html( $raw )
+							)
+						);
+					} );
+					return;
+				}
+
 				update_user_meta( $user_id, self::META_COUPON_CODE, sanitize_text_field( $raw ) );
 			}
 		}

@@ -8,13 +8,18 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * GF Field Population
  *
- * Populates derived/masked fields during form submission.
- * Migrated from legacy TC_snippets to ensure field values are available for notifications.
+ * Populates derived/masked fields during form submission and provides
+ * dynamic population for current user data.
  *
- * Fields populated:
+ * Fields populated on submission:
  * - 146: Bike model and size (derived from rental selection)
  * - 150: Masked email (privacy)
  * - 151: Masked family name (privacy)
+ *
+ * Dynamic population parameters (for field settings):
+ * - user_role: Current user's primary role
+ * - user_display_name: Current user's display name
+ * - user_email: Current user's email address
  *
  * @since 0.6.2
  */
@@ -45,6 +50,17 @@ final class GF_Field_Population {
 	public static function init(): void {
 		// Use gform_pre_submission action (runs before entry is saved)
 		add_action( 'gform_pre_submission', [ __CLASS__, 'populate_derived_fields' ], 10, 1 );
+
+		// Dynamic population for current user data (gform_field_value_{parameter_name})
+		add_filter( 'gform_field_value_user_role', [ __CLASS__, 'populate_user_role' ] );
+		add_filter( 'gform_field_value_user_display_name', [ __CLASS__, 'populate_user_display_name' ] );
+		add_filter( 'gform_field_value_user_email', [ __CLASS__, 'populate_user_email' ] );
+
+		// Clear admin-only checkbox defaults for non-admin/hotel users.
+		// Field 118 (Confirmation checkbox) has isSelected=true, which leaks
+		// through conditional logic and shows field 207 (Notification Language)
+		// even when field 118 is hidden for guests.
+		add_filter( 'gform_pre_render', [ __CLASS__, 'clear_admin_checkbox_defaults' ], 8, 1 );
 	}
 
 	/**
@@ -323,5 +339,94 @@ final class GF_Field_Population {
 			return mb_substr( $string, $start, $length, 'UTF-8' );
 		}
 		return substr( $string, $start, $length );
+	}
+
+	/* =========================================================
+	 * User Data Dynamic Population
+	 * ========================================================= */
+
+	/**
+	 * Populate field with current user's primary role.
+	 *
+	 * Usage: Set field parameter name to "user_role" in GF field settings.
+	 *
+	 * @param mixed $value Default value.
+	 * @return string User's primary role or empty string if not logged in.
+	 */
+	public static function populate_user_role( $value ): string {
+		$user = wp_get_current_user();
+		if ( ! $user || empty( $user->ID ) ) {
+			return '';
+		}
+		$roles = (array) $user->roles;
+		return $roles ? reset( $roles ) : '';
+	}
+
+	/**
+	 * Clear isSelected default on the Confirmation checkbox (field 118)
+	 * for non-admin/hotel users.
+	 *
+	 * Field 118 has isSelected=true by default. GF hides it for guests
+	 * via conditional logic on field 6 (user_role), but the pre-checked
+	 * value leaks through and triggers field 207 (Notification Language)
+	 * to show. Clearing the default prevents the cascade.
+	 *
+	 * @param array $form GF form array.
+	 * @return array Modified form.
+	 */
+	public static function clear_admin_checkbox_defaults( array $form ) : array {
+		// Only clear for non-admin/hotel users.
+		$allowed_roles = [ 'administrator', 'shop_manager', 'hotel' ];
+		if ( is_user_logged_in() ) {
+			$user  = wp_get_current_user();
+			$roles = (array) $user->roles;
+			if ( array_intersect( $roles, $allowed_roles ) ) {
+				return $form; // Admin/hotel — keep default checked.
+			}
+		}
+
+		// Clear isSelected on field 118 choices.
+		foreach ( $form['fields'] as &$field ) {
+			if ( (int) $field->id === 118 && ! empty( $field->choices ) ) {
+				foreach ( $field->choices as &$choice ) {
+					$choice['isSelected'] = false;
+				}
+				break;
+			}
+		}
+
+		return $form;
+	}
+
+	/**
+	 * Populate field with current user's display name.
+	 *
+	 * Usage: Set field parameter name to "user_display_name" in GF field settings.
+	 *
+	 * @param mixed $value Default value.
+	 * @return string User's display name or empty string if not logged in.
+	 */
+	public static function populate_user_display_name( $value ): string {
+		$user = wp_get_current_user();
+		if ( ! $user || empty( $user->ID ) ) {
+			return '';
+		}
+		return (string) $user->display_name;
+	}
+
+	/**
+	 * Populate field with current user's email address.
+	 *
+	 * Usage: Set field parameter name to "user_email" in GF field settings.
+	 *
+	 * @param mixed $value Default value.
+	 * @return string User's email or empty string if not logged in.
+	 */
+	public static function populate_user_email( $value ): string {
+		$user = wp_get_current_user();
+		if ( ! $user || empty( $user->ID ) ) {
+			return '';
+		}
+		return (string) $user->user_email;
 	}
 }

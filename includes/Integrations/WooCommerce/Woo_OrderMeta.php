@@ -16,6 +16,24 @@ class Woo_OrderMeta {
 	// Internal meta key prefixes/keys that should never be displayed to customers
 	const INTERNAL_META_PREFIXES = [ 'TC_', 'TCBF_', 'tcbf_', '_tcbf_', '_tc_', 'tc_', '_eb_', '_gf_' ];
 
+	// Display labels to hide in emails (WC GF Product Add-ons uses human-readable labels)
+	// These are partial matches (case-insensitive) against the display_key shown in emails
+	const HIDDEN_DISPLAY_LABELS = [
+		// Equipment choices - shown elsewhere or internal
+		'pedals', 'pedales', 'type of pedals', 'tipo de pedal',
+		'helmet', 'casco',
+		// Booking source - internal
+		'booking source', 'fuente de reserva', 'fuente',
+		// Client/participant - shown as badge
+		'client', 'cliente', 'participant', 'participante',
+		// Email - internal
+		'email', 'correo',
+		// Confirmation - internal
+		'confirmation', 'confirmaci',
+		// Notification language - GF field #207 (display_key in Spanish: "Idioma de notificación")
+		'idioma de notificaci', 'notification language',
+	];
+
 	// Explicit list of ALL internal meta keys to hide (both with and without underscore prefix)
 	const HIDDEN_META_KEYS = [
 		// TC group/pack meta
@@ -54,7 +72,20 @@ class Woo_OrderMeta {
 
 		// GF meta
 		'gf_entry_id', '_gf_entry_id',
+
+		// Notification / language meta (leaked from WC Bookings or GF)
+		'notification_language', '_notification_language',
+		'Notification Language',
 	];
+
+	/** @var bool Whether we are currently rendering the mini cart widget */
+	private static $is_mini_cart = false;
+
+	/** @var int|null Order ID for which email rendering is active (set by render_email_summary_block) */
+	private static $email_rendering_order_id = null;
+
+	/** @var array|null Cached email item data for grouped rendering */
+	private static $email_item_cache = null;
 
 	// Booking meta keys stored on cart items
 	const BK_EVENT_ID      = '_event_id';
@@ -94,6 +125,14 @@ class Woo_OrderMeta {
 		if ( ! empty( $booking[self::BK_ENTRY_ID] ) ) {
 			$item->add_meta_data( '_gf_entry_id', $booking[self::BK_ENTRY_ID] );
 		}
+		// Persist _tcbf_participant_name for all scopes (participation, rental).
+		// Transport items already persist this via persist_transport_order_meta().
+		// This ensures order-level grouping can match items by entry_id even
+		// when clients are not logged in and participant name fields are empty.
+		if ( isset( $cart_item['_tcbf_participant_name'] ) && $cart_item['_tcbf_participant_name'] !== '' ) {
+			$item->add_meta_data( '_tcbf_participant_name', $cart_item['_tcbf_participant_name'], true );
+		}
+
 		if ( ! empty( $booking['_participant_email'] ) ) {
 			$item->add_meta_data( 'email', $booking['_participant_email'] );
 		}
@@ -258,6 +297,12 @@ class Woo_OrderMeta {
 		$start_ts          = 0;
 
 		foreach ( $order->get_items() as $item ) {
+
+			// Skip transport items — they must not contribute to partner commission/discount base.
+			$scope = $item->get_meta( '_tcbf_scope', true );
+			if ( $scope === 'transport' ) {
+				continue;
+			}
 
 			$qty = max(1, (int) $item->get_quantity());
 
@@ -476,12 +521,21 @@ class Woo_OrderMeta {
 	 * @return array Filtered meta array
 	 */
 	public static function filter_order_item_meta( $formatted_meta, $item ) {
-		// Only affect frontend + emails (skip wp-admin order edit for debugging)
-		if ( is_admin() && ! wp_doing_ajax() && ! defined( 'DOING_CRON' ) ) {
-			// Allow in admin if it's email preview or AJAX
-			if ( ! doing_action( 'woocommerce_email_order_details' ) ) {
-				return $formatted_meta;
+		// Admin order edit: hide ALL meta on booking items.
+		// Admins get structured Booking Summary meta box + inline badges instead.
+		// Note: is_admin() is true even during WC AJAX calls in wp-admin context.
+		if ( is_admin() && ! doing_action( 'woocommerce_email_order_details' )
+			&& ! defined( 'DOING_CRON' ) ) {
+
+			// Check if this item belongs to a booking order
+			if ( $item instanceof \WC_Order_Item_Product ) {
+				$order = $item->get_order();
+				if ( $order instanceof \WC_Order && self::is_booking_order( $order ) ) {
+					return []; // Hide all meta — shown via Woo_AdminOrder meta box + badges
+				}
 			}
+			// Non-booking orders: show meta normally in admin
+			return $formatted_meta;
 		}
 
 		foreach ( $formatted_meta as $id => $meta ) {
@@ -492,6 +546,10 @@ class Woo_OrderMeta {
 			$key_lower    = strtolower( $key );
 			$key_stripped = ltrim( $key_lower, '_' );
 
+			// Also check display_key (WC auto-formats "notification_language" → "Notification Language")
+			$display_key       = isset( $meta->display_key ) ? (string) $meta->display_key : '';
+			$display_key_lower = strtolower( $display_key );
+
 			// Check prefixes (case-insensitive)
 			foreach ( self::INTERNAL_META_PREFIXES as $prefix ) {
 				$prefix_lower = strtolower( $prefix );
@@ -501,9 +559,10 @@ class Woo_OrderMeta {
 				}
 			}
 
-			// Check explicit key list (case-insensitive)
+			// Check explicit key list (case-insensitive) against both raw key and display_key
 			foreach ( self::HIDDEN_META_KEYS as $hidden_key ) {
-				if ( strtolower( $hidden_key ) === $key_lower || strtolower( $hidden_key ) === $key_stripped ) {
+				$hidden_lower = strtolower( $hidden_key );
+				if ( $hidden_lower === $key_lower || $hidden_lower === $key_stripped || $hidden_lower === $display_key_lower ) {
 					unset( $formatted_meta[ $id ] );
 					continue 2;
 				}
@@ -514,6 +573,19 @@ class Woo_OrderMeta {
 			if ( preg_match( '/^(tc|tcbf|gf|eb)_/i', $key_stripped ) ||
 			     preg_match( '/_(id|scope|role|eligible|amount|pct)$/i', $key_lower ) ) {
 				unset( $formatted_meta[ $id ] );
+				continue;
+			}
+
+			// Check display label (for WC GF Product Add-ons which uses human-readable labels)
+			// This catches fields like "Type of pedals", "Helmet (obligatory)", "Booking source"
+			$display_key = isset( $meta->display_key ) ? strtolower( (string) $meta->display_key ) : '';
+			if ( $display_key !== '' ) {
+				foreach ( self::HIDDEN_DISPLAY_LABELS as $hidden_label ) {
+					if ( strpos( $display_key, strtolower( $hidden_label ) ) !== false ) {
+						unset( $formatted_meta[ $id ] );
+						continue 2;
+					}
+				}
 			}
 		}
 
@@ -587,11 +659,15 @@ class Woo_OrderMeta {
 		$currency = $order->get_currency();
 
 		// === Gather EB data ===
-		$eb_amount = (float) $order->get_meta( 'early_booking_discount_amount', true );
-		$eb_pct    = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_amount   = (float) $order->get_meta( 'early_booking_discount_amount', true );
+		$eb_pct      = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_combined = false; // True when items have different EB percentages
 
 		// Fallback: aggregate EB data from item-level meta (for orders created before v0.9.1)
 		if ( $eb_amount <= 0 ) {
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
 			foreach ( $order->get_items() as $item ) {
 				if ( ! $item instanceof \WC_Order_Item_Product ) {
 					continue;
@@ -612,10 +688,51 @@ class Woo_OrderMeta {
 
 				if ( $item_amt > 0 ) {
 					$eb_amount += $item_amt * $qty;
-					if ( $eb_pct <= 0 && $item_pct > 0 ) {
-						$eb_pct = $item_pct;
+
+					// Track uniform vs mixed percentages
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
 					}
 				}
+			}
+
+			// Resolve: uniform → use the common pct, mixed → combined (no pct)
+			if ( $first_eb_pct !== null ) {
+				$eb_pct      = $eb_pct_uniform ? $first_eb_pct : 0;
+				$eb_combined = ! $eb_pct_uniform;
+			}
+		} else {
+			// Order-level meta exists — still check items for uniform/mixed detection
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
+			foreach ( $order->get_items() as $item ) {
+				if ( ! $item instanceof \WC_Order_Item_Product ) {
+					continue;
+				}
+				$item_pct = (float) $item->get_meta( '_eb_pct', true );
+				if ( $item_pct <= 0 ) {
+					$item_pct = (float) $item->get_meta( '_tcbf_ledger_eb_pct', true );
+				}
+				$item_amt = (float) $item->get_meta( '_eb_amount', true );
+				if ( $item_amt <= 0 ) {
+					$item_amt = (float) $item->get_meta( '_tcbf_ledger_eb_amount', true );
+				}
+
+				if ( $item_amt > 0 ) {
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
+					}
+				}
+			}
+
+			if ( $first_eb_pct !== null && ! $eb_pct_uniform ) {
+				$eb_pct      = 0;
+				$eb_combined = true;
 			}
 		}
 
@@ -654,9 +771,13 @@ class Woo_OrderMeta {
 
 		// === EB column ===
 		if ( $has_eb ) {
-			$eb_sub = $eb_pct > 0
-				? sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) )
-				: __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+			if ( $eb_combined ) {
+				$eb_sub = __( 'Combined discount', TC_BF_TEXTDOMAIN );
+			} elseif ( $eb_pct > 0 ) {
+				$eb_sub = sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) );
+			} else {
+				$eb_sub = __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+			}
 
 			echo '<div class="tcbf-explainer-item tcbf-explainer-eb">';
 			echo '<div class="tcbf-explainer-label">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</div>';
@@ -827,7 +948,15 @@ class Woo_OrderMeta {
 			return; // Skip for plain text emails
 		}
 
-		// Collect booking items
+		// For booking orders, skip the floating summary box.
+		// Booking details are now rendered inline per item via render_email_item_booking_details().
+		if ( self::is_booking_order( $order ) ) {
+			self::$email_rendering_order_id = $order->get_id();
+			self::$email_item_cache = null;
+			return;
+		}
+
+		// Non-booking orders: original behavior (safety net)
 		$booking_items = self::get_booking_items_from_order( $order );
 
 		if ( empty( $booking_items ) ) {
@@ -836,7 +965,7 @@ class Woo_OrderMeta {
 
 		// Email-safe inline styles
 		echo '<div style="margin: 20px 0; padding: 16px 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa;">';
-		echo '<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700;">' . esc_html__( 'Booking Details', TC_BF_TEXTDOMAIN ) . '</h3>';
+		echo '<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700;">' . esc_html( Woo::translate( '[:en]Booking Details[:es]Detalles de Reserva[:]' ) ) . '</h3>';
 
 		foreach ( $booking_items as $item_data ) {
 			self::render_single_booking_summary_email( $item_data );
@@ -858,6 +987,11 @@ class Woo_OrderMeta {
 	 * @param \WC_Email $email The email object (optional)
 	 */
 	public static function render_email_enhanced_blocks( $order, $sent_to_admin = false, $plain_text = false, $email = null ) {
+		// Reset email rendering context (set by render_email_summary_block).
+		// By this point all woocommerce_order_item_meta_end hooks have fired.
+		self::$email_rendering_order_id = null;
+		self::$email_item_cache = null;
+
 		if ( ! $order || ! is_a( $order, 'WC_Order' ) ) {
 			return;
 		}
@@ -883,11 +1017,15 @@ class Woo_OrderMeta {
 		$currency = $order->get_currency();
 
 		// === Gather EB data ===
-		$eb_amount = (float) $order->get_meta( 'early_booking_discount_amount', true );
-		$eb_pct    = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_amount   = (float) $order->get_meta( 'early_booking_discount_amount', true );
+		$eb_pct      = (float) $order->get_meta( 'early_booking_discount_pct', true );
+		$eb_combined = false; // True when items have different EB percentages
 
 		// Fallback: aggregate EB data from item-level meta (for orders created before v0.9.1)
 		if ( $eb_amount <= 0 ) {
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
 			foreach ( $order->get_items() as $item ) {
 				if ( ! $item instanceof \WC_Order_Item_Product ) {
 					continue;
@@ -908,25 +1046,73 @@ class Woo_OrderMeta {
 
 				if ( $item_amt > 0 ) {
 					$eb_amount += $item_amt * $qty;
-					if ( $eb_pct <= 0 && $item_pct > 0 ) {
-						$eb_pct = $item_pct;
+
+					// Track uniform vs mixed percentages
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
 					}
 				}
+			}
+
+			// Resolve: uniform → use the common pct, mixed → combined (no pct)
+			if ( $first_eb_pct !== null ) {
+				$eb_pct      = $eb_pct_uniform ? $first_eb_pct : 0;
+				$eb_combined = ! $eb_pct_uniform;
+			}
+		} else {
+			// Order-level meta exists — still check items for uniform/mixed detection
+			$first_eb_pct   = null;
+			$eb_pct_uniform = true;
+
+			foreach ( $order->get_items() as $item ) {
+				if ( ! $item instanceof \WC_Order_Item_Product ) {
+					continue;
+				}
+				$item_pct = (float) $item->get_meta( '_eb_pct', true );
+				if ( $item_pct <= 0 ) {
+					$item_pct = (float) $item->get_meta( '_tcbf_ledger_eb_pct', true );
+				}
+				$item_amt = (float) $item->get_meta( '_eb_amount', true );
+				if ( $item_amt <= 0 ) {
+					$item_amt = (float) $item->get_meta( '_tcbf_ledger_eb_amount', true );
+				}
+
+				if ( $item_amt > 0 ) {
+					if ( $first_eb_pct === null ) {
+						$first_eb_pct = $item_pct;
+					} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+						$eb_pct_uniform = false;
+					}
+				}
+			}
+
+			if ( $first_eb_pct !== null && ! $eb_pct_uniform ) {
+				$eb_pct      = 0;
+				$eb_combined = true;
 			}
 		}
 
 		$has_eb = ( $eb_amount > 0 );
 
-		// Commission visibility (admin emails only)
+		// Commission visibility: admin emails OR partner placing their own order
 		$partner_id = (int) $order->get_meta( 'partner_id', true );
 		$commission = 0.0;
 		$commission_rate = 0.0;
 		$show_commission = false;
 
-		if ( $partner_id > 0 && ! $is_customer_email ) {
+		if ( $partner_id > 0 ) {
 			$commission = (float) $order->get_meta( 'partner_commission', true );
 			$commission_rate = (float) $order->get_meta( 'partner_commission_rate', true );
-			$show_commission = ( $commission > 0 );
+
+			// Show commission if: admin email OR customer is the partner themselves
+			$customer_id = $order->get_customer_id();
+			$customer_is_partner = ( $customer_id > 0 && $customer_id === $partner_id );
+
+			if ( ! $is_customer_email || $customer_is_partner ) {
+				$show_commission = ( $commission > 0 );
+			}
 		}
 
 		// Nothing to show? Exit early
@@ -943,11 +1129,15 @@ class Woo_OrderMeta {
 			echo '<tr>';
 
 			// EB cell (gradient badge style - matches cart/checkout EB badges)
-			$eb_sub = $eb_pct > 0
-				? sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) )
-				: __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+			if ( $eb_combined ) {
+				$eb_sub = Woo::translate( '[:en]Combined discount[:es]Descuento combinado[:]' );
+			} elseif ( $eb_pct > 0 ) {
+				$eb_sub = number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' );
+			} else {
+				$eb_sub = Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
+			}
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px; vertical-align: top;">';
-			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</div>';
+			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Early booking discount[:es]Descuento reserva anticipada[:]' ) ) . '</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
 			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $eb_sub ) . '</td>';
 			echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">-' . wp_kses_post( strip_tags( wc_price( $eb_amount, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
@@ -958,10 +1148,10 @@ class Woo_OrderMeta {
 
 			// Commission cell (indigo gradient badge style)
 			$comm_sub = $commission_rate > 0
-				? sprintf( __( '%s%% of base', TC_BF_TEXTDOMAIN ), number_format_i18n( $commission_rate, 0 ) )
-				: __( 'Based on order total', TC_BF_TEXTDOMAIN );
+				? number_format_i18n( $commission_rate, 0 ) . '% ' . Woo::translate( '[:en]of base[:es]del base[:]' )
+				: Woo::translate( '[:en]Based on order total[:es]Basado en el total[:]' );
 			echo '<td width="48%" style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px; vertical-align: top;">';
-			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Partner commission', TC_BF_TEXTDOMAIN ) . '</div>';
+			echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Partner commission[:es]Comisión partner[:]' ) ) . '</div>';
 			echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
 			echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $comm_sub ) . '</td>';
 			echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">' . wp_kses_post( strip_tags( wc_price( $commission, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
@@ -974,11 +1164,15 @@ class Woo_OrderMeta {
 			echo '<tr><td colspan="2">';
 
 			if ( $has_eb ) {
-				$eb_sub = $eb_pct > 0
-					? sprintf( __( '%s%% applied', TC_BF_TEXTDOMAIN ), number_format_i18n( $eb_pct, 0 ) )
-					: __( 'Applied to booking', TC_BF_TEXTDOMAIN );
+				if ( $eb_combined ) {
+					$eb_sub = Woo::translate( '[:en]Combined discount[:es]Descuento combinado[:]' );
+				} elseif ( $eb_pct > 0 ) {
+					$eb_sub = number_format_i18n( $eb_pct, 0 ) . '% ' . Woo::translate( '[:en]applied[:es]aplicado[:]' );
+				} else {
+					$eb_sub = Woo::translate( '[:en]Applied to booking[:es]Aplicado a la reserva[:]' );
+				}
 				echo '<div style="padding: 12px 16px; background-color: #5e52a6; background-image: linear-gradient(45deg, #3d61aa 0%, #b74d96 100%); border-radius: 4px;">';
-				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</div>';
+				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Early booking discount[:es]Descuento reserva anticipada[:]' ) ) . '</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
 				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $eb_sub ) . '</td>';
 				echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">-' . wp_kses_post( strip_tags( wc_price( $eb_amount, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
@@ -988,10 +1182,10 @@ class Woo_OrderMeta {
 
 			if ( $show_commission ) {
 				$comm_sub = $commission_rate > 0
-					? sprintf( __( '%s%% of base', TC_BF_TEXTDOMAIN ), number_format_i18n( $commission_rate, 0 ) )
-					: __( 'Based on order total', TC_BF_TEXTDOMAIN );
-				echo '<div style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px;">';
-				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html__( 'Partner commission', TC_BF_TEXTDOMAIN ) . '</div>';
+					? number_format_i18n( $commission_rate, 0 ) . '% ' . Woo::translate( '[:en]of base[:es]del base[:]' )
+					: Woo::translate( '[:en]Based on order total[:es]Basado en el total[:]' );
+				echo '<div style="padding: 12px 16px; background-color: #5552de; background-image: linear-gradient(45deg, #4338ca 0%, #6366f1 100%); border-radius: 4px; margin-top: 8px;">';
+				echo '<div style="font-weight: 600; font-size: 13px; color: #ffffff; margin-bottom: 4px;">' . esc_html( Woo::translate( '[:en]Partner commission[:es]Comisión partner[:]' ) ) . '</div>';
 				echo '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>';
 				echo '<td style="font-size: 12px; color: rgba(255,255,255,0.85);">' . esc_html( $comm_sub ) . '</td>';
 				echo '<td style="text-align: right; font-weight: 700; font-size: 15px; color: #ffffff;">' . wp_kses_post( strip_tags( wc_price( $commission, [ 'currency' => $currency ] ), '<span>' ) ) . '</td>';
@@ -1019,27 +1213,54 @@ class Woo_OrderMeta {
 				continue;
 			}
 
+			// Get event_id if present (Event Form bookings)
 			$event_id = (int) $item->get_meta( '_event_id', true );
 			if ( $event_id <= 0 ) {
-				// Also check without underscore
 				$event_id = (int) $item->get_meta( 'event_id', true );
 			}
 
-			if ( $event_id <= 0 ) {
-				continue; // Not a booking item
+			// Check if this item has a WC Booking associated
+			$booking_ids = [];
+			$has_wc_booking = false;
+			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
+				$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+				$has_wc_booking = ! empty( $booking_ids );
 			}
 
-			// Get event title
+			// Skip items that have neither event_id nor WC Booking
+			if ( $event_id <= 0 && ! $has_wc_booking ) {
+				continue;
+			}
+
+			// Get scope (participation vs rental)
+			$scope = (string) $item->get_meta( '_tc_scope', true );
+			if ( $scope === '' ) {
+				$scope = (string) $item->get_meta( 'tcbf_scope', true );
+			}
+
+			// Skip rental items (they're part of the pack, show only parent)
+			if ( $scope === 'rental' ) {
+				continue;
+			}
+
+			// Get event/product title
 			$event_title = (string) $item->get_meta( '_event_title', true );
 			if ( $event_title === '' ) {
 				$event_title = (string) $item->get_meta( 'event_title', true );
 			}
-			if ( $event_title === '' ) {
+			if ( $event_title === '' && $event_id > 0 ) {
 				$event_title = get_the_title( $event_id );
+			}
+			// Fallback to product name for standalone WC Bookings
+			if ( $event_title === '' ) {
+				$event_title = $item->get_name();
 			}
 
 			// Get event URL
-			$event_url = get_permalink( $event_id );
+			$event_url = '';
+			if ( $event_id > 0 ) {
+				$event_url = get_permalink( $event_id );
+			}
 			if ( ! $event_url ) {
 				$product = $item->get_product();
 				$event_url = $product ? $product->get_permalink() : '';
@@ -1057,26 +1278,35 @@ class Woo_OrderMeta {
 				$bicycle = (string) $item->get_meta( 'bicycle', true );
 			}
 
-			// Get scope (participation vs rental)
-			$scope = (string) $item->get_meta( '_tc_scope', true );
-			if ( $scope === '' ) {
-				$scope = (string) $item->get_meta( 'tcbf_scope', true );
-			}
-
-			// Skip rental items (they're part of the pack, show only parent)
-			if ( $scope === 'rental' ) {
-				continue;
-			}
-
-			// Get booking date (if available via WooCommerce Bookings)
+			// Get booking date and duration from WC Booking
 			$booking_date = '';
-			if ( class_exists( 'WC_Booking_Data_Store' ) ) {
-				$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
-				if ( ! empty( $booking_ids ) ) {
+			$end_date = '';
+			$duration = 0;
+			$duration_text = '';
+
+			if ( ! empty( $booking_ids ) ) {
+				try {
 					$booking = new \WC_Booking( (int) $booking_ids[0] );
-					if ( $booking && $booking->get_start() ) {
-						$booking_date = date_i18n( get_option( 'date_format' ), $booking->get_start() );
+					// Validate booking was loaded properly
+					if ( $booking && $booking->get_product_id() > 0 && $booking->get_start() ) {
+						$start = $booking->get_start();
+						$end = $booking->get_end();
+						$booking_date = date_i18n( get_option( 'date_format' ), $start );
+
+						// Calculate duration in days
+						if ( $end && $end > $start ) {
+							$duration = (int) ceil( ( $end - $start ) / DAY_IN_SECONDS );
+							$day_label = Woo::translate( $duration === 1 ? '[:en]day[:es]día[:]' : '[:en]days[:es]días[:]' );
+							$duration_text = $duration . ' ' . $day_label;
+
+							// Calculate end date as start + (duration - 1) days
+							if ( $duration > 1 ) {
+								$end_date = date_i18n( get_option( 'date_format' ), $start + ( $duration - 1 ) * DAY_IN_SECONDS );
+							}
+						}
 					}
+				} catch ( \Exception $e ) {
+					// Booking may be corrupted - skip silently
 				}
 			}
 
@@ -1092,7 +1322,11 @@ class Woo_OrderMeta {
 				'bicycle'       => $bicycle,
 				'size'          => $size,
 				'booking_date'  => $booking_date,
+				'end_date'      => $end_date,
+				'duration'      => $duration,
+				'duration_text' => $duration_text,
 				'scope'         => $scope,
+				'is_tour'       => ( $event_id > 0 ), // true = tour event, false = standalone rental
 			];
 		}
 
@@ -1155,10 +1389,13 @@ class Woo_OrderMeta {
 	private static function render_single_booking_summary( array $item_data ) : void {
 		echo '<div class="tcbf-summary-card">';
 
-		// Event title (linked)
+		// Event/product title (linked) — use "Tour" for tour events, "Rental" for standalone bookings
 		if ( $item_data['event_title'] !== '' ) {
+			$is_tour = ! empty( $item_data['is_tour'] );
+			$title_label = $is_tour ? __( 'Tour', TC_BF_TEXTDOMAIN ) : __( 'Rental', TC_BF_TEXTDOMAIN );
+
 			echo '<div class="tcbf-summary-row tcbf-summary-event">';
-			echo '<span class="tcbf-summary-label">' . esc_html__( 'Tour', TC_BF_TEXTDOMAIN ) . '</span>';
+			echo '<span class="tcbf-summary-label">' . esc_html( $title_label ) . '</span>';
 			if ( $item_data['event_url'] ) {
 				echo '<a href="' . esc_url( $item_data['event_url'] ) . '" class="tcbf-summary-value tcbf-event-link">' . esc_html( $item_data['event_title'] ) . '</a>';
 			} else {
@@ -1206,16 +1443,19 @@ class Woo_OrderMeta {
 
 	/**
 	 * Render a single booking summary for emails (inline styles).
+	 * Uses qTranslate tags for multilingual support.
 	 *
 	 * @param array $item_data Booking item data
 	 */
 	private static function render_single_booking_summary_email( array $item_data ) : void {
 		echo '<table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">';
 
-		// Event title
+		// Event/product title — use "Tour" for events, "Rental" for standalone bookings
 		if ( $item_data['event_title'] !== '' ) {
+			$is_tour = ! empty( $item_data['is_tour'] );
+			$title_label = $is_tour ? Woo::translate( '[:en]Tour[:es]Tour[:]' ) : Woo::translate( '[:en]Rental[:es]Alquiler[:]' );
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">' . esc_html__( 'Tour', TC_BF_TEXTDOMAIN ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px; width: 100px;">' . esc_html( $title_label ) . '</td>';
 			if ( $item_data['event_url'] ) {
 				echo '<td style="padding: 4px 0; font-weight: 600;"><a href="' . esc_url( $item_data['event_url'] ) . '" style="color: #3d61aa; text-decoration: none;">' . esc_html( $item_data['event_title'] ) . '</a></td>';
 			} else {
@@ -1224,18 +1464,26 @@ class Woo_OrderMeta {
 			echo '</tr>';
 		}
 
-		// Date
+		// Date with duration (show range for multi-day bookings)
 		if ( $item_data['booking_date'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html__( 'Date', TC_BF_TEXTDOMAIN ) . '</td>';
-			echo '<td style="padding: 4px 0;">' . esc_html( $item_data['booking_date'] ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . '</td>';
+			$date_display = esc_html( $item_data['booking_date'] );
+			// Show date range for multi-day bookings
+			if ( ! empty( $item_data['end_date'] ) ) {
+				$date_display .= ' — ' . esc_html( $item_data['end_date'] );
+			}
+			if ( ! empty( $item_data['duration_text'] ) ) {
+				$date_display .= ' <span style="color: #9ca3af; font-size: 12px;">(' . esc_html( $item_data['duration_text'] ) . ')</span>';
+			}
+			echo '<td style="padding: 4px 0;">' . $date_display . '</td>';
 			echo '</tr>';
 		}
 
 		// Participant
 		if ( $item_data['participant'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html__( 'Participant', TC_BF_TEXTDOMAIN ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html( Woo::translate( '[:en]Participant[:es]Participante[:]' ) ) . '</td>';
 			echo '<td style="padding: 4px 0;">' . esc_html( $item_data['participant'] ) . '</td>';
 			echo '</tr>';
 		}
@@ -1243,7 +1491,7 @@ class Woo_OrderMeta {
 		// Bike + Size
 		if ( $item_data['bicycle'] !== '' || $item_data['size'] !== '' ) {
 			echo '<tr>';
-			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html__( 'Bike', TC_BF_TEXTDOMAIN ) . '</td>';
+			echo '<td style="padding: 4px 0; color: #6b7280; font-size: 13px;">' . esc_html( Woo::translate( '[:en]Bike[:es]Bicicleta[:]' ) ) . '</td>';
 			$bike_text = $item_data['bicycle'] !== '' ? $item_data['bicycle'] : '';
 			if ( $item_data['size'] !== '' ) {
 				$bike_text .= $bike_text !== '' ? ' (' . $item_data['size'] . ')' : $item_data['size'];
@@ -1368,13 +1616,58 @@ class Woo_OrderMeta {
 	}
 
 	/**
+	 * Remove "Order again" action for booking orders.
+	 *
+	 * Bookings require specific dates and cannot simply be re-added to cart.
+	 * Used on the My Account → Orders list.
+	 */
+	public static function filter_order_again_action( array $actions, \WC_Order $order ) : array {
+		if ( self::order_has_bookings( $order ) ) {
+			unset( $actions['order-again'] );
+		}
+		return $actions;
+	}
+
+	/**
+	 * Check if an order contains any booking products.
+	 *
+	 * Broader than is_booking_order(): uses layered detection so even
+	 * older orders (without TCBF meta) are caught.
+	 *
+	 * Tiers (OR logic):
+	 *  1. TCBF meta markers (_event_id, tc_group_id, _tcbf_ledger_base)
+	 *  2. WC Bookings item meta (_booking_id)
+	 *  3. WC Bookings product type (product->is_type('booking'))
+	 */
+	public static function order_has_bookings( \WC_Order $order ) : bool {
+		if ( self::is_booking_order( $order ) ) {
+			return true;
+		}
+		foreach ( $order->get_items( 'line_item' ) as $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+			// Tier 2: WC Bookings meta on the order item
+			if ( $item->get_meta( '_booking_id' ) ) {
+				return true;
+			}
+			// Tier 3: product type
+			$product = $item->get_product();
+			if ( $product && $product->is_type( 'booking' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Get item meta case-insensitively (tries with/without underscore, upper/lower).
 	 *
 	 * @param \WC_Order_Item_Product $item The order item
 	 * @param string $key The meta key to look for
 	 * @return string The meta value or empty string
 	 */
-	private static function get_item_meta_ci( \WC_Order_Item_Product $item, string $key ) : string {
+	public static function get_item_meta_ci( \WC_Order_Item_Product $item, string $key ) : string {
 		// Try exact key
 		$value = $item->get_meta( $key, true );
 		if ( $value !== '' ) {
@@ -1407,6 +1700,32 @@ class Woo_OrderMeta {
 	}
 
 	/**
+	 * Get a display-label meta value from an order item.
+	 *
+	 * GF Product Add-ons store meta with human-readable display labels (e.g. "Type of pedals").
+	 * This helper searches formatted meta data by display_key (case-insensitive).
+	 *
+	 * @param \WC_Order_Item_Product $item      The order item
+	 * @param array                  $labels    Lowercase display label variants to match
+	 * @return string Meta value or empty string
+	 */
+	private static function get_item_display_meta( \WC_Order_Item_Product $item, array $labels ) : string {
+		$formatted = $item->get_formatted_meta_data( '', true );
+		if ( empty( $formatted ) ) {
+			return '';
+		}
+
+		foreach ( $formatted as $meta ) {
+			$display_key = isset( $meta->display_key ) ? strtolower( trim( (string) $meta->display_key ) ) : '';
+			if ( $display_key !== '' && in_array( $display_key, $labels, true ) ) {
+				return (string) ( $meta->display_value ?? $meta->value ?? '' );
+			}
+		}
+
+		return '';
+	}
+
+	/**
 	 * Get event featured image URL.
 	 *
 	 * @param int $event_id The event (post) ID
@@ -1425,6 +1744,683 @@ class Woo_OrderMeta {
 
 		$url = wp_get_attachment_image_url( $thumb_id, $size );
 		return $url ? (string) $url : '';
+	}
+
+	/**
+	 * Check if we are currently rendering an email (for cross-class guards).
+	 *
+	 * @return bool True if email rendering is active
+	 */
+	public static function is_rendering_email() : bool {
+		return self::$email_rendering_order_id !== null;
+	}
+
+	/**
+	 * Override line subtotal in WC emails to show original (pre-EB) price for EB items.
+	 *
+	 * Hooked to woocommerce_order_formatted_line_subtotal (priority 10).
+	 * Only active during email rendering (is_rendering_email check).
+	 *
+	 * @param string                 $subtotal Formatted subtotal HTML
+	 * @param \WC_Order_Item_Product $item     Order item
+	 * @param \WC_Order              $order    Order object
+	 * @return string Modified subtotal or original
+	 */
+	public static function override_email_line_subtotal( $subtotal, $item, $order ) {
+		if ( ! self::is_rendering_email() ) {
+			return $subtotal;
+		}
+
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return $subtotal;
+		}
+
+		// Check for EB base price (original price before discount)
+		$eb_base = (float) self::get_item_meta_ci( $item, '_eb_base_price' );
+		if ( $eb_base <= 0 ) {
+			$eb_base = (float) self::get_item_meta_ci( $item, '_tcbf_ledger_base' );
+		}
+
+		if ( $eb_base <= 0 ) {
+			return $subtotal;
+		}
+
+		$qty        = max( 1, (int) $item->get_quantity() );
+		$base_total = $eb_base * $qty;
+
+		return wc_price( $base_total );
+	}
+
+	/** Set mini cart rendering flag (called by woocommerce_before_mini_cart). */
+	public static function set_mini_cart_context() : void {
+		self::$is_mini_cart = true;
+	}
+
+	/** Clear mini cart rendering flag (called by woocommerce_after_mini_cart). */
+	public static function clear_mini_cart_context() : void {
+		self::$is_mini_cart = false;
+	}
+
+	/**
+	 * Override cart item price display to show original price with strikethrough
+	 * for EB items, and bold for non-EB items.
+	 *
+	 * In mini cart context, also handles transport items (stored price) and
+	 * shows discounted price alongside struck-through original for EB items.
+	 *
+	 * @param string $price     Formatted price HTML
+	 * @param array  $cart_item Cart item data
+	 * @param string $cart_item_key Cart item key
+	 * @return string Modified price HTML
+	 */
+	public static function override_cart_item_price( $price, $cart_item, $cart_item_key ) {
+		if ( self::$is_mini_cart ) {
+			// Transport items: use stored price (product catalog price is 0)
+			if ( Woo_Transport::is_transport_item( $cart_item ) && isset( $cart_item['_tcbf_transport_price'] ) ) {
+				$tp = (float) $cart_item['_tcbf_transport_price'];
+				return wc_price( $tp );
+			}
+
+			// EB items: struck-through original + actual discounted price
+			$eb_base = self::get_cart_item_eb_base( $cart_item );
+			if ( $eb_base > 0 ) {
+				$actual = self::get_cart_item_eb_actual( $cart_item );
+				return '<del>' . wp_kses_post( wc_price( $eb_base ) ) . '</del> '
+					 . '<ins style="text-decoration:none;">' . wp_kses_post( wc_price( $actual ) ) . '</ins>';
+			}
+
+			return $price;
+		}
+
+		// Main cart / checkout: existing behavior
+		$eb_base = self::get_cart_item_eb_base( $cart_item );
+		if ( $eb_base > 0 ) {
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base ) ) . '</del>';
+		}
+		return '<span class="tcbf-price-final">' . wp_kses_post( $price ) . '</span>';
+	}
+
+	/**
+	 * Override cart item subtotal display (price * qty).
+	 *
+	 * In mini cart context, also handles transport items and EB actual prices.
+	 *
+	 * @param string $subtotal  Formatted subtotal HTML
+	 * @param array  $cart_item Cart item data
+	 * @param string $cart_item_key Cart item key
+	 * @return string Modified subtotal HTML
+	 */
+	public static function override_cart_item_subtotal( $subtotal, $cart_item, $cart_item_key ) {
+		if ( self::$is_mini_cart ) {
+			// Transport items: use stored price
+			if ( Woo_Transport::is_transport_item( $cart_item ) && isset( $cart_item['_tcbf_transport_price'] ) ) {
+				$tp  = (float) $cart_item['_tcbf_transport_price'];
+				$qty = max( 1, (int) $cart_item['quantity'] );
+				return wc_price( $tp * $qty );
+			}
+
+			// EB items: struck-through original + actual discounted price
+			$eb_base = self::get_cart_item_eb_base( $cart_item );
+			if ( $eb_base > 0 ) {
+				$qty    = max( 1, (int) $cart_item['quantity'] );
+				$actual = self::get_cart_item_eb_actual( $cart_item );
+				return '<del>' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del> '
+					 . '<ins style="text-decoration:none;">' . wp_kses_post( wc_price( $actual * $qty ) ) . '</ins>';
+			}
+
+			return $subtotal;
+		}
+
+		// Main cart / checkout: existing behavior
+		$eb_base = self::get_cart_item_eb_base( $cart_item );
+		if ( $eb_base > 0 ) {
+			$qty = max( 1, (int) $cart_item['quantity'] );
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $eb_base * $qty ) ) . '</del>';
+		}
+		return '<span class="tcbf-price-final">' . wp_kses_post( $subtotal ) . '</span>';
+	}
+
+	/**
+	 * Public accessor for get_cart_item_eb_base (used by templates).
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Base price (>0 if EB applied, 0 otherwise)
+	 */
+	public static function get_cart_item_eb_base_public( array $cart_item ) : float {
+		return self::get_cart_item_eb_base( $cart_item );
+	}
+
+	/**
+	 * Get the original EB base price from a cart item (before discount).
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Base price (>0 if EB applied, 0 otherwise)
+	 */
+	private static function get_cart_item_eb_base( array $cart_item ) : float {
+		// Event Form packs: booking meta has _eb_base_price
+		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
+			$booking = $cart_item['booking'];
+			$eligible = ! empty( $booking[ \TC_BF\Plugin::BK_EB_ELIGIBLE ] );
+			if ( $eligible ) {
+				$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
+				if ( $base > 0 ) {
+					return $base;
+				}
+			}
+		}
+
+		// WC Bookings: ledger meta
+		if ( ! empty( $cart_item['_tcbf_ledger_processed'] ) ) {
+			$eb_amount = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+			if ( $eb_amount > 0 ) {
+				return (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+			}
+		}
+
+		return 0.0;
+	}
+
+	/**
+	 * Get the actual per-unit price after EB discount from a cart item.
+	 *
+	 * Uses BK_EB_ELIGIBLE guard to avoid entering the booking branch
+	 * for WC Bookings items that have a 'booking' array but no EB keys.
+	 *
+	 * @param array $cart_item Cart item data
+	 * @return float Discounted price (base − discount)
+	 */
+	private static function get_cart_item_eb_actual( array $cart_item ) : float {
+		// Event Form packs: actual price is stored in _custom_cost
+		if ( ! empty( $cart_item['booking'] ) && is_array( $cart_item['booking'] ) ) {
+			$booking  = $cart_item['booking'];
+			$eligible = ! empty( $booking[ \TC_BF\Plugin::BK_EB_ELIGIBLE ] );
+			if ( $eligible ) {
+				if ( isset( $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ] ) ) {
+					return (float) $booking[ \TC_BF\Plugin::BK_CUSTOM_COST ];
+				}
+				$base = isset( $booking[ \TC_BF\Plugin::BK_EB_BASE ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_BASE ] : 0.0;
+				$amt  = isset( $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] ) ? (float) $booking[ \TC_BF\Plugin::BK_EB_AMOUNT ] : 0.0;
+				return max( 0.0, $base - $amt );
+			}
+		}
+
+		// WC Bookings: ledger meta
+		if ( ! empty( $cart_item['_tcbf_ledger_processed'] ) ) {
+			$total = (float) ( $cart_item['_tcbf_ledger_total'] ?? 0 );
+			if ( $total > 0 ) {
+				return $total;
+			}
+			$base = (float) ( $cart_item['_tcbf_ledger_base'] ?? 0 );
+			$amt  = (float) ( $cart_item['_tcbf_ledger_eb_amount'] ?? 0 );
+			return max( 0.0, $base - $amt );
+		}
+
+		return 0.0;
+	}
+
+	/* =========================================================
+	 * Email: Inline Booking Details per Order Item
+	 *
+	 * Hooked to woocommerce_order_item_meta_end (priority 10).
+	 * Renders participant, event, date, bike/size, EB badge, and
+	 * pack/standalone footers inline within each item's <td> cell.
+	 * Uses email-safe inline styles (no CSS classes).
+	 * ========================================================= */
+
+	/**
+	 * Render inline booking details for a single order item in email context.
+	 *
+	 * Injects per-item booking context (participant, event, date, EB badge,
+	 * bike/size) plus pack/standalone EB footers into the email product table.
+	 *
+	 * @param int                    $item_id    Order item ID
+	 * @param \WC_Order_Item_Product $item       Order item
+	 * @param \WC_Order              $order      Order object
+	 * @param bool                   $plain_text Whether this is a plain text email
+	 */
+	public static function render_email_item_booking_details( $item_id, $item, $order, $plain_text = false ) : void {
+		// Only render in email context (flag set by render_email_summary_block)
+		if ( self::$email_rendering_order_id === null ) {
+			return;
+		}
+
+		if ( ! $order || ! is_a( $order, 'WC_Order' ) ) {
+			return;
+		}
+
+		// Only for the order currently being email-rendered
+		if ( (int) $order->get_id() !== self::$email_rendering_order_id ) {
+			return;
+		}
+
+		if ( $plain_text ) {
+			return;
+		}
+
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return;
+		}
+
+		// Build cache on first call for this order
+		if ( self::$email_item_cache === null ) {
+			self::build_email_item_cache( $order );
+		}
+
+		$cache   = self::$email_item_cache;
+		$item_id = (int) $item_id;
+
+		// Get record for this item
+		if ( ! isset( $cache['records'][ $item_id ] ) ) {
+			return;
+		}
+
+		$record   = $cache['records'][ $item_id ];
+		$group_id = $record['group_id'];
+
+		// Skip items that have no booking data at all
+		if ( $record['event_id'] <= 0
+			&& $record['participant'] === ''
+			&& $group_id <= 0
+			&& $record['eb_base'] <= 0
+		) {
+			return;
+		}
+
+		// Determine item context within its pack group
+		$is_standalone = in_array( $item_id, $cache['standalone'], true );
+		$is_parent     = false;
+		$is_child      = false;
+		$has_rental    = false;
+
+		if ( $group_id > 0 ) {
+			$has_rental = $cache['group_has_rental'][ $group_id ] ?? false;
+			$is_parent  = ( $cache['group_parent'][ $group_id ] ?? 0 ) === $item_id;
+			$is_child   = ! $is_parent;
+		}
+
+		echo '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px;">';
+
+		// === PARENT or STANDALONE: participant, event, date, bike ===
+		if ( $is_parent || $is_standalone ) {
+
+			// Participant
+			if ( $record['participant'] !== '' ) {
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; width:90px; vertical-align:top;">' . esc_html__( 'Participant', TC_BF_TEXTDOMAIN ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['participant'] ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Event
+			if ( $record['event_title'] !== '' ) {
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html__( 'Event', TC_BF_TEXTDOMAIN ) . '</td>';
+				if ( $record['event_url'] ) {
+					echo '<td style="padding:3px 0; font-size:12px;"><a href="' . esc_url( $record['event_url'] ) . '" style="color:#3d61aa; text-decoration:none;">' . esc_html( $record['event_title'] ) . '</a></td>';
+				} else {
+					echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['event_title'] ) . '</td>';
+				}
+				echo '</tr>';
+			}
+
+			// Booking date (with end date and duration when available)
+			if ( $record['booking_date'] !== '' ) {
+				$date_display = esc_html( $record['booking_date'] );
+				if ( ! empty( $record['end_date'] ) ) {
+					$date_display .= ' — ' . esc_html( $record['end_date'] );
+				}
+				if ( $record['duration'] > 0 ) {
+					$day_label = $record['duration'] === 1 ? __( 'day', TC_BF_TEXTDOMAIN ) : __( 'days', TC_BF_TEXTDOMAIN );
+					$date_display .= ' <span style="color:#9ca3af; font-size:11px;">(' . esc_html( $record['duration'] . ' ' . $day_label ) . ')</span>';
+				}
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html__( 'Date', TC_BF_TEXTDOMAIN ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . $date_display . '</td>';
+				echo '</tr>';
+			}
+
+			// Bike: Own (parent without rental child)
+			if ( $is_parent && ! $has_rental ) {
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html__( 'Bike', TC_BF_TEXTDOMAIN ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html__( 'Own', TC_BF_TEXTDOMAIN ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Size (standalone rental items)
+			if ( $is_standalone && $record['size'] !== '' ) {
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html__( 'Size', TC_BF_TEXTDOMAIN ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['size'] ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Pedals/helmet only on standalone (rental) items, not on participation parent
+			if ( $is_standalone ) {
+				if ( $record['pedals'] !== '' ) {
+					$pedals_label = Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' );
+					$pedals_value = Woo::translate( $record['pedals'] );
+					echo '<tr>';
+					echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
+					echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $pedals_value ) . '</td>';
+					echo '</tr>';
+				}
+
+				if ( $record['helmet'] !== '' ) {
+					$helmet_label = Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' );
+					$helmet_value = Woo::translate( $record['helmet'] );
+					echo '<tr>';
+					echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
+					echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $helmet_value ) . '</td>';
+					echo '</tr>';
+				}
+			}
+		}
+
+		// === CHILD (rental): "Part of tour pack" badge + size ===
+		if ( $is_child ) {
+			$badge_text = 'Part of the tour pack';
+			if ( class_exists( '\\TC_BF\\Integrations\\WooCommerce\\Woo' ) ) {
+				$badge_text = Woo::translate( '[:es]Parte del pack de la salida[:en]Part of the tour pack[:]' );
+			}
+
+			echo '<tr>';
+			echo '<td colspan="2" style="padding:3px 0;">';
+			echo '<span style="display:inline-block; background:#f0f9ff; color:#1e40af; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:500;">' . esc_html( $badge_text ) . '</span>';
+			echo '</td>';
+			echo '</tr>';
+
+			// Size
+			if ( $record['size'] !== '' ) {
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; width:90px; vertical-align:top;">' . esc_html__( 'Size', TC_BF_TEXTDOMAIN ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $record['size'] ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Pedals (language-sensitive: both label and value use qTranslate)
+			if ( $record['pedals'] !== '' ) {
+				$pedals_label = Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' );
+				$pedals_value = Woo::translate( $record['pedals'] );
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $pedals_label ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $pedals_value ) . '</td>';
+				echo '</tr>';
+			}
+
+			// Helmet (language-sensitive: both label and value use qTranslate)
+			if ( $record['helmet'] !== '' ) {
+				$helmet_label = Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' );
+				$helmet_value = Woo::translate( $record['helmet'] );
+				echo '<tr>';
+				echo '<td style="padding:3px 0; color:#6b7280; font-size:12px; vertical-align:top;">' . esc_html( $helmet_label ) . '</td>';
+				echo '<td style="padding:3px 0; font-size:12px;">' . esc_html( $helmet_value ) . '</td>';
+				echo '</tr>';
+			}
+		}
+
+		echo '</table>';
+	}
+
+	/**
+	 * Check whether an order item has an EB discount in the email context.
+	 *
+	 * Called from the email-order-items.php template to decide price cell styling:
+	 * strikethrough for discounted items, bold for non-discounted.
+	 *
+	 * @param \WC_Order $order   The order
+	 * @param int       $item_id Order item ID
+	 * @param mixed     $item    Order item
+	 * @return bool True if the item (or its pack group) has an EB discount
+	 */
+	public static function get_email_item_has_eb( \WC_Order $order, int $item_id, $item ) : bool {
+		if ( self::$email_rendering_order_id === null ) {
+			return false;
+		}
+		if ( (int) $order->get_id() !== self::$email_rendering_order_id ) {
+			return false;
+		}
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return false;
+		}
+		if ( self::$email_item_cache === null ) {
+			self::build_email_item_cache( $order );
+		}
+
+		$cache = self::$email_item_cache;
+		if ( ! isset( $cache['records'][ $item_id ] ) ) {
+			return false;
+		}
+
+		$record      = $cache['records'][ $item_id ];
+		$group_id    = $record['group_id'];
+		$is_standalone = in_array( $item_id, $cache['standalone'], true );
+
+		// Pack item: check if the group has EB
+		if ( $group_id > 0 ) {
+			$pack_totals = $cache['group_totals'][ $group_id ] ?? null;
+			return $pack_totals && $pack_totals['has_eb'];
+		}
+
+		// Standalone: check individual EB fields
+		if ( $is_standalone ) {
+			return $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Return full-width extra <tr> rows to inject after a product row in WC emails.
+	 *
+	 * Called from our email-order-items.php template override. Returns EB banners,
+	 * pack summaries, etc. as complete <tr>...</tr> HTML, or '' if nothing to add.
+	 *
+	 * @param \WC_Order              $order   The order
+	 * @param int                    $item_id Order item ID
+	 * @param \WC_Order_Item_Product $item    Order item
+	 * @return string HTML string of <tr> rows (or empty)
+	 */
+	public static function get_email_item_extra_rows( \WC_Order $order, int $item_id, $item ) : string {
+		// Only during email rendering
+		if ( self::$email_rendering_order_id === null ) {
+			return '';
+		}
+		if ( (int) $order->get_id() !== self::$email_rendering_order_id ) {
+			return '';
+		}
+		if ( ! $item instanceof \WC_Order_Item_Product ) {
+			return '';
+		}
+
+		// Build cache on first call
+		if ( self::$email_item_cache === null ) {
+			self::build_email_item_cache( $order );
+		}
+
+		$cache = self::$email_item_cache;
+		if ( ! isset( $cache['records'][ $item_id ] ) ) {
+			return '';
+		}
+
+		$record      = $cache['records'][ $item_id ];
+		$group_id    = $record['group_id'];
+		$is_standalone = in_array( $item_id, $cache['standalone'], true );
+
+		$html = '';
+
+		// PACK: EB banner after the last item in a group
+		if ( $group_id > 0 && ( $cache['group_last_item'][ $group_id ] ?? 0 ) === $item_id ) {
+			$pack_totals = $cache['group_totals'][ $group_id ] ?? null;
+			if ( $pack_totals && $pack_totals['has_eb'] ) {
+				$html .= self::build_email_eb_banner_row(
+					$pack_totals['eb_pct'],
+					$pack_totals['eb_discount'],
+					$pack_totals['pack_total'],
+					$pack_totals['base_price'],
+					$pack_totals['base_label'],
+					$pack_totals['eb_combined']
+				);
+			}
+		}
+
+		// STANDALONE: EB banner for single item with EB
+		if ( $is_standalone && $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0 ) {
+			$qty         = max( 1, (int) $record['item']->get_quantity() );
+			$base_total  = $record['eb_base'] * $qty;
+			$eb_total    = $record['eb_amount'] * $qty;
+			$final_total = $base_total - $eb_total;
+			$html .= self::build_email_eb_banner_row(
+				$record['eb_pct'],
+				$eb_total,
+				$final_total
+			);
+		}
+
+		return $html;
+	}
+
+	/**
+	 * Build a full-width EB banner as a <tr> row for the email items table.
+	 *
+	 * Returns a complete <tr><td colspan="3">...</td></tr> string containing
+	 * the EB discount badge and total, styled with the purple banner design.
+	 *
+	 * @param float  $eb_pct      EB percentage (0 if combined/unknown)
+	 * @param float  $eb_amount   Total EB discount amount
+	 * @param float  $final_total Final total after EB
+	 * @param float  $pack_base   Pack base price before EB (0 for standalone)
+	 * @param string $base_label  Label for the base price line
+	 * @param bool   $is_combined Whether this is a combined (mixed %) EB
+	 * @return string Complete <tr> HTML
+	 */
+	private static function build_email_eb_banner_row( float $eb_pct, float $eb_amount, float $final_total, float $pack_base = 0.0, string $base_label = '', bool $is_combined = false ) : string {
+		if ( $base_label === '' ) {
+			$base_label = __( 'Total', TC_BF_TEXTDOMAIN );
+		}
+
+		$html = '<tr><td colspan="3" style="padding:0; background:#f8f5ff;">';
+		$html .= '<table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse;">';
+
+		// Pack base price line (only for packs)
+		if ( $pack_base > 0 ) {
+			$html .= '<tr>';
+			$html .= '<td colspan="2" style="padding:6px 10px 2px; font-size:12px; color:#1a1a1a;">';
+			$html .= esc_html( $base_label ) . ': ';
+			$html .= wp_kses_post( wc_price( $pack_base ) );
+			$html .= '</td>';
+			$html .= '</tr>';
+		}
+
+		// Badge + final total row
+		$html .= '<tr>';
+
+		// Left: EB gradient badge
+		$html .= '<td style="padding:6px 10px; vertical-align:middle;">';
+		$html .= '<span style="display:inline-block; background-color:#5e52a6; background-image:linear-gradient(45deg,#3d61aa 0%,#b74d96 100%); color:#ffffff; padding:4px 10px; border-radius:3px; font-size:11px; font-weight:600;">';
+		if ( $eb_pct > 0 && ! $is_combined ) {
+			$html .= esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+		}
+		$html .= '-' . wp_kses_post( strip_tags( wc_price( $eb_amount ), '<span>' ) );
+		if ( $is_combined ) {
+			$html .= ' ' . esc_html__( 'Combined EB discount', TC_BF_TEXTDOMAIN );
+		} else {
+			$html .= ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+		}
+		$html .= '</span>';
+		$html .= '</td>';
+
+		// Right: prominent total
+		$html .= '<td style="padding:6px 10px; text-align:right; vertical-align:middle;">';
+		$html .= '<span style="font-size:14px; font-weight:800; color:#1a1a1a;">';
+		$html .= wp_kses_post( wc_price( $final_total ) );
+		$html .= '</span>';
+		$html .= '</td>';
+
+		$html .= '</tr>';
+		$html .= '</table>';
+		$html .= '</td></tr>';
+
+		return $html;
+	}
+
+	/**
+	 * Build and cache all item records + group metadata for email rendering.
+	 *
+	 * Called once per order on the first woocommerce_order_item_meta_end invocation.
+	 *
+	 * @param \WC_Order $order The order
+	 */
+	private static function build_email_item_cache( \WC_Order $order ) : void {
+		$items      = $order->get_items( 'line_item' );
+		$records    = [];
+		$groups     = [];
+		$standalone = [];
+
+		foreach ( $items as $item_id => $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+
+			$record                    = self::build_item_record( $order, (int) $item_id, $item );
+			$records[ (int) $item_id ] = $record;
+
+			if ( $record['group_id'] > 0 ) {
+				$groups[ $record['group_id'] ][] = (int) $item_id;
+			} else {
+				$standalone[] = (int) $item_id;
+			}
+		}
+
+		// Process groups: identify parent, has_rental, last item, pack totals
+		$group_has_rental = [];
+		$group_parent     = [];
+		$group_last_item  = [];
+		$group_totals     = [];
+
+		foreach ( $groups as $gid => $item_ids ) {
+			$has_rental  = false;
+			$parent_id   = 0;
+			$group_records = [];
+
+			foreach ( $item_ids as $iid ) {
+				$rec             = $records[ $iid ];
+				$group_records[] = $rec;
+
+				if ( $rec['scope'] === 'rental' || $rec['role'] === 'child' ) {
+					$has_rental = true;
+				}
+
+				if ( $parent_id === 0 ) {
+					if ( $rec['role'] === 'parent'
+						|| $rec['scope'] === 'participation'
+						|| ( $rec['event_id'] > 0 && $rec['scope'] !== 'rental' )
+					) {
+						$parent_id = $iid;
+					}
+				}
+			}
+
+			// Fallback: first item is parent
+			if ( $parent_id === 0 && ! empty( $item_ids ) ) {
+				$parent_id = $item_ids[0];
+			}
+
+			$group_has_rental[ $gid ] = $has_rental;
+			$group_parent[ $gid ]     = $parent_id;
+			$group_last_item[ $gid ]  = end( $item_ids );
+			$group_totals[ $gid ]     = self::calculate_pack_totals( $order, $group_records );
+		}
+
+		self::$email_item_cache = [
+			'records'          => $records,
+			'groups'           => $groups,
+			'group_has_rental' => $group_has_rental,
+			'group_parent'     => $group_parent,
+			'group_last_item'  => $group_last_item,
+			'group_totals'     => $group_totals,
+			'standalone'       => $standalone,
+		];
 	}
 
 	/**
@@ -1478,8 +2474,75 @@ class Woo_OrderMeta {
 			self::render_group( $order, $group_items );
 		}
 
-		// Render standalone items (non-booking products) - each wrapped in container for visual consistency
+		// Sub-group standalone items: place transport items under their parent rental.
+		// Match transports to rentals using (event_id, participant_name).
+		$rental_records    = [];
+		$transport_records = [];
+		$other_records     = [];
+
 		foreach ( $standalone as $record ) {
+			if ( $record['is_transport'] ) {
+				$transport_records[] = $record;
+			} elseif ( $record['scope'] === 'rental' || $record['scope'] === '' ) {
+				$rental_records[] = $record;
+			} else {
+				$other_records[] = $record;
+			}
+		}
+
+		// Build sub-groups: each rental + its transport children
+		$rental_subgroups = []; // [ ['rental' => record, 'transports' => [...]], ... ]
+		$claimed_transport_ids = [];
+
+		foreach ( $rental_records as $rental ) {
+			$subgroup = [ 'rental' => $rental, 'transports' => [] ];
+
+			foreach ( $transport_records as $ti => $transport ) {
+				if ( isset( $claimed_transport_ids[ $ti ] ) ) {
+					continue;
+				}
+
+				// Match transport to its parent rental.
+				// Strategy 0: entry_id match (most reliable — same GF submission)
+				// Strategy 1: parent_product_id match (reliable — set at cart time, no participant needed)
+				// Strategy 2: event_id + participant (tour-linked rentals, partner/admin orders)
+				// Strategy 3: participant only (legacy orders without parent_product_id)
+				$match = false;
+				if ( $rental['entry_id'] > 0 && $transport['entry_id'] === $rental['entry_id'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] > 0
+					&& $transport['transport_parent_product_id'] === $rental['product_id'] ) {
+					$match = true;
+				} elseif ( $rental['event_id'] > 0 && $transport['event_id'] === $rental['event_id']
+					&& $transport['participant'] !== '' && $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				} elseif ( $transport['transport_parent_product_id'] <= 0
+					&& $rental['event_id'] <= 0
+					&& $transport['participant'] !== ''
+					&& $transport['participant'] === $rental['participant'] ) {
+					$match = true;
+				}
+
+				if ( $match ) {
+					$subgroup['transports'][] = $transport;
+					$claimed_transport_ids[ $ti ] = true;
+				}
+			}
+
+			$rental_subgroups[] = $subgroup;
+		}
+
+		// Collect unclaimed transports into other_records
+		foreach ( $transport_records as $ti => $transport ) {
+			if ( ! isset( $claimed_transport_ids[ $ti ] ) ) {
+				$other_records[] = $transport;
+			}
+		}
+
+		// Render rental sub-groups
+		foreach ( $rental_subgroups as $subgroup ) {
+			$record = $subgroup['rental'];
+
 			echo '<div class="tcbf-standalone-group">';
 
 			self::render_standalone_row( $order, $record );
@@ -1491,7 +2554,30 @@ class Woo_OrderMeta {
 				$eb_total = $record['eb_amount'] * $qty;
 				$final_total = $base_total - $eb_total;
 
-				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total );
+				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total, $record['eb_pct'] );
+			}
+
+			// Transport children immediately after their parent rental (indented as children)
+			foreach ( $subgroup['transports'] as $transport ) {
+				self::render_transport_child_row( $order, $transport );
+			}
+
+			echo '</div>';
+		}
+
+		// Render remaining standalone items (unclaimed transports, other products)
+		foreach ( $other_records as $record ) {
+			echo '<div class="tcbf-standalone-group">';
+
+			self::render_standalone_row( $order, $record );
+
+			if ( $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0 ) {
+				$qty = $record['item']->get_quantity();
+				$base_total = $record['eb_base'] * $qty;
+				$eb_total = $record['eb_amount'] * $qty;
+				$final_total = $base_total - $eb_total;
+
+				self::render_standalone_summary_footer( $base_total, $eb_total, $final_total, $record['eb_pct'] );
 			}
 
 			echo '</div>';
@@ -1508,7 +2594,7 @@ class Woo_OrderMeta {
 	 * @param \WC_Order_Item_Product $item The item
 	 * @return array Item record with normalized fields
 	 */
-	private static function build_item_record( \WC_Order $order, int $item_id, \WC_Order_Item_Product $item ) : array {
+	public static function build_item_record( \WC_Order $order, int $item_id, \WC_Order_Item_Product $item ) : array {
 		$product = $item->get_product();
 
 		// Get group metadata (case-insensitive)
@@ -1524,6 +2610,11 @@ class Woo_OrderMeta {
 		// Get event data
 		$event_id    = (int) self::get_item_meta_ci( $item, '_event_id' );
 		$event_title = self::get_item_meta_ci( $item, '_event_title' );
+
+		// Fallback: transport items store event as _tcbf_event_id
+		if ( $event_id <= 0 ) {
+			$event_id = (int) self::get_item_meta_ci( $item, '_tcbf_event_id' );
+		}
 
 		// Fallback event title
 		if ( $event_title === '' && $event_id > 0 ) {
@@ -1562,8 +2653,31 @@ class Woo_OrderMeta {
 		// Get event URL
 		$event_url = $event_id > 0 ? get_permalink( $event_id ) : '';
 
-		// Get booking date
+		// Get booking date and duration
 		$booking_date = self::get_booking_date_from_item( $item_id );
+		$duration_data = self::get_booking_duration_from_item( $item_id );
+
+		// Get pedals and helmet from the GF lead stored by WC GF Product Addon
+		$gf_lead = self::get_gf_lead_from_item( $item );
+		$pedals  = trim( (string) ( $gf_lead['60'] ?? '' ) );
+		$helmet  = trim( (string) ( $gf_lead['61'] ?? '' ) );
+
+		// Fallback: pack items are added programmatically (no _gravity_forms_history),
+		// but _gf_entry_id is persisted to order items by woo_checkout_create_order_line_item().
+		if ( ( $pedals === '' || $helmet === '' ) && class_exists( '\GFAPI' ) ) {
+			$gf_entry_id = (int) self::get_item_meta_ci( $item, '_gf_entry_id' );
+			if ( $gf_entry_id > 0 ) {
+				$gf_entry = \GFAPI::get_entry( $gf_entry_id );
+				if ( is_array( $gf_entry ) ) {
+					if ( $pedals === '' ) {
+						$pedals = trim( (string) ( $gf_entry['60'] ?? '' ) );
+					}
+					if ( $helmet === '' ) {
+						$helmet = trim( (string) ( $gf_entry['61'] ?? '' ) );
+					}
+				}
+			}
+		}
 
 		// Get EB (Early Booking) meta - check Event Form keys first
 		$eb_eligible = (int) self::get_item_meta_ci( $item, '_eb_eligible' );
@@ -1600,15 +2714,34 @@ class Woo_OrderMeta {
 		// Fallback: standalone WC Bookings use _tcbf_notify_participant
 		if ( $confirmation === '' ) {
 			$notify = self::get_item_meta_ci( $item, '_tcbf_notify_participant' );
-			if ( $notify === '1' ) {
-				$confirmation = '1';
+			if ( $notify === '1' || $notify === '0' ) {
+				$confirmation = $notify;
 			}
 		}
+
+		// GF entry ID — primary key for matching items from the same form submission
+		$entry_id = (int) self::get_item_meta_ci( $item, '_gf_entry_id' );
+		if ( $entry_id <= 0 ) {
+			$entry_id = (int) self::get_item_meta_ci( $item, '_tcbf_gf_entry_id' );
+		}
+
+		// Transport meta
+		$transport_type     = self::get_item_meta_ci( $item, '_tcbf_transport_type' );
+		$transport_address  = self::get_item_meta_ci( $item, '_tcbf_transport_address' );
+		$transport_zone     = self::get_item_meta_ci( $item, '_tcbf_transport_zone_name' );
+		$transport_window   = self::get_item_meta_ci( $item, '_tcbf_transport_window' );
+		$transport_date     = self::get_item_meta_ci( $item, '_tcbf_transport_service_date' );
+		$is_transport       = ( $transport_type !== '' );
+		$transport_parent_product_id = (int) self::get_item_meta_ci( $item, '_tcbf_transport_parent_product_id' );
+
+		// Product ID for matching (used to link transport children to rental parents)
+		$product_id = $product ? $product->get_id() : 0;
 
 		return [
 			'item_id'           => $item_id,
 			'item'              => $item,
 			'group_id'          => $group_id,
+			'entry_id'          => $entry_id,
 			'role'              => $role,
 			'scope'             => $scope,
 			'event_id'          => $event_id,
@@ -1618,7 +2751,12 @@ class Woo_OrderMeta {
 			'bicycle'           => $bicycle,
 			'size'              => $size,
 			'booking_date'      => $booking_date,
+			'end_date'          => $duration_data['end_date'],
+			'duration'          => $duration_data['duration'],
+			'pedals'            => $pedals,
+			'helmet'            => $helmet,
 			'product_name'      => $product_name,
+			'product_id'        => $product_id,
 			'product_url'       => $product_url,
 			'product_thumb_url' => $product_thumb_url ?: '',
 			'product'           => $product,
@@ -1627,6 +2765,15 @@ class Woo_OrderMeta {
 			'eb_amount'         => $eb_amount,
 			'eb_base'           => $eb_base,
 			'confirmation'      => $confirmation,
+			'is_transport'      => $is_transport,
+			'transport_type'    => $transport_type,
+			'transport_address' => $transport_address,
+			'transport_zone'    => $transport_zone,
+			'transport_window'  => $transport_window,
+			'transport_date'    => $transport_date,
+			'transport_parent_product_id' => $transport_parent_product_id,
+			'pedals'            => $pedals,
+			'helmet'            => $helmet,
 		];
 	}
 
@@ -1677,12 +2824,78 @@ class Woo_OrderMeta {
 			return '';
 		}
 
-		$booking = new \WC_Booking( (int) $booking_ids[0] );
-		if ( $booking && $booking->get_start() ) {
-			return date_i18n( get_option( 'date_format' ), $booking->get_start() );
+		try {
+			$booking = new \WC_Booking( (int) $booking_ids[0] );
+			// Validate booking was loaded properly
+			if ( $booking && $booking->get_product_id() > 0 && $booking->get_start() ) {
+				return date_i18n( get_option( 'date_format' ), $booking->get_start() );
+			}
+		} catch ( \Exception $e ) {
+			// Booking may be corrupted - return empty
+		}
+	}
+
+	/**
+	 * Get the GF lead array from the WC GF Product Addon's _gravity_forms_history meta.
+	 *
+	 * The addon stores the complete form lead (all field values keyed by field ID)
+	 * inside _gravity_forms_history['_gravity_form_lead'] on each order item.
+	 *
+	 * @param \WC_Order_Item_Product $item Order item
+	 * @return array GF lead array (field_id => value), or empty array
+	 */
+	private static function get_gf_lead_from_item( \WC_Order_Item_Product $item ) : array {
+		$history = $item->get_meta( '_gravity_forms_history', true );
+		if ( is_array( $history ) && ! empty( $history['_gravity_form_lead'] ) && is_array( $history['_gravity_form_lead'] ) ) {
+			return $history['_gravity_form_lead'];
+		}
+		return [];
+	}
+
+	/**
+	 * Get booking duration (in days) and end date from order item.
+	 *
+	 * @param int $item_id Order item ID
+	 * @return array{duration: int, end_date: string} Duration in days and formatted end date
+	 */
+	private static function get_booking_duration_from_item( int $item_id ) : array {
+		$result = [ 'duration' => 0, 'end_date' => '' ];
+
+		if ( ! class_exists( 'WC_Booking_Data_Store' ) ) {
+			return $result;
 		}
 
-		return '';
+		$booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+		if ( empty( $booking_ids ) ) {
+			return $result;
+		}
+
+		try {
+			$booking = new \WC_Booking( (int) $booking_ids[0] );
+
+			// Validate booking was loaded properly
+			if ( ! $booking || $booking->get_product_id() <= 0 ) {
+				return $result;
+			}
+
+			$start_ts = $booking->get_start();
+			$end_ts   = $booking->get_end();
+
+			if ( $start_ts > 0 && $end_ts > 0 && $end_ts > $start_ts ) {
+				$result['duration'] = (int) ceil( ( $end_ts - $start_ts ) / DAY_IN_SECONDS );
+
+				// Calculate end date as start + (duration - 1) days
+				// This is more reliable than subtracting from end_ts, which varies
+				// based on how WC Bookings stores all-day vs hourly bookings
+				if ( $result['duration'] > 1 ) {
+					$result['end_date'] = date_i18n( get_option( 'date_format' ), $start_ts + ( $result['duration'] - 1 ) * DAY_IN_SECONDS );
+				}
+			}
+		} catch ( \Exception $e ) {
+			// Booking may be corrupted - return empty
+		}
+
+		return $result;
 	}
 
 	/**
@@ -1699,8 +2912,11 @@ class Woo_OrderMeta {
 		$pack_eb_discount = 0.0;
 		$pack_base_price  = 0.0;
 		$has_eb           = false;
-		$base_from_meta   = true; // Track if we have authoritative base prices
-		$has_rental       = false; // Track if this is a true pack (participation + rental)
+		$eb_pct           = 0;       // EB percentage (uniform value or 0 if mixed)
+		$first_eb_pct     = null;    // First EB pct seen (for uniform detection)
+		$eb_pct_uniform   = true;    // All EB-eligible items share the same pct
+		$base_from_meta   = true;    // Track if we have authoritative base prices
+		$has_rental       = false;   // Track if this is a true pack (participation + rental)
 
 		// Tax display mode for order context
 		$inc_tax = ( 'incl' === get_option( 'woocommerce_tax_display_cart' ) );
@@ -1718,6 +2934,14 @@ class Woo_OrderMeta {
 			if ( $record['eb_eligible'] && $record['eb_amount'] > 0 ) {
 				$pack_eb_discount += $record['eb_amount'] * $qty;
 				$has_eb = true;
+
+				// Track whether all EB items share the same percentage
+				$item_pct = $record['eb_pct'];
+				if ( $first_eb_pct === null ) {
+					$first_eb_pct = $item_pct;
+				} elseif ( (float) $item_pct !== (float) $first_eb_pct ) {
+					$eb_pct_uniform = false;
+				}
 			}
 
 			// Base price: prefer stored _eb_base_price (per unit * qty)
@@ -1732,6 +2956,10 @@ class Woo_OrderMeta {
 
 		// Calculate pack total (after EB)
 		$pack_total = $pack_base_price - $pack_eb_discount;
+
+		// Resolve EB percentage: uniform → show pct, mixed → combined (no pct)
+		$eb_combined = $has_eb && ! $eb_pct_uniform;
+		$eb_pct      = ( $eb_pct_uniform && $first_eb_pct !== null ) ? $first_eb_pct : 0;
 
 		// Use "Pack" prefix only if this is a true pack (has rental bike)
 		// For participation-only, use simpler labels
@@ -1751,6 +2979,8 @@ class Woo_OrderMeta {
 			'base_price'   => $pack_base_price,
 			'base_label'   => $base_label,
 			'eb_discount'  => $pack_eb_discount,
+			'eb_pct'       => $eb_pct,
+			'eb_combined'  => $eb_combined,
 			'pack_total'   => $pack_total,
 			'total_label'  => $total_label,
 			'has_eb'       => $has_eb,
@@ -1767,8 +2997,6 @@ class Woo_OrderMeta {
 	 * @param array $pack_totals Pack totals from calculate_pack_totals()
 	 */
 	private static function render_pack_footer( array $pack_totals ) : void {
-		// Only show footer if there's EB or if explicitly requested
-		// For now, always show if EB exists; otherwise skip footer
 		if ( ! $pack_totals['has_eb'] ) {
 			return;
 		}
@@ -1781,19 +3009,21 @@ class Woo_OrderMeta {
 		echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $pack_totals['base_price'] ) ) . '</span>';
 		echo '</div>';
 
-		// EB discount line (only if has EB)
-		if ( $pack_totals['has_eb'] && $pack_totals['eb_discount'] > 0 ) {
-			echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-eb">';
-			echo '<span class="tcbf-pack-footer-label">' . esc_html__( 'Early booking discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '<span class="tcbf-pack-footer-value tcbf-pack-footer-discount">-' . wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ) . '</span>';
-			echo '</div>';
+		// Gradient badge + bold total line
+		echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-eb-row">';
+		echo '<span class="tcbf-eb-badge">';
+		if ( ! empty( $pack_totals['eb_combined'] ) ) {
+			echo wp_kses_post( wc_price( $pack_totals['eb_discount'] ) ) . ' ' . esc_html__( 'Combined EB discount', TC_BF_TEXTDOMAIN );
+		} else {
+			$eb_pct = $pack_totals['eb_pct'] ?? 0;
+			if ( $eb_pct > 0 ) {
+				echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+			}
+			echo '-' . wp_kses_post( strip_tags( wc_price( $pack_totals['eb_discount'] ) ) );
+			echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
 		}
-
-		// Total line (Pack total or Total depending on whether rental exists)
-		$total_label = $pack_totals['total_label'] ?? __( 'Pack total', TC_BF_TEXTDOMAIN );
-		echo '<div class="tcbf-pack-footer-line tcbf-pack-footer-total">';
-		echo '<span class="tcbf-pack-footer-label">' . esc_html( $total_label ) . '</span>';
-		echo '<span class="tcbf-pack-footer-value">' . wp_kses_post( wc_price( $pack_totals['pack_total'] ) ) . '</span>';
+		echo '</span>';
+		echo '<span class="tcbf-pack-footer-value tcbf-pack-footer-total-value">' . wp_kses_post( wc_price( $pack_totals['pack_total'] ) ) . '</span>';
 		echo '</div>';
 
 		echo '</div>';
@@ -1813,6 +3043,7 @@ class Woo_OrderMeta {
 		$has_eb           = false;
 		$base_from_meta   = true;
 		$has_rental       = false; // Track if this is a true pack (participation + rental)
+		$eb_pcts          = [];
 
 		foreach ( $cart_items as $cart_item ) {
 			$qty = max( 1, (int) $cart_item['quantity'] );
@@ -1849,6 +3080,9 @@ class Woo_OrderMeta {
 			if ( $eb_eligible && $eb_amount > 0 ) {
 				$pack_eb_discount += $eb_amount * $qty;
 				$has_eb = true;
+				if ( $eb_pct > 0 ) {
+					$eb_pcts[] = $eb_pct;
+				}
 			}
 
 			// Base price from meta or line subtotal
@@ -1880,6 +3114,11 @@ class Woo_OrderMeta {
 			$total_label = __( 'Total', TC_BF_TEXTDOMAIN );
 		}
 
+		// Determine EB percentage: uniform or combined
+		$unique_pcts = array_unique( $eb_pcts );
+		$eb_pct_val  = count( $unique_pcts ) === 1 ? $unique_pcts[0] : 0;
+		$eb_combined = count( $unique_pcts ) > 1;
+
 		return [
 			'base_price'   => $pack_base_price,
 			'base_label'   => $base_label,
@@ -1888,6 +3127,8 @@ class Woo_OrderMeta {
 			'total_label'  => $total_label,
 			'has_eb'       => $has_eb,
 			'is_pack'      => $has_rental,
+			'eb_pct'       => $eb_pct_val,
+			'eb_combined'  => $eb_combined,
 		];
 	}
 
@@ -1946,7 +3187,7 @@ class Woo_OrderMeta {
 		}
 
 		$event_id = isset( $cart_item['_event_id'] ) ? (int) $cart_item['_event_id'] : 0;
-		if ( $event_id > 0 && $scope !== 'rental' ) {
+		if ( $event_id > 0 && $scope !== 'rental' && $scope !== 'transport' ) {
 			return true;
 		}
 
@@ -2026,6 +3267,19 @@ class Woo_OrderMeta {
 			}
 		}
 
+		// Inherit pedals/helmet from parent to children that lack GF history
+		if ( $parent ) {
+			foreach ( $children as &$child ) {
+				if ( $child['pedals'] === '' && $parent['pedals'] !== '' ) {
+					$child['pedals'] = $parent['pedals'];
+				}
+				if ( $child['helmet'] === '' && $parent['helmet'] !== '' ) {
+					$child['helmet'] = $parent['helmet'];
+				}
+			}
+			unset( $child );
+		}
+
 		// Open pack group container
 		echo '<div class="tcbf-pack-group">';
 
@@ -2034,9 +3288,13 @@ class Woo_OrderMeta {
 			self::render_parent_row( $order, $parent, $has_rental );
 		}
 
-		// Render child rows
+		// Render child rows (transport children get transport-specific layout)
 		foreach ( $children as $child ) {
-			self::render_child_row( $order, $child );
+			if ( ! empty( $child['is_transport'] ) ) {
+				self::render_transport_child_row( $order, $child );
+			} else {
+				self::render_child_row( $order, $child );
+			}
 		}
 
 		// Calculate and render pack totals footer
@@ -2045,6 +3303,27 @@ class Woo_OrderMeta {
 
 		// Close pack group container
 		echo '</div>';
+	}
+
+	/**
+	 * Build price HTML for order item: strikethrough original for EB, bold for non-EB.
+	 *
+	 * @param \WC_Order $order  The order
+	 * @param array     $record Item record from build_item_record()
+	 * @return string Price HTML
+	 */
+	private static function build_order_price_html( \WC_Order $order, array $record ) : string {
+		$item = $record['item'];
+		$has_eb = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+
+		if ( $has_eb ) {
+			$qty        = max( 1, (int) $item->get_quantity() );
+			$base_total = $record['eb_base'] * $qty;
+			return '<del class="tcbf-price-original">' . wp_kses_post( wc_price( $base_total ) ) . '</del>';
+		}
+
+		$price_html = $order->get_formatted_line_subtotal( $item );
+		return '<span class="tcbf-price-final">' . wp_kses_post( $price_html ) . '</span>';
 	}
 
 	/**
@@ -2070,8 +3349,9 @@ class Woo_OrderMeta {
 		$title = $record['product_name'];
 		$title_url = $record['event_url'] ?: $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		// Check if viewer can see participant status badge (admin or partner-owner)
 		$show_participant_badge = self::can_viewer_see_participant_badge( $order );
@@ -2099,7 +3379,7 @@ class Woo_OrderMeta {
 		}
 		echo '</div>';
 
-		// Participant line with badge
+		// Participant badge + notification badge (on the same line)
 		if ( $record['participant'] !== '' ) {
 			echo '<div class="tcbf-participant-line">';
 			echo '<span class="tcbf-participant-badge">';
@@ -2107,40 +3387,36 @@ class Woo_OrderMeta {
 			echo '<span class="tcbf-participant-name">' . esc_html( $record['participant'] ) . '</span>';
 			echo '</span>';
 
-			// Status badge (X/V) for admin or partner-owner
-			if ( $show_participant_badge ) {
-				$status_icon = self::get_participant_status_badge( $order, $record );
-				if ( $status_icon !== '' ) {
-					echo $status_icon;
-				}
+			// Notification round badge inline (admin/partner only, both states)
+			if ( $record['confirmation'] !== '' && $show_participant_badge ) {
+				$notify_enabled = ( $record['confirmation'] === '1' );
+				$notify_class   = $notify_enabled ? 'tcbf-notify-badge is-yes' : 'tcbf-notify-badge is-no';
+				$notify_title   = $notify_enabled
+					? __( 'Participant notification: enabled', TC_BF_TEXTDOMAIN )
+					: __( 'Participant notification: disabled', TC_BF_TEXTDOMAIN );
+
+				echo '<span class="' . esc_attr( $notify_class ) . '" title="' . esc_attr( $notify_title ) . '" aria-label="' . esc_attr( $notify_title ) . '"></span>';
 			}
 
-			echo '</div>';
-		}
-
-		// EB badge line (if applicable)
-		if ( $record['eb_eligible'] && ( $record['eb_pct'] > 0 || $record['eb_amount'] > 0 ) ) {
-			echo '<div class="tcbf-eb-line">';
-			echo '<span class="tcbf-eb-badge">';
-			echo '<span class="tcbf-eb-icon">⏰</span>';
-			if ( $record['eb_pct'] > 0 ) {
-				echo '<span class="tcbf-eb-pct">' . esc_html( number_format_i18n( $record['eb_pct'], 0 ) ) . '%</span>';
-				echo '<span class="tcbf-eb-sep">|</span>';
-			}
-			echo '<span class="tcbf-eb-amt">' . wp_kses_post( wc_price( $record['eb_amount'] ) ) . '</span>';
-			echo '<span class="tcbf-eb-label">' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
 			echo '</div>';
 		}
 
 		// Meta lines
 		echo '<div class="tcbf-order-meta-lines">';
 
-		// Fecha de la reserva
+		// Fecha de la reserva + duration
 		if ( $record['booking_date'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html__( 'Booking date', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['booking_date'] ) . '</span>';
+			$date_display = $record['booking_date'];
+			if ( $record['end_date'] !== '' ) {
+				$date_display .= ' — ' . $record['end_date'];
+			}
+			if ( $record['duration'] > 0 ) {
+				$day_label = $record['duration'] === 1 ? __( 'day', TC_BF_TEXTDOMAIN ) : __( 'days', TC_BF_TEXTDOMAIN );
+				$date_display .= ' (' . $record['duration'] . ' ' . $day_label . ')';
+			}
+			echo '<span class="tcbf-meta-value">' . esc_html( $date_display ) . '</span>';
 			echo '</div>';
 		}
 
@@ -2169,7 +3445,8 @@ class Woo_OrderMeta {
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
-		echo '<div class="tcbf-order-price">' . wp_kses_post( $price_html ) . '</div>';
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
 
 		echo '</div>'; // .tcbf-order-row
 	}
@@ -2228,12 +3505,13 @@ class Woo_OrderMeta {
 		// Thumbnail: rental product thumb (NOT event image for child)
 		$thumb_url = $record['product_thumb_url'];
 
-		// Title: product name linked to product
+		// Title: product name linked to product (not for transport items)
 		$title = $record['product_name'];
-		$title_url = $record['product_url'];
+		$title_url = ! empty( $record['is_transport'] ) ? '' : $record['product_url'];
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		echo '<div class="tcbf-order-row tcbf-order-row--child">';
 
@@ -2264,21 +3542,6 @@ class Woo_OrderMeta {
 		echo '<span class="tcbf-badge-included">' . esc_html( $badge_text ) . '</span>';
 		echo '</div>';
 
-		// EB badge line for child (if applicable)
-		if ( $record['eb_eligible'] && ( $record['eb_pct'] > 0 || $record['eb_amount'] > 0 ) ) {
-			echo '<div class="tcbf-eb-line">';
-			echo '<span class="tcbf-eb-badge">';
-			echo '<span class="tcbf-eb-icon">⏰</span>';
-			if ( $record['eb_pct'] > 0 ) {
-				echo '<span class="tcbf-eb-pct">' . esc_html( number_format_i18n( $record['eb_pct'], 0 ) ) . '%</span>';
-				echo '<span class="tcbf-eb-sep">|</span>';
-			}
-			echo '<span class="tcbf-eb-amt">' . wp_kses_post( wc_price( $record['eb_amount'] ) ) . '</span>';
-			echo '<span class="tcbf-eb-label">' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
-			echo '</div>';
-		}
-
 		// Talla line
 		if ( $record['size'] !== '' ) {
 			echo '<div class="tcbf-meta-line tcbf-talla-line">';
@@ -2287,10 +3550,113 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
+		// Pedals
+		if ( $record['pedals'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['pedals'] ) ) . '</span>';
+			echo '</div>';
+		}
+
+		// Helmet
+		if ( $record['helmet'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['helmet'] ) ) . '</span>';
+			echo '</div>';
+		}
+
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
-		echo '<div class="tcbf-order-price">' . wp_kses_post( $price_html ) . '</div>';
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
+
+		echo '</div>'; // .tcbf-order-row
+	}
+
+	/**
+	 * Render a transport child row (indented under parent rental).
+	 *
+	 * Uses the same --child indentation as rental children in tour packs,
+	 * but shows transport-specific meta (service, date, window, address).
+	 *
+	 * @param \WC_Order $order The order
+	 * @param array $record Item record (transport)
+	 */
+	private static function render_transport_child_row( \WC_Order $order, array $record ) : void {
+		$item = $record['item'];
+
+		$thumb_url = $record['product_thumb_url'];
+		$title = $record['product_name'];
+
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
+
+		echo '<div class="tcbf-order-row tcbf-order-row--child tcbf-order-row--transport-child">';
+
+		// Thumbnail
+		echo '<div class="tcbf-order-thumb">';
+		if ( $thumb_url ) {
+			echo '<img src="' . esc_url( $thumb_url ) . '" alt="' . esc_attr( $title ) . '" />';
+		} else {
+			echo '<span class="tcbf-order-thumb--placeholder"></span>';
+		}
+		echo '</div>';
+
+		// Content
+		echo '<div class="tcbf-order-content">';
+
+		// Title
+		echo '<div class="tcbf-order-title">' . esc_html( $title ) . '</div>';
+
+		// Transport-specific meta
+		echo '<div class="tcbf-order-meta-lines">';
+
+		// Service type (Delivery / Return pickup)
+		if ( $record['transport_type'] !== '' ) {
+			$dir_label = ( $record['transport_type'] === 'pickup' )
+				? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
+				: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Service[:es]Servicio[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $dir_label ) . '</span>';
+			echo '</div>';
+		}
+
+		// Service date
+		if ( $record['transport_date'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $record['transport_date'] ) . '</span>';
+			echo '</div>';
+		}
+
+		// Time window
+		if ( $record['transport_window'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo_Transport::get_window_label( $record['transport_window'], true ) ) . '</span>';
+			echo '</div>';
+		}
+
+		// Address
+		if ( $record['transport_address'] !== '' ) {
+			$display_address = mb_strlen( $record['transport_address'] ) > 60
+				? mb_substr( $record['transport_address'], 0, 57 ) . '...'
+				: $record['transport_address'];
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Address[:es]Dirección[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( $display_address ) . '</span>';
+			echo '</div>';
+		}
+
+		echo '</div>'; // .tcbf-order-meta-lines
+		echo '</div>'; // .tcbf-order-content
+
+		// Price
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
 
 		echo '</div>'; // .tcbf-order-row
 	}
@@ -2313,12 +3679,13 @@ class Woo_OrderMeta {
 			$thumb_url = $record['product_thumb_url'];
 		}
 
-		// Title: product name linked to event or product
+		// Title: product name linked to event or product (not for transport items)
 		$title = $record['product_name'];
-		$title_url = $record['event_url'] ?: $record['product_url'];
+		$title_url = ! empty( $record['is_transport'] ) ? '' : ( $record['event_url'] ?: $record['product_url'] );
 
-		// Price: use Woo formatted line subtotal
-		$price_html = $order->get_formatted_line_subtotal( $item );
+		// Price: strikethrough original for EB, bold for non-EB
+		$price_html = self::build_order_price_html( $order, $record );
+		$has_eb     = $record['eb_eligible'] && $record['eb_amount'] > 0 && $record['eb_base'] > 0;
 
 		// Quantity
 		$qty = $item->get_quantity();
@@ -2349,10 +3716,10 @@ class Woo_OrderMeta {
 		}
 		echo '</div>';
 
-		// Check if viewer can see participant status badge (admin or partner-owner)
-		$show_participant_badge = self::can_viewer_see_participant_badge( $order );
+		// Check if viewer can see operational badges (admin or partner-owner)
+		$show_operational_badges = self::can_viewer_see_participant_badge( $order );
 
-		// Participant badge (like parent rows)
+		// Participant badge + notification badge (on the same line)
 		if ( $record['participant'] !== '' ) {
 			echo '<div class="tcbf-participant-line">';
 			echo '<span class="tcbf-participant-badge">';
@@ -2360,48 +3727,87 @@ class Woo_OrderMeta {
 			echo '<span class="tcbf-participant-name">' . esc_html( $record['participant'] ) . '</span>';
 			echo '</span>';
 
-			// Status badge (checkmark/pending) for admin or partner-owner
-			if ( $show_participant_badge ) {
-				$status_icon = self::get_participant_status_badge( $order, $record );
-				if ( $status_icon !== '' ) {
-					echo $status_icon;
-				}
+			// Notification round badge inline (admin/partner only, both states)
+			if ( $record['confirmation'] !== '' && $show_operational_badges ) {
+				$notify_enabled = ( $record['confirmation'] === '1' );
+				$notify_class   = $notify_enabled ? 'tcbf-notify-badge is-yes' : 'tcbf-notify-badge is-no';
+				$notify_title   = $notify_enabled
+					? __( 'Participant notification: enabled', TC_BF_TEXTDOMAIN )
+					: __( 'Participant notification: disabled', TC_BF_TEXTDOMAIN );
+
+				echo '<span class="' . esc_attr( $notify_class ) . '" title="' . esc_attr( $notify_title ) . '" aria-label="' . esc_attr( $notify_title ) . '"></span>';
 			}
 
 			echo '</div>';
 		}
 
-		// Notification badge (if confirmation was requested)
-		if ( ! empty( $record['confirmation'] ) ) {
-			echo '<div class="tcbf-notification-line">';
-			echo '<span class="tcbf-notification-badge">';
-			echo '<span class="tcbf-notification-icon">✉️</span>';
-			echo '<span class="tcbf-notification-text">' . esc_html__( 'Email notification', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
-			echo '</div>';
-		}
-
-		// EB badge (if applicable)
-		if ( $record['eb_eligible'] && $record['eb_amount'] > 0 ) {
-			echo '<div class="tcbf-eb-line">';
-			echo '<span class="tcbf-eb-badge">';
-			echo '<span class="tcbf-eb-icon">⏰</span>';
-			echo '<span class="tcbf-eb-pct">' . esc_html( round( $record['eb_pct'] ) ) . '%</span>';
-			echo '<span class="tcbf-eb-sep">|</span>';
-			echo '<span class="tcbf-eb-amt">' . wp_kses_post( wc_price( $record['eb_amount'] * $qty ) ) . '</span>';
-			echo '<span class="tcbf-eb-label">' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN ) . '</span>';
-			echo '</span>';
-			echo '</div>';
-		}
-
-		// Meta lines (booking date, event, size)
+		// Meta lines (booking date, event, size, pedals, helmet)
 		echo '<div class="tcbf-order-meta-lines">';
 
-		// Booking date
+		// Transport-specific meta
+		if ( ! empty( $record['is_transport'] ) ) {
+
+			// Direction (Delivery / Return pickup)
+			if ( $record['transport_type'] !== '' ) {
+				$dir_label = ( $record['transport_type'] === 'pickup' )
+					? Woo::translate( '[:en]Return pickup[:es]Recogida de devolución[:]' )
+					: Woo::translate( '[:en]Delivery[:es]Entrega[:]' );
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Service[:es]Servicio[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $dir_label ) . '</span>';
+				echo '</div>';
+			}
+
+			// Service date
+			if ( $record['transport_date'] !== '' ) {
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Date[:es]Fecha[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $record['transport_date'] ) . '</span>';
+				echo '</div>';
+			}
+
+			// Time window
+			if ( $record['transport_window'] !== '' ) {
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Window[:es]Horario[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( Woo_Transport::get_window_label( $record['transport_window'], true ) ) . '</span>';
+				echo '</div>';
+			}
+
+			// Address
+			if ( $record['transport_address'] !== '' ) {
+				$display_address = mb_strlen( $record['transport_address'] ) > 60
+					? mb_substr( $record['transport_address'], 0, 57 ) . '...'
+					: $record['transport_address'];
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Address[:es]Dirección[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $display_address ) . '</span>';
+				echo '</div>';
+			}
+
+			// Zone
+			if ( $record['transport_zone'] !== '' ) {
+				echo '<div class="tcbf-meta-line">';
+				echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Zone[:es]Zona[:]' ) ) . ':</span>';
+				echo '<span class="tcbf-meta-value">' . esc_html( $record['transport_zone'] ) . '</span>';
+				echo '</div>';
+			}
+
+		} else {
+
+		// Booking date + duration
 		if ( $record['booking_date'] !== '' ) {
 			echo '<div class="tcbf-meta-line">';
 			echo '<span class="tcbf-meta-label">' . esc_html__( 'Booking date', TC_BF_TEXTDOMAIN ) . ':</span>';
-			echo '<span class="tcbf-meta-value">' . esc_html( $record['booking_date'] ) . '</span>';
+			$date_display = $record['booking_date'];
+			if ( $record['end_date'] !== '' ) {
+				$date_display .= ' — ' . $record['end_date'];
+			}
+			if ( $record['duration'] > 0 ) {
+				$day_label = $record['duration'] === 1 ? __( 'day', TC_BF_TEXTDOMAIN ) : __( 'days', TC_BF_TEXTDOMAIN );
+				$date_display .= ' (' . $record['duration'] . ' ' . $day_label . ')';
+			}
+			echo '<span class="tcbf-meta-value">' . esc_html( $date_display ) . '</span>';
 			echo '</div>';
 		}
 
@@ -2425,12 +3831,31 @@ class Woo_OrderMeta {
 			echo '</div>';
 		}
 
+		// Pedals
+		if ( $record['pedals'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Type of pedals[:es]Tipo de pedales[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['pedals'] ) ) . '</span>';
+			echo '</div>';
+		}
+
+		// Helmet
+		if ( $record['helmet'] !== '' ) {
+			echo '<div class="tcbf-meta-line">';
+			echo '<span class="tcbf-meta-label">' . esc_html( Woo::translate( '[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]' ) ) . ':</span>';
+			echo '<span class="tcbf-meta-value">' . esc_html( Woo::translate( $record['helmet'] ) ) . '</span>';
+			echo '</div>';
+		}
+
+		} // end non-transport meta
+
 		echo '</div>'; // .tcbf-order-meta-lines
 
 		echo '</div>'; // .tcbf-order-content
 
 		// Price
-		echo '<div class="tcbf-order-price">' . wp_kses_post( $price_html ) . '</div>';
+		$price_class = 'tcbf-order-price' . ( $has_eb ? '' : ' tcbf-order-price--final' );
+		echo '<div class="' . esc_attr( $price_class ) . '">' . $price_html . '</div>';
 
 		echo '</div>'; // .tcbf-order-row
 	}
@@ -2442,20 +3867,24 @@ class Woo_OrderMeta {
 	 * @param float $eb_total EB discount amount
 	 * @param float $final_total Final total after discount
 	 */
-	private static function render_standalone_summary_footer( float $base_total, float $eb_total, float $final_total ) : void {
+	private static function render_standalone_summary_footer( float $base_total, float $eb_total, float $final_total, float $eb_pct = 0 ) : void {
 		?>
 		<div class="tcbf-standalone-summary">
 			<div class="tcbf-standalone-summary-line tcbf-summary-base">
 				<span class="tcbf-summary-label"><?php esc_html_e( 'Price before EB', TC_BF_TEXTDOMAIN ); ?></span>
 				<span class="tcbf-summary-value"><?php echo wp_kses_post( wc_price( $base_total ) ); ?></span>
 			</div>
-			<div class="tcbf-standalone-summary-line tcbf-summary-eb">
-				<span class="tcbf-summary-label"><?php esc_html_e( 'Early booking discount', TC_BF_TEXTDOMAIN ); ?></span>
-				<span class="tcbf-summary-value tcbf-summary-discount">-<?php echo wp_kses_post( wc_price( $eb_total ) ); ?></span>
-			</div>
-			<div class="tcbf-standalone-summary-line tcbf-summary-total">
-				<span class="tcbf-summary-label"><?php esc_html_e( 'Total', TC_BF_TEXTDOMAIN ); ?></span>
-				<span class="tcbf-summary-value"><?php echo wp_kses_post( wc_price( $final_total ) ); ?></span>
+			<div class="tcbf-standalone-summary-line tcbf-summary-eb-row">
+				<span class="tcbf-eb-badge">
+					<?php
+					if ( $eb_pct > 0 ) {
+						echo esc_html( number_format_i18n( $eb_pct, 0 ) ) . '% | ';
+					}
+					echo '-' . wp_kses_post( strip_tags( wc_price( $eb_total ) ) );
+					echo ' ' . esc_html__( 'EB discount', TC_BF_TEXTDOMAIN );
+					?>
+				</span>
+				<span class="tcbf-summary-value tcbf-pack-footer-total-value"><?php echo wp_kses_post( wc_price( $final_total ) ); ?></span>
 			</div>
 		</div>
 		<?php
@@ -2798,6 +4227,24 @@ class Woo_OrderMeta {
 			font-weight: 600;
 			color: #6b7280;
 		}
+		/* Strikethrough original price for EB items */
+		.tcbf-price-original {
+			text-decoration: line-through;
+			color: #1a1a1a;
+			font-weight: 400;
+			font-size: 14px;
+		}
+		/* Bold price for non-EB items */
+		.tcbf-order-price--final {
+			background: #f8f5ff;
+			padding: 6px 10px;
+			border-radius: 4px;
+		}
+		.tcbf-price-final {
+			font-size: 16px;
+			font-weight: 800;
+			color: #1a1a1a;
+		}
 
 		/* Standalone row (non-pack items) - matches parent row styling */
 		.tcbf-order-row--standalone {
@@ -2813,6 +4260,19 @@ class Woo_OrderMeta {
 			font-weight: 500;
 			color: #6b7280;
 			font-size: 14px;
+		}
+
+		/* Price display - EB original (strikethrough) and final */
+		.tcbf-price-original {
+			text-decoration: line-through;
+			color: #1a1a1a;
+			font-weight: 400;
+			font-size: 14px;
+		}
+		.tcbf-price-final {
+			font-size: 16px;
+			font-weight: 800;
+			color: #1a1a1a;
 		}
 
 		/* Pack footer (totals) - uses design tokens */
@@ -2851,6 +4311,20 @@ class Woo_OrderMeta {
 			font-weight: 700;
 			color: #111827;
 			font-size: 14px;
+		}
+		/* EB row with gradient badge + bold total */
+		.tcbf-pack-footer-eb-row,
+		.tcbf-summary-eb-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 6px 0;
+			margin-top: 4px;
+		}
+		.tcbf-pack-footer-total-value {
+			font-weight: 800 !important;
+			font-size: 16px !important;
+			color: #1a1a1a !important;
 		}
 
 		/* Responsive - tablet */

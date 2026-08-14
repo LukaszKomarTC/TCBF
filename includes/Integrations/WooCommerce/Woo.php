@@ -116,6 +116,13 @@ final class Woo {
 		}
 
 		// ==================================================================
+		// TRANSPORT items — handled by Woo_Transport::display_transport_cart_item_data()
+		// ==================================================================
+		if ( $scope === 'transport' ) {
+			return $item_data;
+		}
+
+		// ==================================================================
 		// PARENT ITEM (Participation) - Show minimal, essential info
 		// ==================================================================
 		if ( $scope !== 'rental' ) {
@@ -153,7 +160,8 @@ final class Woo {
 				$name = isset( $data['name'] ) ? $data['name'] : '';
 				$name_lower = strtolower( $name );
 
-				// Skip date, duration, persons, resource (duplicates or irrelevant)
+				// Skip date, duration, persons, resource, pedals, helmet (duplicates or irrelevant)
+				// Pedals/helmet are re-added below with canonical labels matching the GF form.
 				if ( strpos( $name_lower, 'booking date' ) !== false ||
 				     strpos( $name_lower, 'fecha de la reserva' ) !== false ||
 				     strpos( $name_lower, 'booking dates' ) !== false ||
@@ -162,7 +170,10 @@ final class Woo {
 				     strpos( $name_lower, 'persons' ) !== false ||
 				     strpos( $name_lower, 'personas' ) !== false ||
 				     strpos( $name_lower, 'resource' ) !== false ||
-				     strpos( $name_lower, 'recurso' ) !== false ) {
+				     strpos( $name_lower, 'recurso' ) !== false ||
+				     strpos( $name_lower, 'pedal' ) !== false ||
+				     strpos( $name_lower, 'helmet' ) !== false ||
+				     strpos( $name_lower, 'casco' ) !== false ) {
 					continue; // Skip this field
 				}
 
@@ -178,12 +189,76 @@ final class Woo {
 					"value" => $size,
 				];
 			}
+
+			// Add pedals/helmet for rental items (from GF entry via _tcbf_gf_entry_id on booking meta)
+			$entry_id = isset( $booking[\TC_BF\Plugin::BK_ENTRY_ID] ) ? (int) $booking[\TC_BF\Plugin::BK_ENTRY_ID] : 0;
+			if ( $entry_id > 0 && class_exists( '\GFAPI' ) ) {
+				$gf_entry = \GFAPI::get_entry( $entry_id );
+				if ( is_array( $gf_entry ) ) {
+					$pedals = trim( (string) ( $gf_entry['60'] ?? '' ) );
+					$helmet = trim( (string) ( $gf_entry['61'] ?? '' ) );
+					if ( $pedals !== '' ) {
+						$item_data[] = [
+							"name"  => self::translate('[:en]Type of pedals[:es]Tipo de pedales[:]'),
+							"value" => self::translate( $pedals ),
+						];
+					}
+					if ( $helmet !== '' ) {
+						$item_data[] = [
+							"name"  => self::translate('[:en]Helmet (obligatory)[:es]Casco (obligatorio)[:]'),
+							"value" => self::translate( $helmet ),
+						];
+					}
+				}
+			}
 		}
 
 		// Participant name: Now shown via hook (woocommerce_after_cart_item_name)
 		// Pack badge: Now shown via hook (woocommerce_after_cart_item_name)
 
 		return $item_data;
+	}
+
+	/**
+	 * Lock quantity display for booking products and specific categories.
+	 *
+	 * Bookings are date-bound and cannot have their quantity changed.
+	 * Runs at priority 20 (after Pack_Grouping::lock_pack_quantity at 10).
+	 *
+	 * @param string $product_quantity Quantity HTML
+	 * @param string $cart_item_key    Cart item key
+	 * @param array  $cart_item        Cart item data
+	 * @return string Modified quantity HTML
+	 */
+	public static function lock_cart_item_quantity( $product_quantity, $cart_item_key, $cart_item ) {
+		if ( empty( $cart_item['data'] ) || ! is_object( $cart_item['data'] ) ) {
+			return $product_quantity;
+		}
+
+		// Pack items already locked by Pack_Grouping at priority 10.
+		if ( ! empty( $cart_item[ Pack_Grouping::META_GROUP_ID ] ) ) {
+			return $product_quantity;
+		}
+
+		$product  = $cart_item['data'];
+		$quantity = (int) ( $cart_item['quantity'] ?? 1 );
+
+		// Booking products: always lock quantity.
+		if ( method_exists( $product, 'is_type' ) && $product->is_type( 'booking' ) ) {
+			return sprintf( '<span class="quantity">%d</span>', $quantity );
+		}
+
+		// Specific product categories: lock quantity.
+		// Filterable so term IDs can be adjusted per environment.
+		$pid = ! empty( $cart_item['product_id'] ) ? (int) $cart_item['product_id'] : 0;
+		if ( $pid ) {
+			$lock_term_ids = apply_filters( 'tcbf_quantity_lock_category_ids', array( 199, 241, 290 ) );
+			if ( ! empty( $lock_term_ids ) && has_term( $lock_term_ids, 'product_cat', $pid ) ) {
+				return sprintf( '<span class="quantity">%d</span>', $quantity );
+			}
+		}
+
+		return $product_quantity;
 	}
 
 	/**
@@ -194,8 +269,8 @@ final class Woo {
 	 * @param string $text Text to translate (qTranslate format: [:en]text[:es]texto[:])
 	 * @return string Translated text
 	 */
-	public static function translate( string $text ) : string {
-		if ( $text === '' ) return '';
+	public static function translate( ?string $text ) : string {
+		if ( $text === null || $text === '' ) return '';
 
 		// Try tc_sc_event_tr first (custom function)
 		if ( function_exists( 'tc_sc_event_tr' ) ) {

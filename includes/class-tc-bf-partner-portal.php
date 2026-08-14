@@ -39,10 +39,25 @@ final class Partner_Portal {
     const BASE_PAYABLE_STATUSES = [ 'processing', 'completed' ];
 
     /**
-     * Check if current user is in admin mode (can see all partners)
+     * Check if current user is in admin mode (can see all partners).
+     *
+     * Hotel-role users are always treated as partners, even if they also
+     * have manage_woocommerce (common when WooCommerce caps are added to
+     * the custom role). This prevents partners from seeing all orders.
      */
     private static function is_admin_mode() : bool {
-        return function_exists( 'current_user_can' ) && current_user_can( 'manage_woocommerce' );
+        if ( ! function_exists( 'current_user_can' ) ) {
+            return false;
+        }
+        if ( ! current_user_can( 'manage_woocommerce' ) && ! current_user_can( 'manage_options' ) ) {
+            return false;
+        }
+        // Partners (hotel role) are never in admin mode — they see only their own orders.
+        $u = wp_get_current_user();
+        if ( $u && in_array( 'hotel', (array) $u->roles, true ) ) {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -167,20 +182,75 @@ final class Partner_Portal {
     }
 
     /**
-     * Build query arguments for wc_get_orders
+     * Get partner-attributed order IDs directly from the database.
      *
-     * Supports two modes:
-     * - Partner mode: query by partner_id = current_user_id
-     * - Admin mode: query all partners (partner_filter=0) or specific partner (partner_filter>0)
+     * Uses a direct DB query on the postmeta table (and HPOS orders_meta if
+     * available) so we never depend on wc_get_orders() meta_query support,
+     * which can be silently ignored under HPOS.
      *
-     * @param array $filters          Associative array with: date_from, date_to, status
-     * @param int   $partner_filter   Partner to filter by (0 = all partners in admin mode)
-     * @param bool  $is_admin         Whether in admin mode
-     * @param int   $limit            Results per page (0 = unlimited)
-     * @param int   $page             Page number (1-indexed)
+     * @param int  $partner_filter  Partner user ID (0 = all partners in admin mode)
+     * @param bool $is_admin        Whether in admin mode
+     * @return int[] Order IDs matching partner meta conditions
+     */
+    private static function get_partner_order_ids( int $partner_filter, bool $is_admin ) : array {
+        global $wpdb;
+
+        // Use HPOS orders_meta table if HPOS is the active storage, fall back to postmeta.
+        // Note: the wc_orders_meta table may exist even when HPOS is not active (WC creates
+        // it by default since 8.2), so we must check the actual storage policy, not table existence.
+        $hpos_enabled = class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' )
+            && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+
+        $meta_table  = $hpos_enabled ? $wpdb->prefix . 'wc_orders_meta' : $wpdb->postmeta;
+        $id_col      = $hpos_enabled ? 'order_id' : 'post_id';
+        $key_col     = 'meta_key';
+        $val_col     = 'meta_value';
+
+        // Join: tc_ledger_version = '2' AND partner_id condition
+        if ( $is_admin && $partner_filter <= 0 ) {
+            // All partners: require partner_id EXISTS
+            $sql = $wpdb->prepare(
+                "SELECT lv.{$id_col}
+                 FROM {$meta_table} lv
+                 INNER JOIN {$meta_table} pi ON pi.{$id_col} = lv.{$id_col}
+                    AND pi.{$key_col} = 'partner_id'
+                    AND pi.{$val_col} != ''
+                 WHERE lv.{$key_col} = 'tc_ledger_version'
+                   AND lv.{$val_col} = %s",
+                '2'
+            );
+        } else {
+            // Specific partner
+            $sql = $wpdb->prepare(
+                "SELECT lv.{$id_col}
+                 FROM {$meta_table} lv
+                 INNER JOIN {$meta_table} pi ON pi.{$id_col} = lv.{$id_col}
+                    AND pi.{$key_col} = 'partner_id'
+                    AND pi.{$val_col} = %s
+                 WHERE lv.{$key_col} = 'tc_ledger_version'
+                   AND lv.{$val_col} = %s",
+                (string) $partner_filter,
+                '2'
+            );
+        }
+
+        $ids = $wpdb->get_col( $sql );
+        return array_map( 'intval', $ids );
+    }
+
+    /**
+     * Build query arguments for wc_get_orders (without meta_query).
+     *
+     * Partner filtering is handled by pre-fetching IDs via get_partner_order_ids()
+     * and passing them in the 'include' param for full HPOS compatibility.
+     *
+     * @param array $filters   Associative array with: date_from, date_to, status
+     * @param int[] $order_ids Pre-filtered order IDs from get_partner_order_ids()
+     * @param int   $limit     Results per page (0 = unlimited)
+     * @param int   $page      Page number (1-indexed)
      * @return array Query args for wc_get_orders
      */
-    private static function build_query_args( array $filters, int $partner_filter, bool $is_admin, int $limit = 30, int $page = 1 ) : array {
+    private static function build_query_args( array $filters, array $order_ids, int $limit = 30, int $page = 1 ) : array {
         $args = [
             'limit'      => $limit > 0 ? $limit : -1,
             'paged'      => $page,
@@ -188,58 +258,19 @@ final class Partner_Portal {
             'order'      => 'DESC',
         ];
 
-        // Build meta query - always require tc_ledger_version = 2
-        $meta_query = [
-            'relation' => 'AND',
-            [
-                'key'     => 'tc_ledger_version',
-                'value'   => '2',
-                'compare' => '=',
-            ],
-        ];
-
-        // Partner ID filter
-        if ( $is_admin ) {
-            // Admin mode: filter by specific partner if selected, otherwise show all
-            if ( $partner_filter > 0 ) {
-                $meta_query[] = [
-                    'key'     => 'partner_id',
-                    'value'   => (string) $partner_filter,
-                    'compare' => '=',
-                ];
-            } else {
-                // All partners: just require partner_id EXISTS (any partner-attributed order)
-                $meta_query[] = [
-                    'key'     => 'partner_id',
-                    'compare' => 'EXISTS',
-                ];
-            }
+        // Restrict to pre-filtered partner order IDs
+        if ( ! empty( $order_ids ) ) {
+            $args['post__in'] = $order_ids;
         } else {
-            // Partner mode: always filter by their own partner_id
-            $meta_query[] = [
-                'key'     => 'partner_id',
-                'value'   => (string) $partner_filter,
-                'compare' => '=',
-            ];
+            // No matching orders — force empty result
+            $args['post__in'] = [ 0 ];
         }
-
-        $args['meta_query'] = $meta_query;
 
         // Date range filter
         $date_from = $filters['date_from'] ?? '';
         $date_to   = $filters['date_to'] ?? '';
 
         if ( $date_from !== '' || $date_to !== '' ) {
-            $date_query = [];
-
-            if ( $date_from !== '' ) {
-                $date_query['after'] = $date_from . ' 00:00:00';
-            }
-            if ( $date_to !== '' ) {
-                $date_query['before'] = $date_to . ' 23:59:59';
-            }
-            $date_query['inclusive'] = true;
-
             $args['date_created'] = $date_from . '...' . $date_to;
         }
 
@@ -248,7 +279,6 @@ final class Partner_Portal {
         if ( $status !== '' ) {
             $args['status'] = str_replace( 'wc-', '', $status );
         } else {
-            // All visible statuses (includes 'invoiced' only if registered)
             $args['status'] = self::get_visible_statuses();
         }
 
@@ -256,7 +286,11 @@ final class Partner_Portal {
     }
 
     /**
-     * Get orders using meta-based query
+     * Get orders using direct DB meta lookup + wc_get_orders.
+     *
+     * Two-step approach for HPOS compatibility:
+     * 1. get_partner_order_ids() queries meta tables directly for partner-attributed IDs
+     * 2. wc_get_orders() fetches full order objects filtered by those IDs + date/status
      *
      * @param array $filters        Filters array
      * @param int   $partner_filter Partner to filter by (0 = all in admin mode)
@@ -270,9 +304,15 @@ final class Partner_Portal {
             return [ 'orders' => [], 'total' => 0 ];
         }
 
-        $args = self::build_query_args( $filters, $partner_filter, $is_admin, $limit, $page );
+        // Step 1: get matching order IDs directly from meta tables
+        $order_ids = self::get_partner_order_ids( $partner_filter, $is_admin );
 
-        // Get paginated results
+        if ( empty( $order_ids ) ) {
+            return [ 'orders' => [], 'total' => 0 ];
+        }
+
+        // Step 2: fetch full orders with date/status filters + pagination
+        $args = self::build_query_args( $filters, $order_ids, $limit, $page );
         $args['paginate'] = true;
         $results = wc_get_orders( $args );
 
@@ -284,11 +324,7 @@ final class Partner_Portal {
             $total  = (int) $results->total;
         } elseif ( is_array( $results ) ) {
             $orders = $results;
-            // For non-paginated, get total count separately
-            $count_args = self::build_query_args( $filters, $partner_filter, $is_admin, -1, 1 );
-            $count_args['return'] = 'ids';
-            $all_ids = wc_get_orders( $count_args );
-            $total = is_array( $all_ids ) ? count( $all_ids ) : 0;
+            $total  = count( $results );
         }
 
         return [
@@ -304,6 +340,13 @@ final class Partner_Portal {
      * getters, NOT from meta math. This ensures exact parity with cart/order confirmation.
      * Commission comes from ledger snapshot meta (for accounting).
      *
+     * Order origin detection:
+     * - 'direct':   the partner themselves placed the order (they are the WC customer)
+     * - 'referred': a client used the partner's discount code, or admin assigned it
+     *
+     * Direct orders get full access (clickable link, full product details).
+     * Referred orders get limited access (no link, participant names stripped for privacy).
+     *
      * @param \WC_Order $order         Order object
      * @param int       $partner_uid   Partner user ID (for "own order" detection)
      * @param float     $partner_pct   Partner commission % (fallback)
@@ -312,8 +355,18 @@ final class Partner_Portal {
      */
     private static function format_row( \WC_Order $order, int $partner_uid, float $partner_pct, bool $prices_inc_tax ) : array {
         $oid = $order->get_id();
-        $order_user_id = (int) $order->get_user_id();
-        $is_own_order = $order_user_id > 0 && $order_user_id === $partner_uid;
+
+        // Resolve the attributed partner from order meta (authoritative source).
+        // This is correct even in admin all-view where $partner_uid may be 0.
+        $order_partner_id = (int) $order->get_meta( 'partner_id', true );
+        $order_user_id    = (int) $order->get_user_id();
+
+        // "Direct" = the partner is also the WC customer who placed the order.
+        // We check against both $partner_uid (the viewing partner) and the order's
+        // own partner_id meta, so admin all-view works correctly too.
+        $effective_partner = $partner_uid > 0 ? $partner_uid : $order_partner_id;
+        $is_own_order      = $order_user_id > 0 && $order_user_id === $effective_partner;
+        $order_origin      = $is_own_order ? 'direct' : 'referred';
 
         // ============================================================
         // CLIENT-FACING MONEY: Use Woo authoritative getters (already rounded)
@@ -343,16 +396,24 @@ final class Partner_Portal {
 
         $status_slug = $order->get_status();
 
-        // Products/services description
-        $products_desc = self::format_products( $order );
+        // Products/services description — strip participant names for referred orders (privacy)
+        $products_desc = self::format_products( $order, ! $is_own_order );
+        $products_html = self::format_products_html( $order, ! $is_own_order );
+
+        // Type labels
+        $type_label = $is_own_order
+            ? __( 'Direct', TC_BF_TEXTDOMAIN )
+            : __( 'Referred', TC_BF_TEXTDOMAIN );
 
         return [
             'order_id'        => $oid,
             'date'            => $order->get_date_created() ? $order->get_date_created()->date_i18n( 'd/m/Y' ) : '',
             'date_iso'        => $order->get_date_created() ? $order->get_date_created()->format( 'Y-m-d' ) : '',
-            'type'            => $is_own_order ? 'Partner order' : 'QR',
+            'type'            => $type_label,
+            'order_origin'    => $order_origin,
             'is_own_order'    => $is_own_order,
             'products'        => $products_desc,
+            'products_html'   => $products_html,
             'client_total'    => $client_total_disp,
             'discount'        => $discount_disp,
             'status'          => $status_slug,
@@ -375,9 +436,13 @@ final class Partner_Portal {
     }
 
     /**
-     * Format products/services for an order
+     * Format products/services for an order (plain text, used in CSV export)
+     *
+     * @param \WC_Order $order         Order object
+     * @param bool      $redact_names  If true, strip participant names from output (privacy for referred orders)
+     * @return string Semicolon-separated product descriptions
      */
-    private static function format_products( \WC_Order $order ) : string {
+    private static function format_products( \WC_Order $order, bool $redact_names = false ) : string {
         $lines = [];
 
         foreach ( $order->get_items() as $item_id => $item ) {
@@ -397,11 +462,35 @@ final class Partner_Portal {
             if ( class_exists( 'WC_Booking_Data_Store' ) ) {
                 $booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
                 if ( ! empty( $booking_ids ) ) {
-                    $b = new \WC_Booking( (int) $booking_ids[0] );
-                    $start = $b ? $b->get_start_date() : '';
-                    if ( $start ) {
-                        $line .= ' (Start: ' . date_i18n( 'd/m/Y', strtotime( $start ) ) . ')';
+                    try {
+                        $b = new \WC_Booking( (int) $booking_ids[0] );
+                        // Validate booking was loaded properly (product_id > 0 means valid)
+                        if ( $b && $b->get_product_id() > 0 ) {
+                            $start = $b->get_start_date();
+                            if ( $start ) {
+                                $line .= ' (Start: ' . date_i18n( 'd/m/Y', strtotime( $start ) ) . ')';
+                            }
+                        }
+                    } catch ( \Exception $e ) {
+                        // Booking may be deleted or corrupted - skip silently
                     }
+                }
+            }
+
+            // For referred orders, strip participant name from the line (privacy).
+            // Participant names may appear in item meta displayed via the product name
+            // or as part of the item name itself; we strip the _participant meta reference.
+            if ( $redact_names ) {
+                $participant = (string) $item->get_meta( '_participant', true );
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( 'participant', true );
+                }
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( '_tcbf_participant_name', true );
+                }
+                if ( $participant !== '' ) {
+                    // Remove participant name if it appears in the product line
+                    $line = str_replace( $participant, '***', $line );
                 }
             }
 
@@ -409,6 +498,133 @@ final class Partner_Portal {
         }
 
         return implode( '; ', $lines );
+    }
+
+    /**
+     * Format products/services for an order as HTML with colored badges
+     *
+     * Renders each order item as a compact badge row with scope coloring,
+     * matching the admin order view badge style.
+     *
+     * @param \WC_Order $order         Order object
+     * @param bool      $redact_names  If true, strip participant names from output (privacy for referred orders)
+     * @return string HTML markup with badge-styled items
+     */
+    private static function format_products_html( \WC_Order $order, bool $redact_names = false ) : string {
+        $use_meta_helper = class_exists( __NAMESPACE__ . '\\Integrations\\WooCommerce\\Woo_OrderMeta' );
+        $items_html = [];
+
+        foreach ( $order->get_items() as $item_id => $item ) {
+            if ( ! $item instanceof \WC_Order_Item_Product ) continue;
+
+            // Resolve scope
+            $scope = '';
+            if ( $use_meta_helper ) {
+                $scope = Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tc_scope' );
+                if ( $scope === '' ) {
+                    $scope = Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, 'tcbf_scope' );
+                }
+            } else {
+                $scope = (string) $item->get_meta( '_tc_scope', true );
+                if ( $scope === '' ) {
+                    $scope = (string) $item->get_meta( 'tcbf_scope', true );
+                }
+            }
+
+            // Transport type
+            $transport_type = '';
+            if ( $use_meta_helper ) {
+                $transport_type = Integrations\WooCommerce\Woo_OrderMeta::get_item_meta_ci( $item, '_tcbf_transport_type' );
+            } else {
+                $transport_type = (string) $item->get_meta( '_tcbf_transport_type', true );
+            }
+
+            // Determine badge class and label
+            $badge_class = 'tcbf-pr-scope-default';
+            $scope_label = '';
+            if ( $transport_type !== '' ) {
+                $badge_class = 'tcbf-pr-scope-transport';
+                $scope_label = $transport_type === 'delivery'
+                    ? __( 'Delivery', TC_BF_TEXTDOMAIN )
+                    : __( 'Return', TC_BF_TEXTDOMAIN );
+            } elseif ( $scope === 'participation' ) {
+                $badge_class = 'tcbf-pr-scope-participation';
+                $scope_label = __( 'Tour', TC_BF_TEXTDOMAIN );
+            } elseif ( $scope === 'rental' ) {
+                $badge_class = 'tcbf-pr-scope-rental';
+                $scope_label = __( 'Rental', TC_BF_TEXTDOMAIN );
+            }
+
+            // Product name
+            $product_name = $item->get_name();
+
+            // Redact participant names for referred orders
+            if ( $redact_names ) {
+                $participant = (string) $item->get_meta( '_participant', true );
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( 'participant', true );
+                }
+                if ( $participant === '' ) {
+                    $participant = (string) $item->get_meta( '_tcbf_participant_name', true );
+                }
+                if ( $participant !== '' ) {
+                    $product_name = str_replace( $participant, '***', $product_name );
+                }
+            }
+
+            // Booking start date
+            $start_date = '';
+            if ( class_exists( 'WC_Booking_Data_Store' ) ) {
+                $booking_ids = \WC_Booking_Data_Store::get_booking_ids_from_order_item_id( $item_id );
+                if ( ! empty( $booking_ids ) ) {
+                    try {
+                        $b = new \WC_Booking( (int) $booking_ids[0] );
+                        if ( $b && $b->get_product_id() > 0 ) {
+                            $start = $b->get_start_date();
+                            if ( $start ) {
+                                $start_date = date_i18n( 'd/m/Y', strtotime( $start ) );
+                            }
+                        }
+                    } catch ( \Exception $e ) {
+                        // skip
+                    }
+                }
+            }
+
+            // Event title (for participation items)
+            $event_title = '';
+            $event_id = (int) $item->get_meta( '_event_id', true );
+            if ( $event_id > 0 ) {
+                $event_title = get_the_title( $event_id );
+            }
+
+            // Build item HTML
+            $html = '<div class="tcbf-pr-item ' . esc_attr( $badge_class ) . '">';
+
+            // Scope badge
+            if ( $scope_label !== '' ) {
+                $html .= '<span class="tcbf-pr-badge ' . esc_attr( $badge_class ) . '">' . esc_html( $scope_label ) . '</span> ';
+            }
+
+            // Product name
+            $html .= '<span class="tcbf-pr-name">' . esc_html( $product_name ) . '</span>';
+
+            // Event title badge (for participation items, show event separately)
+            if ( $event_title !== '' && $scope === 'participation' ) {
+                $short = mb_strlen( $event_title ) > 45 ? mb_substr( $event_title, 0, 42 ) . '...' : $event_title;
+                $html .= ' <span class="tcbf-pr-badge tcbf-pr-event">' . esc_html( $short ) . '</span>';
+            }
+
+            // Start date
+            if ( $start_date !== '' ) {
+                $html .= ' <span class="tcbf-pr-date">' . esc_html( $start_date ) . '</span>';
+            }
+
+            $html .= '</div>';
+            $items_html[] = $html;
+        }
+
+        return implode( '', $items_html );
     }
 
     /**
@@ -551,13 +767,13 @@ final class Partner_Portal {
         }
 
         // Format rows
+        // $display_partner_id is the specific partner being viewed (0 in admin all-view).
+        // format_row() will fall back to the order's own partner_id meta when this is 0.
         $prices_inc_tax = function_exists( 'wc_prices_include_tax' ) ? (bool) wc_prices_include_tax() : true;
         $rows = [];
         foreach ( $orders as $order ) {
             if ( ! $order instanceof \WC_Order ) continue;
-            // For row formatting, use the partner_filter (or 0 for admin all-view)
-            $row_partner_id = $display_partner_id > 0 ? $display_partner_id : 0;
-            $rows[] = self::format_row( $order, $row_partner_id, $partner_pct, $prices_inc_tax );
+            $rows[] = self::format_row( $order, $display_partner_id, $partner_pct, $prices_inc_tax );
         }
 
         // For accurate total stats, get all orders (without pagination)
@@ -565,8 +781,7 @@ final class Partner_Portal {
         $all_rows = [];
         foreach ( $all_result['orders'] as $order ) {
             if ( ! $order instanceof \WC_Order ) continue;
-            $row_partner_id = $display_partner_id > 0 ? $display_partner_id : 0;
-            $all_rows[] = self::format_row( $order, $row_partner_id, $partner_pct, $prices_inc_tax );
+            $all_rows[] = self::format_row( $order, $display_partner_id, $partner_pct, $prices_inc_tax );
         }
         $total_stats = self::compute_stats( $all_rows );
 
@@ -629,10 +844,67 @@ final class Partner_Portal {
     }
 
     /**
+     * Render inline CSS for product/service badges in the partner report table
+     */
+    private static function render_badge_css() : void {
+        ?>
+        <style>
+            /* Partner report: product/service badges */
+            .tcbf-pr-items { display: flex; flex-direction: column; gap: 4px; }
+            .tcbf-pr-item {
+                display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+                padding: 4px 8px; border-radius: 4px; font-size: 12px; line-height: 1.4;
+                border-left: 3px solid transparent;
+            }
+            .tcbf-pr-badge {
+                display: inline-block; padding: 1px 7px; border-radius: 3px;
+                font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+                white-space: nowrap;
+            }
+            .tcbf-pr-name { font-weight: 500; }
+            .tcbf-pr-date {
+                font-size: 11px; color: #666; white-space: nowrap;
+            }
+            .tcbf-pr-date::before { content: '📅 '; }
+
+            /* Scope: Participation / Tour */
+            .tcbf-pr-scope-participation { background: #f0faf0; border-left-color: #00a32a; }
+            .tcbf-pr-badge.tcbf-pr-scope-participation { background: #e7f5e7; color: #1a6a1a; border-left: none; }
+
+            /* Scope: Rental */
+            .tcbf-pr-scope-rental { background: #f0f5ff; border-left-color: #2271b1; }
+            .tcbf-pr-badge.tcbf-pr-scope-rental { background: #e8f0fe; color: #174ea6; border-left: none; }
+
+            /* Scope: Transport (Delivery / Return) */
+            .tcbf-pr-scope-transport { background: #fef9f0; border-left-color: #dba617; }
+            .tcbf-pr-badge.tcbf-pr-scope-transport { background: #fef3e0; color: #995c00; border-left: none; }
+
+            /* Default (no scope) */
+            .tcbf-pr-scope-default { background: #f8f8f8; border-left-color: #ccc; }
+
+            /* Event badge */
+            .tcbf-pr-badge.tcbf-pr-event { background: #f5f0ff; color: #5b21b6; font-weight: 600; text-transform: none; font-size: 11px; }
+
+            /* Responsive: on small screens stack badges */
+            @media (max-width: 768px) {
+                .tcbf-pr-item { font-size: 11px; }
+                .tcbf-pr-badge { font-size: 9px; }
+            }
+        </style>
+        <?php
+    }
+
+    /**
      * Render orders table
+     *
+     * Direct orders (partner placed themselves): full details, clickable order link.
+     * Referred orders (client used partner's code): limited info, no link, participant names stripped.
      */
     private static function render_table( array $rows, array $stats, bool $prices_inc_tax ) : void {
         $tax_label = $prices_inc_tax ? __( '(incl. tax)', TC_BF_TEXTDOMAIN ) : __( '(excl. tax)', TC_BF_TEXTDOMAIN );
+
+        // Badge styles for the products/services column
+        self::render_badge_css();
 
         echo '<table class="shop_table shop_table_responsive my_account_orders">';
         echo '<thead><tr>';
@@ -647,9 +919,11 @@ final class Partner_Portal {
         echo '</tr></thead><tbody>';
 
         foreach ( $rows as $row ) {
-            echo '<tr>';
+            $origin_class = $row['is_own_order'] ? 'tcbf-origin-direct' : 'tcbf-origin-referred';
+            echo '<tr class="' . esc_attr( $origin_class ) . '">';
 
-            // Order ID (link only if own order)
+            // Order ID: clickable link only for direct (own) orders.
+            // Referred orders: partner is not the WC customer, so Woo would deny access.
             if ( $row['is_own_order'] ) {
                 echo '<td data-title="Order"><a href="' . esc_url( $row['view_url'] ) . '">#' . esc_html( $row['order_id'] ) . '</a></td>';
             } else {
@@ -658,7 +932,7 @@ final class Partner_Portal {
 
             echo '<td data-title="Type">' . esc_html( $row['type'] ) . '</td>';
             echo '<td data-title="Date">' . esc_html( $row['date'] ) . '</td>';
-            echo '<td data-title="Products / Services">' . esc_html( $row['products'] ) . '</td>';
+            echo '<td data-title="Products / Services"><div class="tcbf-pr-items">' . wp_kses_post( $row['products_html'] ) . '</div></td>';
             echo '<td data-title="Client total">' . wp_kses_post( wc_price( $row['client_total'] ) ) . '</td>';
             echo '<td data-title="Discount">' . wp_kses_post( wc_price( $row['discount'] ) ) . '</td>';
             echo '<td data-title="Status">' . esc_html( $row['status_label'] ) . '</td>';
@@ -824,8 +1098,7 @@ final class Partner_Portal {
         $rows = [];
         foreach ( $orders as $order ) {
             if ( ! $order instanceof \WC_Order ) continue;
-            $row_partner_id = $display_partner_id > 0 ? $display_partner_id : 0;
-            $rows[] = self::format_row( $order, $row_partner_id, $partner_pct, $prices_inc_tax );
+            $rows[] = self::format_row( $order, $display_partner_id, $partner_pct, $prices_inc_tax );
         }
 
         $stats = self::compute_stats( $rows );

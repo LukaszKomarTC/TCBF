@@ -1,6 +1,7 @@
 <?php
 namespace TC_BF\Integrations\GravityForms;
 
+use TC_BF\Admin\Settings;
 use TC_BF\Support\Money;
 
 if ( ! defined('ABSPATH') ) exit;
@@ -19,12 +20,6 @@ if ( ! defined('ABSPATH') ) exit;
  */
 final class GF_Discount_Rounding {
 
-	/**
-	 * Form + field ids for the current TC Booking Flow GF form.
-	 *
-	 * If the form is duplicated/changed, update these ids or extend with settings.
-	 */
-	private const FORM_ID  = 48;
 	private const FIELD_ID = 176; // Partner discount (number calculation)
 
 	public function init() : void {
@@ -43,12 +38,12 @@ final class GF_Discount_Rounding {
 		$fid = isset($form['id']) ? (int) $form['id'] : 0;
 		$fld = isset($field->id) ? (int) $field->id : 0;
 
-		if ( $fid !== self::FORM_ID || $fld !== self::FIELD_ID ) {
+		if ( $fid !== Settings::get_form_id() || $fld !== self::FIELD_ID ) {
 			return $result;
 		}
 
 		// TCBF-12: If partner program disabled for this event, force discount to 0
-		$partners_enabled = isset($_POST['input_181']) ? trim((string) $_POST['input_181']) : '1';
+		$partners_enabled = GF_SemanticFields::post_value( $fid, GF_SemanticFields::KEY_PARTNERS_ENABLED );
 		if ( $partners_enabled === '0' ) {
 			return '0';
 		}

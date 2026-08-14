@@ -56,7 +56,7 @@ final class PartnerResolver {
 		$override_code = GF_SemanticFields::post_value( $form_id, GF_SemanticFields::KEY_PARTNER_OVERRIDE_CODE );
 		$override_code = self::normalize_partner_code( (string) $override_code );
 
-		if ( $override_code !== '' && current_user_can('administrator') ) {
+		if ( $override_code !== '' && current_user_can('manage_options') ) {
 			return self::build_partner_context_from_code( $override_code );
 		}
 

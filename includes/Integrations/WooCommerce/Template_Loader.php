@@ -28,9 +28,10 @@ final class Template_Loader {
 	 */
 	private const TEMPLATE_MAP = [
 		// WooCommerce core templates
-		'order/order-details.php'      => 'woocommerce',
-		'cart/cart.php'                => 'woocommerce',
-		'checkout/review-order.php'    => 'woocommerce',
+		'order/order-details.php'          => 'woocommerce',
+		'cart/cart.php'                    => 'woocommerce',
+		'checkout/review-order.php'        => 'woocommerce',
+		'emails/email-order-items.php'     => 'woocommerce',
 
 		// WooCommerce Bookings templates
 		'order/booking-summary-list.php' => 'woocommerce-bookings',
@@ -108,12 +109,10 @@ final class Template_Loader {
 			return $template;
 		}
 
-		// Check if theme has an override (theme always wins)
-		if ( self::theme_has_template( $template_name, 'woocommerce-bookings' ) ) {
-			return $template;
-		}
-
-		// Use our plugin template
+		// TCBF's booking templates always take priority over theme templates.
+		// The theme's booking-summary-list.php does not handle participation
+		// bookings (no resource) and crashes with "get_name() on bool".
+		// Our template handles all booking types safely.
 		$plugin_template = TC_BF_PATH . 'templates/woocommerce-bookings/' . $template_name;
 		if ( file_exists( $plugin_template ) ) {
 			return $plugin_template;

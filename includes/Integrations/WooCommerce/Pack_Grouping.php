@@ -60,7 +60,8 @@ final class Pack_Grouping {
 		// Atomic removal: when one item is removed, remove all items in the pack
 		add_action( 'woocommerce_remove_cart_item', [ __CLASS__, 'atomic_remove_pack_items' ], 5, 2 );
 
-		// Handle cart empty events
+		// Cache group IDs when cart loads from session (before any emptying can happen)
+		add_action( 'woocommerce_cart_loaded_from_session', [ __CLASS__, 'cache_groups_from_session' ], 10 );
 		add_action( 'woocommerce_cart_emptied', [ __CLASS__, 'handle_cart_emptied' ], 10 );
 
 		// Persist pack metadata to order items
@@ -74,6 +75,9 @@ final class Pack_Grouping {
 
 		// Validate pack integrity before checkout
 		add_action( 'woocommerce_checkout_process', [ __CLASS__, 'validate_pack_integrity' ], 10 );
+
+		// Remove expired entries from cart (fires on cart/checkout page load)
+		add_action( 'woocommerce_check_cart_items', [ __CLASS__, 'remove_expired_cart_items' ], 1 );
 
 		// Lock quantities to 1 for pack items
 		add_filter( 'woocommerce_cart_item_quantity', [ __CLASS__, 'lock_pack_quantity' ], 10, 3 );
@@ -112,9 +116,9 @@ final class Pack_Grouping {
 		// Extract scope to determine role
 		$scope = isset( $booking[\TC_BF\Plugin::BK_SCOPE] ) ? (string) $booking[\TC_BF\Plugin::BK_SCOPE] : '';
 
-		// Determine role: participation = parent, rental = child
+		// Determine role: participation = parent, rental/transport = child
 		$role = self::ROLE_PARENT;
-		if ( $scope === 'rental' ) {
+		if ( $scope === 'rental' || $scope === 'transport' ) {
 			$role = self::ROLE_CHILD;
 		}
 
@@ -153,6 +157,21 @@ final class Pack_Grouping {
 			$cart_item[ self::META_SCOPE ] = $values[ self::META_SCOPE ];
 		}
 
+		// Restore transport-specific keys (prefixed with _tcbf_transport_)
+		foreach ( $values as $key => $val ) {
+			if ( strpos( $key, '_tcbf_transport_' ) === 0 && ! isset( $cart_item[ $key ] ) ) {
+				$cart_item[ $key ] = $val;
+			}
+		}
+
+		// Restore common hidden meta keys needed for display
+		$hidden_keys = [ '_tcbf_scope', '_tcbf_event_id', '_tcbf_gf_entry_id', '_tcbf_participant_name' ];
+		foreach ( $hidden_keys as $key ) {
+			if ( isset( $values[ $key ] ) && ! isset( $cart_item[ $key ] ) ) {
+				$cart_item[ $key ] = $values[ $key ];
+			}
+		}
+
 		return $cart_item;
 	}
 
@@ -181,6 +200,18 @@ final class Pack_Grouping {
 
 		// No group ID = not a pack item
 		if ( ! $group_id ) {
+			return;
+		}
+
+		// If a transport item is removed directly, do NOT cascade to the rest of the group.
+		// Transport items can be individually removed without affecting the core pack
+		// (participation + rental). Price recalculation is handled by Woo_Transport.
+		$removed_scope = self::get_scope( $removed_item );
+		if ( $removed_scope === 'transport' ) {
+			\TC_BF\Support\Logger::log( 'pack.atomic_remove.skip_transport', [
+				'group_id'      => $group_id,
+				'cart_item_key' => $cart_item_key,
+			] );
 			return;
 		}
 
@@ -237,32 +268,51 @@ final class Pack_Grouping {
 	}
 
 	/**
-	 * Handle cart emptied event
+	 * Group IDs cached from session (used by handle_cart_emptied)
 	 *
-	 * When the entire cart is emptied, we need to identify all groups
-	 * and potentially mark their GF entries as removed (Phase 2 integration).
+	 * @var int[]
 	 */
-	public static function handle_cart_emptied() : void {
+	private static $cached_group_ids = [];
 
-		if ( ! WC() || ! WC()->cart ) {
+	/**
+	 * Cache group IDs when cart is loaded from session.
+	 *
+	 * woocommerce_cart_emptied fires AFTER the cart is cleared, so get_cart()
+	 * returns empty at that point. By caching group IDs at session load time,
+	 * we have them available when the emptied hook fires.
+	 *
+	 * @param \WC_Cart $cart Cart instance
+	 */
+	public static function cache_groups_from_session( $cart ) : void {
+
+		self::$cached_group_ids = [];
+
+		if ( ! $cart || ! method_exists( $cart, 'get_cart' ) ) {
 			return;
 		}
 
-		$cart = WC()->cart;
-		$cart_contents = $cart->get_cart();
-
-		if ( empty( $cart_contents ) ) {
-			return;
-		}
-
-		$groups = [];
-		foreach ( $cart_contents as $item ) {
+		foreach ( $cart->get_cart() as $item ) {
 			if ( isset( $item[ self::META_GROUP_ID ] ) ) {
-				$groups[] = $item[ self::META_GROUP_ID ];
+				self::$cached_group_ids[] = (int) $item[ self::META_GROUP_ID ];
 			}
 		}
 
-		$groups = array_unique( $groups );
+		self::$cached_group_ids = array_values( array_unique( self::$cached_group_ids ) );
+	}
+
+	/**
+	 * Handle cart emptied event
+	 *
+	 * Uses group IDs captured before the cart was cleared.
+	 */
+	public static function handle_cart_emptied() : void {
+
+		$groups = self::$cached_group_ids;
+		self::$cached_group_ids = [];
+
+		if ( empty( $groups ) ) {
+			return;
+		}
 
 		\TC_BF\Support\Logger::log( 'pack.cart_emptied', [
 			'group_count' => count( $groups ),
@@ -405,6 +455,69 @@ final class Pack_Grouping {
 				] );
 			}
 		}
+	}
+
+	/**
+	 * Remove cart items whose GF entry has been marked as expired by the cron job
+	 *
+	 * Fires on cart/checkout page load. Uses woocommerce_remove_cart_item internally,
+	 * so transport cleanup (Woo_Transport::cleanup_transport_on_removal) and atomic
+	 * group removal cascade automatically.
+	 */
+	public static function remove_expired_cart_items() : void {
+
+		if ( ! WC() || ! WC()->cart || ! class_exists( '\\TC_BF\\Domain\\Entry_State' ) ) {
+			return;
+		}
+
+		$cart = WC()->cart;
+		$cart_contents = $cart->get_cart();
+
+		if ( empty( $cart_contents ) ) {
+			return;
+		}
+
+		// Collect group IDs that are expired (check each unique group once)
+		$expired_groups = [];
+		foreach ( $cart_contents as $item ) {
+			$group_id = isset( $item[ self::META_GROUP_ID ] ) ? (int) $item[ self::META_GROUP_ID ] : 0;
+			if ( $group_id <= 0 || isset( $expired_groups[ $group_id ] ) ) {
+				continue;
+			}
+
+			$state = \TC_BF\Domain\Entry_State::get_state( $group_id );
+			if ( $state === \TC_BF\Domain\Entry_State::STATE_EXPIRED ) {
+				$expired_groups[ $group_id ] = true;
+			}
+		}
+
+		if ( empty( $expired_groups ) ) {
+			return;
+		}
+
+		\TC_BF\Support\Logger::log( 'pack.remove_expired.start', [
+			'expired_groups' => array_keys( $expired_groups ),
+		] );
+
+		// Remove all cart items belonging to expired groups
+		// This triggers woocommerce_remove_cart_item → cleanup_transport_on_removal + atomic_remove
+		foreach ( $cart_contents as $key => $item ) {
+			$group_id = isset( $item[ self::META_GROUP_ID ] ) ? (int) $item[ self::META_GROUP_ID ] : 0;
+			if ( $group_id > 0 && isset( $expired_groups[ $group_id ] ) ) {
+				$cart->remove_cart_item( $key );
+
+				\TC_BF\Support\Logger::log( 'pack.remove_expired.item', [
+					'group_id'      => $group_id,
+					'cart_item_key' => $key,
+					'scope'         => self::get_scope( $item ),
+				] );
+			}
+		}
+
+		wc_add_notice(
+			__( 'Some items were removed from your cart because the reservation time has expired. Please submit a new booking.', 'tc-booking-flow' ),
+			'notice'
+		);
 	}
 
 	/**
@@ -584,8 +697,17 @@ final class Pack_Grouping {
 	 * @return string Scope ('participation', 'rental', or empty string)
 	 */
 	public static function get_scope( array $cart_item ) : string {
+		// Primary: booking meta (set during add-to-cart)
 		if ( isset( $cart_item['booking'][\TC_BF\Plugin::BK_SCOPE] ) ) {
 			return (string) $cart_item['booking'][\TC_BF\Plugin::BK_SCOPE];
+		}
+		// Fallback 1: Pack_Grouping top-level key (survives session restore)
+		if ( isset( $cart_item[ self::META_SCOPE ] ) && $cart_item[ self::META_SCOPE ] !== '' ) {
+			return (string) $cart_item[ self::META_SCOPE ];
+		}
+		// Fallback 2: hidden meta key (set by Plugin::gf_after_submission_add_to_cart)
+		if ( isset( $cart_item['_tcbf_scope'] ) && $cart_item['_tcbf_scope'] !== '' ) {
+			return (string) $cart_item['_tcbf_scope'];
 		}
 		return '';
 	}
@@ -613,6 +735,31 @@ final class Pack_Grouping {
 			if ( self::get_group_id( $item ) === $group_id &&
 			     self::get_role( $item ) === self::ROLE_CHILD &&
 			     self::get_scope( $item ) === 'rental' ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Check if a group is a tour pack (has a participation item)
+	 *
+	 * A tour pack = participation + rental in the same group.
+	 * Used by transport eligibility to exclude tour-pack rentals.
+	 *
+	 * @param int $group_id Group ID to check
+	 * @return bool True if group contains a participation item
+	 */
+	public static function group_has_participation( int $group_id ) : bool {
+
+		if ( $group_id <= 0 || ! WC() || ! WC()->cart ) {
+			return false;
+		}
+
+		foreach ( WC()->cart->get_cart() as $item ) {
+			if ( self::get_group_id( $item ) === $group_id
+				&& self::get_scope( $item ) === 'participation' ) {
 				return true;
 			}
 		}

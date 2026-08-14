@@ -1,0 +1,927 @@
+/**
+ * TCBF Transport v4.0 — Service card + mode selector + unified/split modal styles
+ */
+
+/* ================================================================
+ * Service card (below cart table)
+ * ================================================================ */
+
+.tcbf-service-card {
+	margin: 10px !important;
+	margin-bottom: 10px !important;
+	padding: 16px 20px;
+	background: #f8f9fa;
+	border: 1px solid #e2e5ea;
+	border-radius: 10px;
+	transition: opacity 0.2s;
+}
+
+.tcbf-service-card--loading {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
+.tcbf-service-card__header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.tcbf-service-card__icon {
+	flex-shrink: 0;
+	width: 36px;
+	height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 8px;
+	font-size: 20px;
+	background: #e8eaed;
+	color: #555;
+}
+
+.tcbf-service-card--configured .tcbf-service-card__icon {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.tcbf-service-card__title-wrap {
+	flex: 1;
+	min-width: 0;
+}
+
+.tcbf-service-card__title {
+	margin: 0 !important;
+	font-size: 15px !important;
+	font-weight: 600 !important;
+	color: #1a1a1a;
+	line-height: 1.3;
+}
+
+.tcbf-service-card__subtitle {
+	display: block;
+	font-size: 13px;
+	color: #666;
+	margin-top: 2px;
+}
+
+.tcbf-service-card__price {
+	flex-shrink: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	padding: 0 15px;
+}
+
+.tcbf-service-card__help {
+	margin: 8px 0 0;
+	padding: 0 0 0 52px;
+	font-size: 12px;
+	color: #666;
+	font-style: italic;
+}
+
+.tcbf-service-card__actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.tcbf-service-card__btn {
+	padding: 8px 18px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	border: none;
+	transition: background-color 0.15s, color 0.15s;
+}
+
+.tcbf-service-card__btn--primary {
+	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	color: #fff;
+}
+
+.tcbf-service-card__btn--primary:hover {
+	filter: brightness(1.1);
+}
+
+.tcbf-service-card__btn--secondary {
+	background: #e8eaed;
+	color: #333;
+}
+
+.tcbf-service-card__btn--secondary:hover {
+	background: #d1d5db;
+}
+
+.tcbf-service-card__btn--remove {
+	background: transparent;
+	color: #dc2626;
+	padding: 8px 12px;
+}
+
+.tcbf-service-card__btn--remove:hover {
+	background: #dc2626;
+}
+
+/* State variants */
+.tcbf-service-card--not_configured {
+	border-style: dashed;
+	border-color: #d1d5db;
+}
+
+.tcbf-service-card--partial {
+	border-color: #fbbf24;
+	background: #fffbeb;
+}
+
+.tcbf-service-card--configured {
+	border-color: #86efac;
+	background: #f0fdf4;
+}
+
+.tcbf-service-card--mismatch {
+	border-color: #fca5a5;
+	background: #fef2f2;
+}
+
+.tcbf-service-card--mixed_dates,
+.tcbf-service-card--invalid_dates {
+	border-color: #c4b5fd;
+	background: #f5f3ff;
+}
+
+.tcbf-service-card--mixed_dates .tcbf-service-card__icon,
+.tcbf-service-card--invalid_dates .tcbf-service-card__icon {
+	background: #ede9fe;
+	color: #7c3aed;
+}
+
+.tcbf-service-card--invalid_dates {
+	border-color: #fca5a5;
+	background: #fef2f2;
+}
+
+.tcbf-service-card--invalid_dates .tcbf-service-card__icon {
+	background: #fee2e2;
+	color: #dc2626;
+}
+
+.tcbf-service-card--invalid_dates .tcbf-service-card__subtitle {
+	color: #991b1b;
+}
+
+.tcbf-service-card--invalid_dates .tcbf-service-card__help {
+	color: #b91c1c;
+}
+
+.tcbf-service-card--mixed_dates .tcbf-service-card__subtitle {
+	color: #5b21b6;
+}
+
+.tcbf-service-card--mixed_dates .tcbf-service-card__help {
+	color: #6d28d9;
+}
+
+.tcbf-service-card--mismatch .tcbf-service-card__subtitle {
+	color: #991b1b;
+}
+
+.tcbf-service-card--mismatch .tcbf-service-card__help {
+	color: #b91c1c;
+}
+
+/* ================================================================
+ * Transport item name in cart (child row)
+ * ================================================================ */
+
+.tcbf-transport-item-name {
+	font-size: 13px;
+	font-weight: 500;
+	color: #555;
+}
+
+/* ================================================================
+ * Per-bike compact indicator
+ * ================================================================ */
+
+.tcbf-transport-indicator {
+	display: flex;
+	width: fit-content;
+	align-items: center;
+	gap: 6px;
+	margin-top: 4px;
+	padding: 3px 10px;
+	background: #f0fdf4;
+	border: 1px solid #bbf7d0;
+	border-radius: 4px;
+	font-size: 11px;
+	color: #166534;
+	font-weight: 500;
+}
+
+.tcbf-transport-indicator--excluded {
+	background: #f9fafb;
+	border-color: #e5e7eb;
+	color: #6b7280;
+}
+
+.tcbf-transport-indicator__sep {
+	color: #86efac;
+}
+
+.tcbf-transport-indicator--excluded .tcbf-transport-indicator__sep {
+	color: #d1d5db;
+}
+
+.tcbf-transport-indicator__excluded {
+	color: #dc2626;
+}
+
+/* ================================================================
+ * Modal overlay + container
+ * ================================================================ */
+
+body.tcbf-modal-open {
+	overflow: hidden;
+}
+
+.tcbf-transport-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 100vh;
+	height: 100dvh;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+}
+
+.tcbf-transport-modal {
+	background: #fff;
+	border-radius: 12px;
+	width: 100%;
+	max-width: 1060px;
+	max-height: 92vh;
+	max-height: 92dvh;
+	overflow-y: auto;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+	animation: tcbf-modal-in 0.2s ease-out;
+}
+
+@keyframes tcbf-modal-in {
+	from { opacity: 0; transform: translateY(20px) scale(0.95); }
+	to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.tcbf-transport-modal__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20px 24px 0;
+}
+
+.tcbf-transport-modal__header h3 {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 600;
+	color: #1a1a1a;
+}
+
+.tcbf-transport-modal__close {
+	background: none;
+	border: none;
+	font-size: 24px;
+	color: #999;
+	cursor: pointer;
+	padding: 0 4px;
+	line-height: 1;
+}
+
+.tcbf-transport-modal__close:hover {
+	color: #333;
+}
+
+.tcbf-transport-modal__body {
+	padding: 20px 24px;
+}
+
+/* ================================================================
+ * Mode selector (Delivery only / Pickup only / Both)
+ * ================================================================ */
+
+.tcbf-modal__mode-selector {
+	margin-bottom: 20px;
+	padding-bottom: 16px;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.tcbf-modal__mode-options {
+	display: flex;
+	gap: 0;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 1px solid #d1d5db;
+	margin-top: 6px;
+}
+
+.tcbf-modal__mode-option {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 9px 12px;
+	font-size: 13px;
+	font-weight: 500;
+	color: #555;
+	background: #fff;
+	cursor: pointer;
+	transition: background-color 0.15s, color 0.15s;
+	margin: 0;
+	text-align: center;
+}
+
+.tcbf-modal__mode-option + .tcbf-modal__mode-option {
+	border-left: 1px solid #d1d5db;
+}
+
+.tcbf-modal__mode-option input[type="radio"] {
+	display: none;
+}
+
+.tcbf-modal__mode-option--active {
+	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	color: #fff;
+}
+
+.tcbf-modal__mode-option:hover:not(.tcbf-modal__mode-option--active) {
+	background: #f3f4f6;
+}
+
+/* ================================================================
+ * UNIFIED MODE: map left, controls right
+ * ================================================================ */
+
+.tcbf-modal__unified-layout {
+	display: flex;
+	gap: 24px;
+}
+
+.tcbf-modal__unified-map {
+	flex: 1 1 50%;
+	min-width: 0;
+}
+
+.tcbf-modal__unified-controls {
+	flex: 1 1 50%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.tcbf-transport-modal__map {
+	display: block;
+	width: 100%;
+	height: 420px;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 1px solid #e2e5ea;
+	background: #f0f0f0;
+}
+
+/* ================================================================
+ * SPLIT MODE: vertically stacked direction sections
+ * ================================================================ */
+
+.tcbf-modal__split {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+}
+
+.tcbf-modal__direction-section {
+	padding: 0;
+}
+
+.tcbf-modal__direction-title {
+	margin: 0 0 10px;
+	font-size: 15px;
+	font-weight: 600;
+	color: #333;
+}
+
+.tcbf-modal__direction-layout {
+	display: flex;
+	gap: 20px;
+}
+
+.tcbf-modal__direction-map {
+	flex: 1 1 45%;
+	min-width: 0;
+}
+
+.tcbf-modal__direction-map .tcbf-transport-modal__map {
+	height: 280px;
+}
+
+.tcbf-modal__direction-controls {
+	flex: 1 1 55%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+/* Separator between delivery and pickup in split mode */
+.tcbf-modal__separator {
+	text-align: center;
+	margin: 20px 0;
+	position: relative;
+}
+
+.tcbf-modal__separator::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	height: 1px;
+	background: #e2e5ea;
+}
+
+.tcbf-modal__separator span {
+	position: relative;
+	background: #fff;
+	padding: 0 16px;
+	font-size: 13px;
+	font-weight: 500;
+	color: #fff;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+/* ================================================================
+ * Same address toggle (inside controls area)
+ * ================================================================ */
+
+.tcbf-modal__same-address {
+	padding: 8px 0;
+}
+
+.tcbf-modal__same-address--split {
+	padding: 0 0 8px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.tcbf-modal__same-address-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: #555;
+	cursor: pointer;
+	margin: 0;
+}
+
+.tcbf-modal__same-address-label input[type="checkbox"] {
+	margin: 0;
+}
+
+/* ================================================================
+ * Form elements
+ * ================================================================ */
+
+.tcbf-transport-modal__label {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+	color: #555;
+	margin-bottom: 4px;
+}
+
+.tcbf-transport-modal__input {
+	width: 100%;
+	padding: 9px 12px;
+	border: 1px solid #d1d5db;
+	border-radius: 8px;
+	font-size: 14px;
+	outline: none;
+	transition: border-color 0.15s ease;
+	box-sizing: border-box;
+}
+
+.tcbf-transport-modal__input:focus {
+	border-color: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	box-shadow: 0 0 0 3px rgba(67, 76, 0, 0.1);
+}
+
+/* Window selector */
+.tcbf-modal__window-row {
+	margin-top: 4px;
+}
+
+.tcbf-transport-modal__window-buttons {
+	display: flex;
+	gap: 0;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 1px solid #d1d5db;
+}
+
+.tcbf-transport-modal__window-btn {
+	flex: 1;
+	padding: 7px 12px;
+	font-size: 13px;
+	font-weight: 500;
+	background: #fff;
+	color: #555;
+	border: none;
+	cursor: pointer;
+	transition: background-color 0.15s, color 0.15s;
+}
+
+.tcbf-transport-modal__window-btn + .tcbf-transport-modal__window-btn {
+	border-left: 1px solid #d1d5db;
+}
+
+.tcbf-transport-modal__window-btn--active {
+	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00)));
+	color: #fff;
+}
+
+.tcbf-transport-modal__window-btn:hover:not(.tcbf-transport-modal__window-btn--active) {
+	background: #f3f4f6;
+}
+
+/* Window time note */
+.tcbf-modal__window-note {
+	margin-top: 10px;
+}
+
+.tcbf-modal__window-note p {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.4;
+	color: #6b7280;
+	font-style: italic;
+	background: #f9fafb;
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	padding: 8px 10px;
+}
+
+/* ================================================================
+ * Quote preview (global, at bottom of modal body)
+ * ================================================================ */
+
+.tcbf-transport-modal__quote {
+	padding: 10px 14px;
+	background: #f0fdf4;
+	border: 1px solid #bbf7d0;
+	border-radius: 8px;
+	margin-top: 16px;
+}
+
+.tcbf-transport-modal__quote-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 3px 0;
+}
+
+.tcbf-transport-modal__quote-label {
+	font-size: 13px;
+	color: #555;
+}
+
+.tcbf-transport-modal__quote-value {
+	font-size: 14px;
+	font-weight: 600;
+	color: #166534;
+}
+
+.tcbf-transport-modal__quote-sep {
+	height: 1px;
+	background: #bbf7d0;
+	margin: 4px 0;
+}
+
+/* ================================================================
+ * Bike checklist (always below transport sections)
+ * ================================================================ */
+
+.tcbf-modal__bikes {
+	border-top: 1px solid #f0f0f0;
+	padding-top: 12px;
+	margin-top: 16px;
+}
+
+.tcbf-modal__bike-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.tcbf-modal__bike-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px;
+	background: #f8f9fa;
+	border-radius: 6px;
+	font-size: 13px;
+	color: #333;
+	cursor: pointer;
+	margin: 0;
+}
+
+.tcbf-modal__bike-item input[type="checkbox"] {
+	margin: 3px 0 0;
+	flex-shrink: 0;
+}
+
+.tcbf-modal__bike-info {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.tcbf-modal__bike-model {
+	font-weight: 500;
+	color: #1a1a1a;
+}
+
+.tcbf-modal__bike-dates {
+	font-size: 12px;
+	color: #fff;
+}
+
+/* ================================================================
+ * Footer
+ * ================================================================ */
+
+.tcbf-transport-modal__footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 16px 24px 20px;
+	border-top: 1px solid #f0f0f0;
+}
+
+.tcbf-transport-modal__cancel {
+	background: #f3f4f6 !important;
+	color: #374151 !important;
+	border: 1px solid #d1d5db !important;
+	border-radius: 8px !important;
+	padding: 8px 20px !important;
+	font-size: 14px !important;
+	cursor: pointer;
+}
+
+.tcbf-transport-modal__cancel:hover {
+	background: #e5e7eb !important;
+}
+
+.tcbf-transport-modal__confirm {
+	background: var(--tcbf-accent, var(--shopkeeper-accent, var(--theme-accent, #434c00))) !important;
+	color: #fff !important;
+	border: none !important;
+	border-radius: 8px !important;
+	padding: 8px 24px !important;
+	font-size: 14px !important;
+	font-weight: 600 !important;
+	cursor: pointer;
+}
+
+.tcbf-transport-modal__confirm:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.tcbf-transport-modal__confirm:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+
+/* Error notice */
+.tcbf-transport-error {
+	margin-bottom: 16px;
+}
+
+/* Google Places autocomplete dropdown */
+.pac-container {
+	z-index: 100001 !important;
+}
+
+/* ================================================================
+ * Responsive
+ * ================================================================ */
+
+@media (max-width: 768px) {
+	.tcbf-transport-modal {
+		max-width: 100%;
+		margin: 8px;
+		border-radius: 10px;
+		max-height: 96vh;
+		max-height: 96dvh;
+	}
+
+	.tcbf-transport-modal__body {
+		padding: 16px;
+	}
+
+	/* Mode selector: stack on mobile */
+	.tcbf-modal__mode-options {
+		flex-direction: column;
+	}
+
+	.tcbf-modal__mode-option + .tcbf-modal__mode-option {
+		border-left: none;
+		border-top: 1px solid #d1d5db;
+	}
+
+	/* Unified mode: stack vertically on mobile */
+	.tcbf-modal__unified-layout {
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.tcbf-transport-modal__map {
+		height: 240px;
+	}
+
+	/* Split mode: stack each direction's layout */
+	.tcbf-modal__direction-layout {
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.tcbf-modal__direction-map .tcbf-transport-modal__map {
+		height: 200px;
+	}
+
+	.tcbf-transport-modal__header {
+		padding: 16px 16px 0;
+	}
+
+	.tcbf-transport-modal__footer {
+		padding: 12px 16px 16px;
+		flex-wrap: wrap;
+	}
+
+	.tcbf-transport-modal__cancel,
+	.tcbf-transport-modal__confirm {
+		flex: 1 1 100%;
+		text-align: center;
+	}
+
+	.tcbf-service-card {
+		padding: 12px 14px;
+	}
+
+	.tcbf-service-card__header {
+		flex-wrap: wrap;
+	}
+
+	.tcbf-service-card__price {
+		flex-basis: 100%;
+		margin-top: 4px;
+		padding-left: 52px;
+	}
+
+	.tcbf-service-card__help {
+		padding-left: 0;
+	}
+}
+
+/* ================================================================
+ * Cart table integration: service-card row full-width
+ * ================================================================ */
+
+tr.tcbf-service-card-row {
+	display: table-row !important;
+	width: 100%;
+}
+
+tr.tcbf-service-card-row > td:first-child {
+	padding: 0 !important;
+}
+
+/* ================================================================
+ * Medium-screen (tablet) fixes for cart table integration
+ * ================================================================ */
+
+@media (max-width: 1024px) {
+	/* Service card row: keep full-width table-row on all screen sizes */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row {
+		display: table-row !important;
+		width: 100%;
+	}
+
+	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row > td {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 0 12px;
+	}
+
+	/* Suppress ::before pseudo-element on service card td (prevents stray dot/colon) */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-service-card-row > td::before {
+		display: none !important;
+		content: none !important;
+	}
+
+	/* Transport child rows: use same flexbox metrics bar as parent rows */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal {
+		display: flex !important;
+		flex-direction: column;
+		align-items: center;
+		justify-content: flex-start;
+		flex: 1 1 0 !important;
+		width: auto !important;
+		min-width: 0;
+		padding: 10px 4px !important;
+		text-align: center !important;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		box-sizing: border-box;
+	}
+
+	/* Metrics bar captions for child rows */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-price::before,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-quantity::before,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-subtotal::before {
+		display: block !important;
+		content: attr(data-title) !important;
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		opacity: 0.55;
+		margin-bottom: 4px;
+		white-space: nowrap;
+	}
+
+	/* Variation details inside child rows: compact inline display */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation {
+		display: block;
+		word-break: break-word;
+		overflow-wrap: break-word;
+	}
+
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dt,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dd {
+		display: inline;
+		margin: 0;
+		padding: 0;
+		font-size: 12px;
+	}
+
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td .variation dd p {
+		display: inline;
+		margin: 0;
+	}
+
+	/* Product name cell in child rows: contain long variation metadata */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-name {
+		overflow: hidden;
+		word-break: break-word;
+	}
+
+	/* Suppress ::before on thumbnail cell for child rows (prevents stray label) */
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-thumbnail::before,
+	.woocommerce-cart .shop_table_responsive tr.tcbf-cart-row--child td.product-remove::before {
+		display: none !important;
+		content: none !important;
+	}
+}
+
+@media (max-width: 480px) {
+	.tcbf-transport-modal__map {
+		height: 180px;
+	}
+
+	.tcbf-modal__direction-map .tcbf-transport-modal__map {
+		height: 160px;
+	}
+
+	.tcbf-transport-modal {
+		margin: 4px;
+		max-height: 98vh;
+		max-height: 98dvh;
+	}
+
+	.tcbf-service-card__actions {
+		flex-direction: column;
+	}
+}

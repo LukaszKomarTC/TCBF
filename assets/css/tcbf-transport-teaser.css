@@ -1,0 +1,248 @@
+/**
+ * TCBF Transport Info — Content styles
+ *
+ * Clean informational HTML rendered inside PopupMaker.
+ * No teaser card, popup overlay, or close-button styles needed —
+ * PopupMaker provides the chrome.
+ */
+
+/* ================================================================
+ * PopupMaker container — scrollable content
+ * ================================================================ */
+
+.pum-container .pum-content,
+.pum-container .popmake-content {
+	max-height: 70vh;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+/* ---- Close button — inset, visible above content ---- */
+
+.pum-close,
+.popmake-close {
+	margin: 30px !important;
+	background: #fff !important;
+	padding: 8px !important;
+	border-radius: 50% !important;
+}
+
+/* ================================================================
+ * Container
+ * ================================================================ */
+
+.tcbf-transport-info,
+.tcbf-transport-info * {
+	box-sizing: border-box;
+}
+
+.tcbf-transport-info {
+	font-size: 14px;
+	line-height: 1.6;
+	color: #444;
+	max-width: 100%;
+	overflow-x: hidden;
+}
+
+/* ---- Typography ---- */
+
+.tcbf-transport-info__title {
+	margin: 0 0 16px !important;
+	font-size: 22px !important;
+	font-weight: 700 !important;
+	color: #1a1a1a;
+	line-height: 1.3;
+}
+
+.tcbf-transport-info__intro {
+	margin: 0 0 24px;
+	font-size: 15px;
+	line-height: 1.6;
+	color: #444;
+}
+
+.tcbf-transport-info h3 {
+	margin: 28px 0 12px !important;
+	font-size: 17px !important;
+	font-weight: 700 !important;
+	color: #1a6b3a;
+	border-bottom: 2px solid #e8f5ee;
+	padding-bottom: 6px;
+}
+
+.tcbf-transport-info p {
+	margin: 0 0 14px;
+	font-size: 14px;
+	line-height: 1.6;
+	color: #444;
+}
+
+/* ---- Steps list ---- */
+
+.tcbf-transport-info__steps {
+	margin: 0 0 14px;
+	padding-left: 20px;
+	font-size: 14px;
+	line-height: 1.65;
+	color: #444;
+}
+
+.tcbf-transport-info__steps li {
+	margin-bottom: 6px;
+}
+
+.tcbf-transport-info__steps strong {
+	color: #1a1a1a;
+}
+
+/* ---- Zone map ---- */
+
+.tcbf-transport-info__map {
+	width: 100%;
+	max-width: 100%;
+	height: 340px;
+	border-radius: 8px;
+	border: 1px solid #e2e5ea;
+	margin: 0 0 16px;
+	background: #f4f6f8;
+	box-sizing: border-box;
+}
+
+.tcbf-transport-info__map path:focus,
+.tcbf-transport-info__map path {
+	outline: none;
+}
+
+/* ---- Note callout ---- */
+
+.tcbf-transport-info__note {
+	padding: 10px 14px;
+	background: #fff8e6;
+	border-left: 3px solid #e6a800;
+	border-radius: 4px;
+	font-size: 13px !important;
+	color: #6b5900 !important;
+}
+
+/* ---- Tables ---- */
+
+.tcbf-transport-info__table-wrap {
+	width: 100%;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	margin: 0 0 16px;
+}
+
+.tcbf-transport-info__table {
+	width: 100%;
+	min-width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+	word-wrap: break-word;
+}
+
+.tcbf-transport-info__table thead th {
+	background: #f4f6f8;
+	padding: 8px 12px;
+	text-align: left;
+	font-weight: 600;
+	color: #1a1a1a;
+	border-bottom: 2px solid #e2e5ea;
+}
+
+.tcbf-transport-info__table tbody td {
+	padding: 8px 12px;
+	border-bottom: 1px solid #eee;
+	color: #444;
+	vertical-align: top;
+}
+
+.tcbf-transport-info__table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+.tcbf-transport-info__table--compact tbody td {
+	padding: 5px 12px;
+}
+
+.tcbf-transport-info__table-sub {
+	display: block;
+	font-size: 12px;
+	color: #888;
+	font-weight: 400;
+}
+
+.tcbf-transport-info__save {
+	display: inline-block;
+	margin-left: 4px;
+	color: #1a6b3a;
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.tcbf-transport-info__example {
+	padding: 10px 14px;
+	background: #f4f6f8;
+	border-radius: 6px;
+	font-size: 13px;
+	color: #555;
+}
+
+/* ---- Notes list ---- */
+
+.tcbf-transport-info__notes {
+	margin: 0 0 14px;
+	padding-left: 18px;
+	font-size: 14px;
+	line-height: 1.6;
+	color: #444;
+}
+
+.tcbf-transport-info__notes li {
+	margin-bottom: 8px;
+}
+
+.tcbf-transport-info__notes strong {
+	color: #1a1a1a;
+}
+
+/* ---- Quick summary ---- */
+
+.tcbf-transport-info__summary {
+	margin-top: 24px;
+	padding: 14px 18px;
+	background: #e8f5ee;
+	border-radius: 8px;
+	border-left: 4px solid #1a6b3a;
+}
+
+.tcbf-transport-info__summary p {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: #1a6b3a;
+}
+
+/* ================================================================
+ * Responsive
+ * ================================================================ */
+
+@media (max-width: 640px) {
+
+	.tcbf-transport-info__title {
+		font-size: 18px !important;
+	}
+
+	.tcbf-transport-info__map {
+		height: 240px;
+	}
+
+	.tcbf-transport-info__table {
+		font-size: 13px;
+	}
+
+	.tcbf-transport-info__table thead th,
+	.tcbf-transport-info__table tbody td {
+		padding: 6px 8px;
+	}
+}
