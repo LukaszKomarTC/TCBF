@@ -51,12 +51,21 @@ if ( ! defined('ABSPATH') ) exit;
  */
 final class Woo_ForbiddenPickup {
 
-	const MSG_BLOCKED = '[:en]Bike pickup is not available on this date. Please select an earlier or later pickup date. Returns are still possible.[:es]La recogida de la bicicleta no está disponible en esta fecha. Por favor, selecciona una fecha de recogida anterior o posterior. Las devoluciones siguen siendo posibles.[:]';
+	// sprintf templates; translated first (qTranslate), then filled with
+	// localized dates. Range: %1$s = range start, %2$s = range end,
+	// %3$s = first allowed pickup day (end + 1). Single day: %1$s = the
+	// forbidden day, %2$s = the following day.
+	const MSG_BLOCKED_RANGE = '[:en]Bike pickup is unavailable from %1$s to %2$s. If your plans allow, start your rental before %1$s or from %3$s onward. Rentals that start earlier may continue through these dates, and returns are still possible.[:es]La recogida de bicicletas no está disponible del %1$s al %2$s. Si tus planes lo permiten, inicia el alquiler antes del %1$s o a partir del %3$s. Los alquileres iniciados antes pueden continuar durante estas fechas y las devoluciones siguen siendo posibles.[:]';
+
+	const MSG_BLOCKED_SINGLE = '[:en]Bike pickup is unavailable on %1$s. If your plans allow, start your rental before this date or from %2$s onward. Rentals that start earlier may continue through this date, and returns are still possible.[:es]La recogida de bicicletas no está disponible el %1$s. Si tus planes lo permiten, inicia el alquiler antes de esta fecha o a partir del %2$s. Los alquileres iniciados antes pueden continuar durante esta fecha y las devoluciones siguen siendo posibles.[:]';
 
 	const MSG_UNRESOLVED = '[:en]We couldn\'t validate the selected pickup date. Please select the rental dates again.[:es]No hemos podido validar la fecha de recogida seleccionada. Por favor, selecciona de nuevo las fechas de alquiler.[:]';
 
 	/** @var array<int,array{start:string,end:string}>|null */
 	private static $ranges_cache = null;
+
+	/** @var int[]|null configured categories expanded with all descendants */
+	private static $effective_cats_cache = null;
 
 	public static function init() : void {
 		add_filter( 'woocommerce_add_to_cart_validation', [ __CLASS__, 'validate' ], 20, 6 );
@@ -93,7 +102,10 @@ final class Woo_ForbiddenPickup {
 		$ranges = self::get_ranges();
 		if ( ! $ranges ) return $passed;
 
-		if ( ! has_term( self::get_rental_category_ids(), 'product_cat', $product_id ) ) return $passed;
+		// Configured categories expanded with all descendants: selecting a
+		// parent rental category covers its child/grandchild categories.
+		$cat_ids = self::get_effective_category_ids();
+		if ( ! $cat_ids || ! has_term( $cat_ids, 'product_cat', $product_id ) ) return $passed;
 
 		$ymd = self::resolve_start_ymd( $cart_item_data );
 		if ( $ymd === '' ) {
@@ -106,16 +118,43 @@ final class Woo_ForbiddenPickup {
 			return false;
 		}
 
-		if ( self::is_forbidden( $ymd, $ranges ) ) {
-			wc_add_notice( Woo::translate( self::MSG_BLOCKED ), 'error' );
+		$hit = self::find_forbidden_range( $ymd, $ranges );
+		if ( $hit !== null ) {
+			wc_add_notice( self::build_blocked_message( $hit ), 'error' );
 			\TC_BF\Support\Logger::log( 'forbidden_pickup.blocked', [
-				'product_id' => (int) $product_id,
-				'start_date' => $ymd,
+				'product_id'  => (int) $product_id,
+				'start_date'  => $ymd,
+				'range_start' => $hit['start'],
+				'range_end'   => $hit['end'],
 			] );
 			return false;
 		}
 
 		return $passed;
+	}
+
+	/**
+	 * Customer-facing notice for a blocked pickup, built from the specific
+	 * range that matched the attempted start date: states the restriction
+	 * boundaries and the first allowed pickup day (range end + 1), in the
+	 * current site language with localized human-readable dates.
+	 *
+	 * @param array{start:string,end:string} $range
+	 * @return string
+	 */
+	public static function build_blocked_message( array $range ) : string {
+		// Noon UTC keeps the calendar date stable under date_i18n for any
+		// realistic site timezone offset.
+		$fmt = function( string $ymd ) : string {
+			return date_i18n( 'j F Y', (int) strtotime( $ymd . ' 12:00:00 UTC' ) );
+		};
+		$next = ( new \DateTime( $range['end'] . ' 12:00:00', new \DateTimeZone( 'UTC' ) ) )
+			->modify( '+1 day' )->format( 'Y-m-d' );
+
+		if ( $range['start'] === $range['end'] ) {
+			return sprintf( Woo::translate( self::MSG_BLOCKED_SINGLE ), $fmt( $range['start'] ), $fmt( $next ) );
+		}
+		return sprintf( Woo::translate( self::MSG_BLOCKED_RANGE ), $fmt( $range['start'] ), $fmt( $range['end'] ), $fmt( $next ) );
 	}
 
 	/**
@@ -218,25 +257,62 @@ final class Woo_ForbiddenPickup {
 	}
 
 	/**
+	 * First configured range containing the date, or null.
+	 *
+	 * @param string $ymd Y-m-d calendar date.
+	 * @param array<int,array{start:string,end:string}> $ranges
+	 * @return array{start:string,end:string}|null
+	 */
+	public static function find_forbidden_range( string $ymd, array $ranges ) : ?array {
+		foreach ( $ranges as $r ) {
+			if ( $ymd >= $r['start'] && $ymd <= $r['end'] ) return $r;
+		}
+		return null;
+	}
+
+	/**
 	 * @param string $ymd Y-m-d calendar date.
 	 * @param array<int,array{start:string,end:string}> $ranges
 	 * @return bool
 	 */
 	public static function is_forbidden( string $ymd, array $ranges ) : bool {
-		foreach ( $ranges as $r ) {
-			if ( $ymd >= $r['start'] && $ymd <= $r['end'] ) return true;
-		}
-		return false;
+		return self::find_forbidden_range( $ymd, $ranges ) !== null;
 	}
 
-	/** @return int[] product_cat term IDs the restriction applies to. */
+	/** @return int[] product_cat term IDs as configured by the admin. */
 	private static function get_rental_category_ids() : array {
 		$csv = (string) get_option( \TC_BF\Admin\Settings::OPT_RENTAL_CATEGORY_IDS, '207,208,209,219' );
 		return array_values( array_filter( array_map( 'absint', explode( ',', $csv ) ) ) );
 	}
 
-	/** Reset the per-request config cache (for tests). */
+	/**
+	 * Configured category IDs expanded with all descendant terms, so a parent
+	 * rental category covers its children/grandchildren at any depth. The
+	 * stored option keeps only what the admin selected; expansion happens
+	 * here at match time. An empty selection stays empty (restriction off).
+	 *
+	 * @return int[]
+	 */
+	public static function get_effective_category_ids() : array {
+		if ( self::$effective_cats_cache === null ) {
+			$ids = self::get_rental_category_ids();
+			$all = $ids;
+			if ( $ids && function_exists( 'get_term_children' ) ) {
+				foreach ( $ids as $id ) {
+					$children = get_term_children( $id, 'product_cat' );
+					if ( is_array( $children ) && $children ) {
+						$all = array_merge( $all, array_map( 'absint', $children ) );
+					}
+				}
+			}
+			self::$effective_cats_cache = array_values( array_unique( array_filter( $all ) ) );
+		}
+		return self::$effective_cats_cache;
+	}
+
+	/** Reset the per-request config caches (for tests). */
 	public static function clear_cache() : void {
-		self::$ranges_cache = null;
+		self::$ranges_cache         = null;
+		self::$effective_cats_cache = null;
 	}
 }

@@ -30,7 +30,16 @@ namespace TC_BF\Admin {
 
 namespace TC_BF\Integrations\WooCommerce {
 	class Woo {
-		public static function translate( $text ) { return (string) $text; }
+		// Mimics qTranslate language selection: with $GLOBALS['__test']['lang']
+		// set ('en'/'es'), returns that segment; otherwise the raw text.
+		public static function translate( $text ) {
+			$text = (string) $text;
+			$lang = $GLOBALS['__test']['lang'] ?? '';
+			if ( $lang && preg_match( '/\[:' . $lang . '\](.*?)\[:/s', $text, $m ) ) {
+				return $m[1];
+			}
+			return $text;
+		}
 	}
 }
 
@@ -67,6 +76,10 @@ function wc_add_notice( $message, $type = 'success' ) {
 function absint( $v ) { return abs( (int) $v ); }
 function wp_unslash( $v ) { return is_string( $v ) ? stripslashes( $v ) : $v; }
 function add_filter( $hook, $cb, $prio = 10, $args = 1 ) { /* no-op for tests */ }
+function get_term_children( $term_id, $taxonomy ) {
+	return $GLOBALS['__test']['children'][ $term_id ] ?? [];
+}
+function date_i18n( $format, $ts ) { return gmdate( $format, (int) $ts ); }
 
 require __DIR__ . '/../includes/Integrations/WooCommerce/Woo_ForbiddenPickup.php';
 
@@ -83,6 +96,8 @@ function reset_env( array $opts = [] ) {
 		'products' => [],
 		'terms'    => [],
 		'notices'  => [],
+		'children' => [],   // parent term id => descendant term ids (all depths)
+		'lang'     => '',   // '', 'en' or 'es' — see Woo::translate stub
 	], $opts );
 	$_POST = [];
 	FP::clear_cache();
@@ -230,6 +245,96 @@ env_with_config();
 $GLOBALS['__test']['options']['tcbf_rental_category_ids'] = '';
 post_start_date( 2026, 8, 18 );
 check( 'validate: empty category selection disables restriction', FP::validate( true, RENTAL, 1 ) === true );
+
+// ------------- Part 2b: descendant categories & specific notices -----------
+
+function last_notice() : string {
+	$n = $GLOBALS['__test']['notices'];
+	return $n ? (string) $n[ count( $n ) - 1 ][0] : '';
+}
+
+// Parent category selection covers children and grandchildren; siblings don't.
+const CHILD_PROD  = 201; // in child category 211 of configured parent 200
+const GRAND_PROD  = 202; // in grandchild category 221 of configured parent 200
+const SIBLING_PROD = 203; // in unrelated category 300
+
+function env_with_parent_cat() {
+	reset_env( [
+		'options'  => [
+			'tcbf_forbidden_pickup_dates' => "2026-08-17 - 2026-08-19",
+			'tcbf_rental_category_ids'    => '200',
+		],
+		'products' => [
+			CHILD_PROD   => [ 'bookable' => true ],
+			GRAND_PROD   => [ 'bookable' => true ],
+			SIBLING_PROD => [ 'bookable' => true ],
+		],
+		'terms'    => [ CHILD_PROD => [ 211 ], GRAND_PROD => [ 221 ], SIBLING_PROD => [ 300 ] ],
+		// get_term_children() returns ALL descendants at any depth.
+		'children' => [ 200 => [ 211, 221 ] ],
+	] );
+}
+
+env_with_parent_cat();
+post_start_date( 2026, 8, 18 );
+check( 'descendants: product in CHILD of configured parent blocked', FP::validate( true, CHILD_PROD, 1 ) === false );
+
+env_with_parent_cat();
+post_start_date( 2026, 8, 18 );
+check( 'descendants: product in GRANDCHILD of configured parent blocked', FP::validate( true, GRAND_PROD, 1 ) === false );
+
+env_with_parent_cat();
+post_start_date( 2026, 8, 18 );
+check( 'descendants: product in unrelated sibling category unaffected', FP::validate( true, SIBLING_PROD, 1 ) === true );
+
+env_with_parent_cat();
+$GLOBALS['__test']['options']['tcbf_rental_category_ids'] = '';
+FP::clear_cache();
+post_start_date( 2026, 8, 18 );
+check( 'descendants: empty selection still disables restriction', FP::validate( true, CHILD_PROD, 1 ) === true );
+
+// Specific blocked notice: derived from the range that matched, with the
+// next allowed day = range end + 1.
+function env_multi_range( string $lang = 'en' ) {
+	env_with_config();
+	$GLOBALS['__test']['options']['tcbf_forbidden_pickup_dates'] = "2026-07-01\n2026-08-17 - 2026-08-19";
+	$GLOBALS['__test']['lang'] = $lang;
+	FP::clear_cache();
+}
+
+env_multi_range( 'en' );
+post_start_date( 2026, 8, 18 );
+FP::validate( true, RENTAL, 1 );
+$msg = last_notice();
+check( 'notice: range message names matched boundaries', strpos( $msg, '17 August 2026' ) !== false && strpos( $msg, '19 August 2026' ) !== false );
+check( 'notice: range message names next allowed day (end + 1)', strpos( $msg, '20 August 2026' ) !== false );
+check( 'notice: only the HIT range is reported, not other configured ranges', strpos( $msg, 'July' ) === false );
+check( 'notice: no unfilled placeholders or qTranslate tags leak', strpos( $msg, '%1$s' ) === false && strpos( $msg, '[:' ) === false );
+
+env_multi_range( 'es' );
+post_start_date( 2026, 8, 18 );
+FP::validate( true, RENTAL, 1 );
+$msg = last_notice();
+check( 'notice: ES output selected and filled', strpos( $msg, 'La recogida de bicicletas' ) !== false && strpos( $msg, '17 August 2026' ) !== false && strpos( $msg, '[:' ) === false );
+
+env_with_config();
+$GLOBALS['__test']['options']['tcbf_forbidden_pickup_dates'] = '2026-09-01';
+$GLOBALS['__test']['lang'] = 'en';
+FP::clear_cache();
+post_start_date( 2026, 9, 1 );
+FP::validate( true, RENTAL, 1 );
+$msg = last_notice();
+check( 'notice: single-day message uses singular wording', strpos( $msg, 'unavailable on 1 September 2026' ) !== false );
+check( 'notice: single-day next alternative is the following day', strpos( $msg, '2 September 2026' ) !== false );
+
+// Month rollover: restriction ending on the last day of a month.
+env_with_config();
+$GLOBALS['__test']['options']['tcbf_forbidden_pickup_dates'] = '2026-08-29 - 2026-08-31';
+$GLOBALS['__test']['lang'] = 'en';
+FP::clear_cache();
+post_start_date( 2026, 8, 31 );
+FP::validate( true, RENTAL, 1 );
+check( 'notice: next-day boundary rolls over the month', strpos( last_notice(), '1 September 2026' ) !== false );
 
 // ------------------- Part 3: settings tab/group isolation -------------------
 // wp-admin/options.php nulls out EVERY option registered in the submitted

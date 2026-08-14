@@ -243,7 +243,7 @@ final class Settings {
 								<p><?php echo esc_html__('No product categories found.', 'tc-booking-flow-next'); ?></p>
 							<?php endif; ?>
 							<p class="description">
-								<?php echo esc_html__('Product categories treated as bike rentals. Only products in the checked categories are subject to the pickup restriction. Unchecking all disables the restriction for every product.', 'tc-booking-flow-next'); ?>
+								<?php echo esc_html__('Product categories treated as bike rentals. Only products in the checked categories are subject to the pickup restriction. Selecting a parent category automatically includes all of its subcategories, at any depth. Unchecking all disables the restriction for every product.', 'tc-booking-flow-next'); ?>
 							</p>
 						</td>
 					</tr>
@@ -538,24 +538,34 @@ final class Settings {
 		register_setting('tc_bf_pickup_settings', self::OPT_FORBIDDEN_PICKUP_DATES, [
 			'type'              => 'string',
 			'sanitize_callback' => function($v){
+				// WP runs this callback twice when the option is not yet in
+				// the database (update_option() sanitizes, then falls through
+				// to add_option() which sanitizes again — Trac #21989). The
+				// static guard keeps the notice from rendering twice; the
+				// returned value stays identical on both runs.
+				static $notices_added = false;
+
 				$v      = sanitize_textarea_field( (string) $v );
 				$parsed = \TC_BF\Integrations\WooCommerce\Woo_ForbiddenPickup::parse_config( $v );
 
 				if ( $parsed['invalid'] ) {
-					add_settings_error(
-						self::OPT_FORBIDDEN_PICKUP_DATES,
-						'tcbf_forbidden_pickup_invalid',
-						sprintf(
-							/* translators: %s: list of rejected config lines */
-							__( 'Forbidden pickup dates were NOT saved. Each line must be a single date (2026-09-01) or a range (2026-08-17 - 2026-08-19). Invalid lines: %s', 'tc-booking-flow-next' ),
-							'"' . implode( '", "', array_map( 'esc_html', $parsed['invalid'] ) ) . '"'
-						),
-						'error'
-					);
+					if ( ! $notices_added ) {
+						add_settings_error(
+							self::OPT_FORBIDDEN_PICKUP_DATES,
+							'tcbf_forbidden_pickup_invalid',
+							sprintf(
+								/* translators: %s: list of rejected config lines */
+								__( 'Forbidden pickup dates were NOT saved. Each line must be a single date (2026-09-01) or a range (2026-08-17 - 2026-08-19). Invalid lines: %s', 'tc-booking-flow-next' ),
+								'"' . implode( '", "', array_map( 'esc_html', $parsed['invalid'] ) ) . '"'
+							),
+							'error'
+						);
+					}
+					$notices_added = true;
 					return (string) get_option( self::OPT_FORBIDDEN_PICKUP_DATES, '' );
 				}
 
-				if ( $parsed['ranges'] ) {
+				if ( $parsed['ranges'] && ! $notices_added ) {
 					$labels = array_map( function( $r ) {
 						return $r['start'] === $r['end'] ? $r['start'] : $r['start'] . ' → ' . $r['end'];
 					}, $parsed['ranges'] );
@@ -570,6 +580,7 @@ final class Settings {
 						'updated'
 					);
 				}
+				$notices_added = true;
 
 				return $v;
 			},
@@ -582,6 +593,9 @@ final class Settings {
 		register_setting('tc_bf_pickup_settings', self::OPT_RENTAL_CATEGORY_IDS, [
 			'type'              => 'string',
 			'sanitize_callback' => function($v){
+				// Same double-run guard as the dates sanitizer (Trac #21989).
+				static $notices_added = false;
+
 				$raw = is_array( $v ) ? $v : explode( ',', (string) $v );
 				$ids = array_values( array_unique( array_filter( array_map( 'absint', $raw ) ) ) );
 
@@ -591,7 +605,7 @@ final class Settings {
 					$term = get_term( $id, 'product_cat' );
 					if ( $term && ! is_wp_error( $term ) ) { $valid[] = $id; } else { $unknown[] = $id; }
 				}
-				if ( $unknown ) {
+				if ( $unknown && ! $notices_added ) {
 					add_settings_error(
 						self::OPT_RENTAL_CATEGORY_IDS,
 						'tcbf_rental_cats_unknown',
@@ -603,7 +617,7 @@ final class Settings {
 						'warning'
 					);
 				}
-				if ( ! $valid ) {
+				if ( ! $valid && ! $notices_added ) {
 					add_settings_error(
 						self::OPT_RENTAL_CATEGORY_IDS,
 						'tcbf_rental_cats_empty',
@@ -611,6 +625,7 @@ final class Settings {
 						'warning'
 					);
 				}
+				$notices_added = true;
 				return implode( ',', $valid );
 			},
 			'default'           => '207,208,209,219',
