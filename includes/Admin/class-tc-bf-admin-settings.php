@@ -180,14 +180,18 @@ final class Settings {
 	/**
 	 * Render the Pickup Restrictions settings tab
 	 *
-	 * Uses the same Settings API group as the General tab; options.php only
-	 * updates options present in the submitted form, so this form carries
-	 * just the two pickup-restriction fields.
+	 * Uses its OWN Settings API group (tc_bf_pickup_settings). This is load-
+	 * bearing, not cosmetic: wp-admin/options.php iterates every option
+	 * registered in the submitted group and calls update_option() with NULL
+	 * for any option absent from $_POST. Sharing a group across tab forms
+	 * therefore resets the other tab's options through their sanitizers on
+	 * every save. Each tab form must post a group containing exactly the
+	 * options it renders.
 	 */
 	private static function render_pickup_tab() : void {
 		?>
 		<form method="post" action="options.php">
-			<?php settings_fields('tc_bf_settings'); ?>
+			<?php settings_fields('tc_bf_pickup_settings'); ?>
 
 			<h2><?php echo esc_html__('Pickup Restrictions', 'tc-booking-flow-next'); ?></h2>
 			<p><?php echo esc_html__('Block bike rentals from STARTING (pickup) on specific dates without changing availability: rentals that start earlier may continue through these dates and may end (return) on them.', 'tc-booking-flow-next'); ?></p>
@@ -521,11 +525,17 @@ final class Settings {
 			'default'           => 55,
 		]);
 
-		// TCBF: Forbidden pickup dates. Strict validation: a save containing any
+		// TCBF Pickup Restrictions live in their OWN settings group: the tab
+		// renders its own form, and options.php nulls out every registered
+		// option of the posted group that is absent from $_POST. Keeping these
+		// two options out of tc_bf_settings (and General options out of this
+		// group) is what isolates the tabs' saves from each other.
+		//
+		// Forbidden pickup dates. Strict validation: a save containing any
 		// malformed line is rejected whole (previous value retained) with a
 		// settings error listing the bad lines, so a typo can never silently
 		// become a different restriction.
-		register_setting('tc_bf_settings', self::OPT_FORBIDDEN_PICKUP_DATES, [
+		register_setting('tc_bf_pickup_settings', self::OPT_FORBIDDEN_PICKUP_DATES, [
 			'type'              => 'string',
 			'sanitize_callback' => function($v){
 				$v      = sanitize_textarea_field( (string) $v );
@@ -569,7 +579,7 @@ final class Settings {
 		// TCBF: Rental category IDs. Checkbox UI posts an array of term IDs;
 		// stored as CSV. Unknown terms are dropped with a warning. An
 		// explicitly empty selection is allowed and disables the restriction.
-		register_setting('tc_bf_settings', self::OPT_RENTAL_CATEGORY_IDS, [
+		register_setting('tc_bf_pickup_settings', self::OPT_RENTAL_CATEGORY_IDS, [
 			'type'              => 'string',
 			'sanitize_callback' => function($v){
 				$raw = is_array( $v ) ? $v : explode( ',', (string) $v );

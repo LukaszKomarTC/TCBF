@@ -231,6 +231,55 @@ $GLOBALS['__test']['options']['tcbf_rental_category_ids'] = '';
 post_start_date( 2026, 8, 18 );
 check( 'validate: empty category selection disables restriction', FP::validate( true, RENTAL, 1 ) === true );
 
+// ------------------- Part 3: settings tab/group isolation -------------------
+// wp-admin/options.php nulls out EVERY option registered in the submitted
+// group that is absent from $_POST. The pickup fields therefore must live in
+// their own settings group (tc_bf_pickup_settings), and each tab's form must
+// post exactly the group containing the options it renders. These static
+// checks guard that boundary against regressions.
+
+$settings_src = file_get_contents( __DIR__ . '/../includes/Admin/class-tc-bf-admin-settings.php' );
+check( 'isolation: settings source readable', is_string( $settings_src ) && $settings_src !== '' );
+
+preg_match_all( "/register_setting\\(\\s*'([^']+)'\\s*,\\s*self::(\\w+)/", $settings_src, $m, PREG_SET_ORDER );
+$groups = [];
+foreach ( $m as $reg ) { $groups[ $reg[2] ][] = $reg[1]; }
+
+check( 'isolation: forbidden dates registered ONLY in tc_bf_pickup_settings',
+	( $groups['OPT_FORBIDDEN_PICKUP_DATES'] ?? [] ) === [ 'tc_bf_pickup_settings' ] );
+check( 'isolation: rental categories registered ONLY in tc_bf_pickup_settings',
+	( $groups['OPT_RENTAL_CATEGORY_IDS'] ?? [] ) === [ 'tc_bf_pickup_settings' ] );
+check( 'isolation: general options stay in tc_bf_settings (sample: form id)',
+	( $groups['OPT_FORM_ID'] ?? [] ) === [ 'tc_bf_settings' ] );
+check( 'isolation: general options stay in tc_bf_settings (sample: debug)',
+	( $groups['OPT_DEBUG'] ?? [] ) === [ 'tc_bf_settings' ] );
+check( 'isolation: no general option registered in the pickup group',
+	! array_filter( $groups, function( $g, $opt ) {
+		return in_array( 'tc_bf_pickup_settings', $g, true )
+			&& ! in_array( $opt, [ 'OPT_FORBIDDEN_PICKUP_DATES', 'OPT_RENTAL_CATEGORY_IDS' ], true );
+	}, ARRAY_FILTER_USE_BOTH ) );
+
+function extract_method( string $src, string $name ) : string {
+	$pos = strpos( $src, "function {$name}(" );
+	if ( $pos === false ) return '';
+	$next = preg_match( '/function \w+\(/', $src, $mm, PREG_OFFSET_CAPTURE, $pos + 10 )
+		? $mm[0][1] : strlen( $src );
+	return substr( $src, $pos, $next - $pos );
+}
+
+$pickup_tab  = extract_method( $settings_src, 'render_pickup_tab' );
+$general_tab = extract_method( $settings_src, 'render_general_tab' );
+
+check( 'isolation: pickup tab posts the pickup group',
+	strpos( $pickup_tab, "settings_fields('tc_bf_pickup_settings')" ) !== false );
+check( 'isolation: pickup tab does NOT post the general group',
+	strpos( $pickup_tab, "settings_fields('tc_bf_settings')" ) === false );
+check( 'isolation: general tab still posts the general group',
+	strpos( $general_tab, "settings_fields('tc_bf_settings')" ) !== false );
+check( 'isolation: pickup fields no longer rendered in the general tab',
+	strpos( $general_tab, 'OPT_FORBIDDEN_PICKUP_DATES' ) === false
+	&& strpos( $general_tab, 'OPT_RENTAL_CATEGORY_IDS' ) === false );
+
 echo "\n" . ( $fails ? "$fails FAILURE(S)\n" : "All tests passed.\n" );
 exit( $fails ? 1 : 0 );
 
