@@ -66,6 +66,10 @@ final class Woo_ForbiddenPickup {
 	// EN "17 August 2026", ES "17 de agosto de 2026" (\d\e = literal "de").
 	const DATE_FORMAT = '[:en]j F Y[:es]j \d\e F \d\e Y[:]';
 
+	// Shown above the visually gated details form while the selected start
+	// date is forbidden (frontend advisory only).
+	const MSG_GATE = '[:en]Please change the pickup date to continue with your booking details.[:es]Por favor, cambia la fecha de recogida para continuar con los datos de tu reserva.[:]';
+
 	/** @var array<int,array{start:string,end:string}>|null */
 	private static $ranges_cache = null;
 
@@ -74,6 +78,10 @@ final class Woo_ForbiddenPickup {
 
 	public static function init() : void {
 		add_filter( 'woocommerce_add_to_cart_validation', [ __CLASS__, 'validate' ], 20, 6 );
+
+		// Early frontend warning on eligible standalone rental product pages
+		// (advisory only — this filter above remains the enforcement boundary).
+		add_action( 'wp_enqueue_scripts', [ __CLASS__, 'maybe_enqueue_frontend' ], 20 );
 	}
 
 	/**
@@ -93,10 +101,6 @@ final class Woo_ForbiddenPickup {
 	public static function validate( $passed, $product_id, $quantity, $variation_id = 0, $variations = [], $cart_item_data = [] ) {
 		if ( ! $passed ) return $passed;
 
-		if ( ! function_exists( 'is_wc_booking_product' ) ) return $passed;
-		$product = wc_get_product( $product_id );
-		if ( ! $product || ! is_wc_booking_product( $product ) ) return $passed;
-
 		// Defensive exemption for custom invocations passing prebuilt booking
 		// data (the standard WC handlers never pass $cart_item_data — see class doc).
 		if ( is_array( $cart_item_data )
@@ -107,10 +111,7 @@ final class Woo_ForbiddenPickup {
 		$ranges = self::get_ranges();
 		if ( ! $ranges ) return $passed;
 
-		// Configured categories expanded with all descendants: selecting a
-		// parent rental category covers its child/grandchild categories.
-		$cat_ids = self::get_effective_category_ids();
-		if ( ! $cat_ids || ! has_term( $cat_ids, 'product_cat', $product_id ) ) return $passed;
+		if ( ! self::applies_to_product( (int) $product_id ) ) return $passed;
 
 		$ymd = self::resolve_start_ymd( $cart_item_data );
 		if ( $ymd === '' ) {
@@ -136,6 +137,87 @@ final class Woo_ForbiddenPickup {
 		}
 
 		return $passed;
+	}
+
+	/**
+	 * Whether the pickup restriction targets this product: a WooCommerce
+	 * Bookings product in the configured rental categories (parents include
+	 * all descendants). Shared by server validation and the frontend enqueue
+	 * so targeting semantics cannot drift.
+	 *
+	 * @param int $product_id
+	 * @return bool
+	 */
+	public static function applies_to_product( int $product_id ) : bool {
+		if ( ! function_exists( 'is_wc_booking_product' ) ) return false;
+		$product = wc_get_product( $product_id );
+		if ( ! $product || ! is_wc_booking_product( $product ) ) return false;
+
+		$cat_ids = self::get_effective_category_ids();
+		return $cat_ids && has_term( $cat_ids, 'product_cat', $product_id );
+	}
+
+	/**
+	 * Config payload for the frontend early warning: the configured ranges
+	 * in config order (JS first-hit matches find_forbidden_range()), each
+	 * with its customer message pre-built by the SAME server-side builder in
+	 * the current page language — wording, Spanish date phrasing, single-day
+	 * vs range grammar and the end+1 calculation cannot drift from PHP.
+	 *
+	 * @return array<int,array{start:string,end:string,message:string}>
+	 */
+	public static function get_frontend_payload() : array {
+		$payload = [];
+		foreach ( self::get_ranges() as $r ) {
+			$payload[] = [
+				'start'   => $r['start'],
+				'end'     => $r['end'],
+				'message' => self::build_blocked_message( $r ),
+			];
+		}
+		return $payload;
+	}
+
+	/**
+	 * Enqueue the early-warning assets only on an eligible standalone rental
+	 * product page: single product, targeted bookable product, non-empty
+	 * ranges. Everything else (simple products, non-targeted bookables,
+	 * event/transport flows, empty config) loads nothing.
+	 */
+	public static function maybe_enqueue_frontend() : void {
+		if ( is_admin() || ! function_exists( 'is_product' ) || ! is_product() ) return;
+
+		$product_id = (int) get_queried_object_id();
+		if ( ! $product_id ) return;
+
+		$ranges = self::get_ranges();
+		if ( ! $ranges ) return;
+		if ( ! self::applies_to_product( $product_id ) ) return;
+
+		wp_enqueue_style(
+			'tcbf-forbidden-pickup',
+			TC_BF_URL . 'assets/css/tcbf-forbidden-pickup.css',
+			[],
+			TC_BF_VERSION
+		);
+		wp_enqueue_script(
+			'tcbf-forbidden-pickup',
+			TC_BF_URL . 'assets/js/tcbf-forbidden-pickup.js',
+			[ 'jquery' ],
+			TC_BF_VERSION,
+			true
+		);
+
+		$config = [
+			'ranges'   => self::get_frontend_payload(),
+			'formId'   => (int) \TC_BF\Admin\Settings::get_booking_form_id(),
+			'gateText' => Woo::translate( self::MSG_GATE ),
+		];
+		wp_add_inline_script(
+			'tcbf-forbidden-pickup',
+			'window.tcbfForbiddenPickup = ' . wp_json_encode( $config ) . ';',
+			'before'
+		);
 	}
 
 	/**

@@ -340,6 +340,52 @@ post_start_date( 2026, 8, 31 );
 FP::validate( true, RENTAL, 1 );
 check( 'notice: next-day boundary rolls over the month', strpos( last_notice(), '1 September 2026' ) !== false );
 
+// ---------- Part 2c: frontend payload & shared product targeting -----------
+
+// applies_to_product shares the exact targeting semantics of validate().
+env_with_config();
+check( 'targeting: rental product in configured category applies', FP::applies_to_product( RENTAL ) === true );
+check( 'targeting: bookable product outside rental categories does not apply', FP::applies_to_product( TOUR ) === false );
+check( 'targeting: non-booking product does not apply', FP::applies_to_product( SIMPLE ) === false );
+
+env_with_parent_cat();
+check( 'targeting: child of configured parent applies', FP::applies_to_product( CHILD_PROD ) === true );
+check( 'targeting: grandchild of configured parent applies', FP::applies_to_product( GRAND_PROD ) === true );
+check( 'targeting: unrelated sibling does not apply', FP::applies_to_product( SIBLING_PROD ) === false );
+
+env_with_config();
+$GLOBALS['__test']['options']['tcbf_rental_category_ids'] = '';
+FP::clear_cache();
+check( 'targeting: empty category selection applies to nothing', FP::applies_to_product( RENTAL ) === false );
+
+// Frontend payload: same parsed ranges, config order (JS first-hit == PHP
+// find_forbidden_range), messages from the same server-side builder.
+env_multi_range( 'en' );
+$payload = FP::get_frontend_payload();
+check( 'payload: one entry per configured range, config order preserved',
+	count( $payload ) === 2
+	&& $payload[0]['start'] === '2026-07-01' && $payload[0]['end'] === '2026-07-01'
+	&& $payload[1]['start'] === '2026-08-17' && $payload[1]['end'] === '2026-08-19' );
+check( 'payload: range message comes from build_blocked_message()',
+	$payload[1]['message'] === FP::build_blocked_message( [ 'start' => '2026-08-17', 'end' => '2026-08-19' ] )
+	&& $payload[1]['message'] !== '' );
+check( 'payload: single-day message uses singular builder output',
+	$payload[0]['message'] === FP::build_blocked_message( [ 'start' => '2026-07-01', 'end' => '2026-07-01' ] )
+	&& strpos( $payload[0]['message'], 'unavailable on' ) !== false );
+check( 'payload: no qTranslate tags or unfilled placeholders',
+	strpos( $payload[1]['message'], '[:' ) === false && strpos( $payload[1]['message'], '%1$s' ) === false );
+
+env_multi_range( 'es' );
+$payload = FP::get_frontend_payload();
+check( 'payload: ES messages aligned with server builder',
+	strpos( $payload[1]['message'], 'La recogida de bicicletas' ) !== false
+	&& $payload[1]['message'] === FP::build_blocked_message( [ 'start' => '2026-08-17', 'end' => '2026-08-19' ] ) );
+
+env_with_config();
+$GLOBALS['__test']['options']['tcbf_forbidden_pickup_dates'] = '';
+FP::clear_cache();
+check( 'payload: empty config produces empty payload', FP::get_frontend_payload() === [] );
+
 // ------------------- Part 3: settings tab/group isolation -------------------
 // wp-admin/options.php nulls out EVERY option registered in the submitted
 // group that is absent from $_POST. The pickup fields therefore must live in
