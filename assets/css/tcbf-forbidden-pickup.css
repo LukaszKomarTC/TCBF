@@ -25,3 +25,17 @@
 .gform_wrapper.tcbf-pickup-gated {
 	display: none;
 }
+
+/* Blocked pickup: the calculated price must not read as an actionable
+   offer. Class toggle only — Woo keeps ownership of the node and its
+   inline display state, and recalculates freely while hidden. */
+.wc-bookings-booking-cost.tcbf-pickup-cost-hidden {
+	display: none !important;
+}
+
+/* Blocked pickup: CTA stays visible but clearly non-actionable. */
+.tcbf-pickup-disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	pointer-events: none;
+}
