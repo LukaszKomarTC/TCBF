@@ -183,16 +183,35 @@
 		}
 
 		// Extra guard only: intercept submission while TCBF's own blocked
-		// flag is true. Woo's button state is never touched.
+		// flag is true. Woo's button state is never touched. Two layers are
+		// needed because Woo Bookings submits the cart form programmatically
+		// (form.submit() does NOT fire 'submit' listeners — verified against
+		// the installed Bookings on staging): a capture-phase click guard on
+		// the submit control catches that path before Bookings' handler runs,
+		// and the plain submit listener covers everything else.
 		var cart = document.querySelector( 'form.cart' );
 		if ( cart ) {
+			var showWarning = function () {
+				var node = document.querySelector( '.tcbf-pickup-restriction' );
+				if ( node && node.scrollIntoView ) {
+					node.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+				}
+			};
+			cart.addEventListener( 'click', function ( e ) {
+				if ( ! blocked || ! e.target || ! e.target.closest ) {
+					return;
+				}
+				var btn = e.target.closest( 'button[type="submit"], input[type="submit"], .single_add_to_cart_button' );
+				if ( btn ) {
+					e.preventDefault();
+					e.stopPropagation();
+					showWarning();
+				}
+			}, true );
 			cart.addEventListener( 'submit', function ( e ) {
 				if ( blocked ) {
 					e.preventDefault();
-					var node = document.querySelector( '.tcbf-pickup-restriction' );
-					if ( node && node.scrollIntoView ) {
-						node.scrollIntoView( { behavior: 'smooth', block: 'center' } );
-					}
+					showWarning();
 				}
 			} );
 		}
