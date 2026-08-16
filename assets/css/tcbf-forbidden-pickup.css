@@ -1,0 +1,27 @@
+/* TCBF — early forbidden-pickup warning (advisory layer on rental product pages) */
+
+.tcbf-pickup-restriction {
+	display: none;
+}
+
+.tcbf-pickup-restriction.is-active {
+	display: block;
+	margin: 12px 0;
+	padding: 12px 14px;
+	border-left: 4px solid #b32d2e;
+	background: #fcf0f1;
+	color: #1d2327;
+	font-weight: 600;
+	line-height: 1.45;
+}
+
+.tcbf-pickup-gate-note {
+	margin: 10px 0;
+	font-style: italic;
+}
+
+/* Visual gate only: inputs stay in the DOM with their values, so Gravity
+   Forms state is untouched and everything the customer typed survives. */
+.gform_wrapper.tcbf-pickup-gated {
+	display: none;
+}
