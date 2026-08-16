@@ -124,6 +124,58 @@
 		}
 	}
 
+	// While blocked, Woo's calculated price must not read as an actionable
+	// offer: hide the cost node via a TCBF class only. Woo keeps ownership of
+	// the node and recalculates freely while hidden; removing the class
+	// exposes whatever Woo currently renders — no price reconstruction.
+	// Re-applied on every evaluation, so a Bookings re-render while blocked
+	// (caught by the cost-node observer) cannot resurface the price.
+	function applyCostState( on ) {
+		var cost = document.querySelector( '.wc-bookings-booking-cost' );
+		if ( cost ) {
+			cost.classList.toggle( 'tcbf-pickup-cost-hidden', on );
+		}
+	}
+
+	// While blocked, the submit CTA is genuinely disabled (real disabled
+	// property — not keyboard-activatable — plus aria-disabled and a TCBF
+	// class for styling). Unblocking restores EXACTLY the pre-block disabled
+	// property recorded at block time and touches nothing else: on this
+	// site's theme the button carries .single_add_to_cart_button but not
+	// .wc-bookings-booking-form-button, so Bookings manages its own state
+	// via its 'disabled' CLASS on the button (which TCBF never touches) —
+	// the property is TCBF's to set and restore. The data-tcbf-blocked
+	// marker guarantees TCBF only ever removes state TCBF itself added; a
+	// Woo re-render that replaces the button drops the marker, and the next
+	// evaluation (observer/change-driven) re-applies the blocked state to
+	// the fresh node.
+	function applyButtonState( on ) {
+		var cart = document.querySelector( 'form.cart' );
+		if ( ! cart ) {
+			return;
+		}
+		var btn = cart.querySelector( 'button[type="submit"], input[type="submit"], .single_add_to_cart_button' );
+		if ( ! btn ) {
+			return;
+		}
+		if ( on ) {
+			if ( ! btn.hasAttribute( 'data-tcbf-blocked' ) ) {
+				btn.setAttribute( 'data-tcbf-prev-disabled', btn.disabled ? '1' : '0' );
+				btn.setAttribute( 'data-tcbf-blocked', '1' );
+			}
+			btn.classList.add( 'tcbf-pickup-disabled' );
+			btn.setAttribute( 'aria-disabled', 'true' );
+			btn.disabled = true;
+		} else if ( btn.hasAttribute( 'data-tcbf-blocked' ) ) {
+			var prev = btn.getAttribute( 'data-tcbf-prev-disabled' ) === '1';
+			btn.removeAttribute( 'data-tcbf-blocked' );
+			btn.removeAttribute( 'data-tcbf-prev-disabled' );
+			btn.classList.remove( 'tcbf-pickup-disabled' );
+			btn.removeAttribute( 'aria-disabled' );
+			btn.disabled = prev;
+		}
+	}
+
 	function setBlocked( hit ) {
 		blocked = !! hit;
 		var node = ensureNode();
@@ -137,6 +189,8 @@
 			}
 		}
 		gateDetails( blocked );
+		applyCostState( blocked );
+		applyButtonState( blocked );
 	}
 
 	function evaluate() {
