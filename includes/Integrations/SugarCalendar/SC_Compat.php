@@ -62,6 +62,28 @@ final class SC_Compat {
 		// Event descriptions (popover, week-view cells, list view): translate
 		// qTranslate markers, clean up, and cap the popover length.
 		add_filter( 'sugar_calendar_helpers_get_event_excerpt', [ __CLASS__, 'filter_event_excerpt' ], 10, 2 );
+
+		// Popover CTA hover: keep the button text white.
+		add_action( 'wp_enqueue_scripts', [ __CLASS__, 'popover_cta_inline_css' ] );
+	}
+
+	/**
+	 * Keep the popover "View Event" CTA text readable on hover.
+	 *
+	 * Shopkeeper's Customizer CSS sets a global `a:hover { color:#434c00 }`
+	 * (site olive). Sugar Calendar's CTA only sets its text color in the base
+	 * state and its :hover rule only darkens the background, so the theme rule
+	 * wins on hover: olive text on the olive button. Re-assert SC's own
+	 * --popover-accent (white) in every state; class + pseudo-class outranks
+	 * the theme's `a:hover` without needing !important. Attached to the
+	 * Calendar block stylesheet handle so it only prints where the block is.
+	 */
+	public static function popover_cta_inline_css() : void {
+		$cta = '.sugar-calendar-block__popover__event__container__content__cta';
+		wp_add_inline_style(
+			'sugar-calendar-block-style',
+			"{$cta},{$cta}:hover,{$cta}:focus,{$cta}:active{color:var(--popover-accent,#fff);}"
+		);
 	}
 
 	/**
