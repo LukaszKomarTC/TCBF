@@ -136,7 +136,7 @@ final class Settings {
 	 */
 	public static function get_current_tab() : string {
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general';
-		$valid = [ 'general', 'transport', 'pickup' ];
+		$valid = [ 'general', 'transport', 'pickup', 'recurrence' ];
 		return in_array( $tab, $valid, true ) ? $tab : 'general';
 	}
 
@@ -162,6 +162,10 @@ final class Settings {
 				   class="nav-tab <?php echo $current_tab === 'pickup' ? 'nav-tab-active' : ''; ?>">
 					<?php echo esc_html__( 'Pickup Restrictions', 'tc-booking-flow-next' ); ?>
 				</a>
+				<a href="<?php echo esc_url( add_query_arg( 'tab', 'recurrence', $page_url ) ); ?>"
+				   class="nav-tab <?php echo $current_tab === 'recurrence' ? 'nav-tab-active' : ''; ?>">
+					<?php echo esc_html__( 'Recurrence', 'tc-booking-flow-next' ); ?>
+				</a>
 			</nav>
 
 			<?php
@@ -169,6 +173,8 @@ final class Settings {
 				Settings_Transport::render_tab();
 			} elseif ( $current_tab === 'pickup' ) {
 				self::render_pickup_tab();
+			} elseif ( $current_tab === 'recurrence' ) {
+				Admin_Event_Recurrence::render_settings_tab();
 			} else {
 				self::render_general_tab();
 			}

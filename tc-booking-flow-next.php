@@ -29,6 +29,9 @@ require_once TC_BF_PATH . 'includes/class-tc-bf-partner-portal.php';
 require_once TC_BF_PATH . 'includes/Domain/EventMeta.php';
 require_once TC_BF_PATH . 'includes/Admin/Admin_Event_Meta.php';
 
+// Recurrence tool: template/instance generator for sc_event (port of the legacy snippet)
+require_once TC_BF_PATH . 'includes/Admin/Admin_Event_Recurrence.php';
+
 // TCBF-13: Product EB Configuration (category-based EB rules for booking products)
 require_once TC_BF_PATH . 'includes/Domain/ProductEBConfig.php';
 require_once TC_BF_PATH . 'includes/Domain/BookingLedger.php';
@@ -83,6 +86,7 @@ add_action('plugins_loaded', function () {
 	// TCBF-14: Initialize product category Partner settings
 	if ( is_admin() ) {
 		\TC_BF\Admin\Admin_Event_Meta::init();
+		\TC_BF\Admin\Admin_Event_Recurrence::init();
 		\TC_BF\Admin\Admin_Product_Category_EB::init();
 		\TC_BF\Admin\Admin_Product_Category_Partner::init();
 		\TC_BF\Integrations\GravityForms\GF_FormValidator::init();
