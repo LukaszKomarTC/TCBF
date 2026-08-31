@@ -55,6 +55,9 @@ require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_SemanticFields.
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_FormValidator.php';
 require_once TC_BF_PATH . 'includes/Integrations/GravityForms/GF_BookingPartnerSelect.php';
 
+// Sugar Calendar 3.12+ frontend compatibility shims (block asset cache-busting, popover image size)
+require_once TC_BF_PATH . 'includes/Integrations/SugarCalendar/SC_Compat.php';
+
 add_action('plugins_loaded', function () {
 	// Load translations using absolute path (more reliable across different folder names)
 	$locale = determine_locale();
@@ -62,6 +65,7 @@ add_action('plugins_loaded', function () {
 	load_textdomain( TC_BF_TEXTDOMAIN, $mofile );
 	\TC_BF\Plugin::instance();
 	\TC_BF\Sc_Event_Extras::init();
+	\TC_BF\Integrations\SugarCalendar\SC_Compat::init();
 	\TC_BF\Partner_Portal::init();
 
 	// TCBF-13: Initialize booking product ledger integration
